@@ -40,8 +40,10 @@ printf '%s\n' "$E2E_PASSWORD" | uv run trafficpi-admin --data-dir "$data" set-pa
 nohup uv run trafficpi-vision run --demo --history-days 3 --data-dir "$data" --port "$vision_port" \
   > "$logs/vision.log" 2>&1 < /dev/null &
 vision_pid=$!
+# --mail-transport file: the daily email writes its mails into the data directory instead of
+# sending them, so that the browser test can press "send a test" and nothing leaves the machine.
 nohup uv run trafficpi-api --data-dir "$data" --host 127.0.0.1 --port "$api_port" \
-  --vision-url "http://127.0.0.1:$vision_port" > "$logs/api.log" 2>&1 < /dev/null &
+  --vision-url "http://127.0.0.1:$vision_port" --mail-transport file > "$logs/api.log" 2>&1 < /dev/null &
 api_pid=$!
 
 fail() { # fail WHAT LOG: say which service is the trouble and how its log ended, and stop both

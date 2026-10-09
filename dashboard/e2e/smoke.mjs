@@ -1588,6 +1588,130 @@ try {
     assert.deepEqual(await readSettings(), original);
   });
 
+  await step("the daily email card sets up recipients and a schedule, tests a send, and previews the mail", async () => {
+    await goTo("Setup");
+    const mailCard = page.locator("section").filter({ has: page.getByRole("heading", { level: 2, name: "Daily email", exact: true }) });
+    await mailCard.waitFor();
+    const readMail = () => page.evaluate(async () => (await fetch("/api/mail")).json());
+    const recipients = mailCard.getByRole("region", { name: "Recipients" });
+    const addInput = mailCard.getByLabel("Add an address");
+    const addButton = mailCard.getByRole("button", { name: "Add", exact: true });
+    const saveSchedule = mailCard.getByRole("button", { name: "Save the schedule" });
+    const original = await readMail();
+    // Twelve hours from now, so that no scheduled time can come while the test runs and make a real mail.
+    const sendAt = `${String((new Date().getHours() + 12) % 24).padStart(2, "0")}:30`;
+    try {
+      assert.equal(original.transport, "file", "the demo sends nothing: it writes files");
+      await mailCard.getByText("Demo mode:").waitFor();
+      assert.equal(await mailCard.getByRole("region", { name: "Resend API key" }).count(), 0, "no key is asked for where none is needed");
+      await mailCard.getByText("The daily email is off.", { exact: false }).first().waitFor();
+      await recipients.getByText("Nobody yet.").waitFor();
+
+      // addresses: a wrong one is refused in words, a right one is listed in lower case, and a repeat is one
+      await addInput.fill("not an address");
+      await addButton.click();
+      await recipients.getByRole("alert").filter({ hasText: "email address" }).waitFor();
+      await addInput.fill("  Owner@Example.COM ");
+      await addButton.click();
+      await recipients.getByText("owner@example.com", { exact: true }).waitFor();
+      assert.equal(await addInput.inputValue(), "", "the box is emptied once the address is in");
+      await addInput.fill("OWNER@example.com");
+      await addButton.click();
+      await recipients.getByText("1 of 20.").waitFor();
+      assert.equal(await recipients.getByRole("listitem").count(), 1, "the same address twice is one recipient");
+      await addInput.fill("fail@example.com");
+      await addButton.click();
+      await recipients.getByText("2 of 20.").waitFor();
+      await recipients.getByText("Nothing has been sent to this address yet.").first().waitFor();
+
+      // a test needs the sender address to have been saved first
+      await recipients.getByRole("button", { name: "Send a test to owner@example.com" }).click();
+      await recipients.getByRole("alert").filter({ hasText: "sender address" }).waitFor();
+
+      // the schedule: a wrong time cannot be saved; a right one is, and survives a reload
+      const time = mailCard.getByLabel("Send it at");
+      await mailCard.getByRole("switch", { name: "Send the daily email" }).click();
+      await time.fill("");
+      await mailCard.getByText("Enter the time as HH:MM, like 20:00.").first().waitFor();
+      assert.equal(await saveSchedule.isDisabled(), true, "a time that is not one cannot be saved");
+      await time.fill(sendAt);
+      await mailCard.getByText("Enter the sender address before switching the email on.").first().waitFor();
+      await mailCard.getByLabel("Sender name").fill("Elm Street cam");
+      await mailCard.getByLabel("Sender address").fill("report@mail.example.com");
+      await mailCard.getByLabel("Link to this dashboard (optional)").fill("javascript:alert(1)");
+      await mailCard.getByText("The link must be a web address", { exact: false }).first().waitFor();
+      await mailCard.getByLabel("Link to this dashboard (optional)").fill("https://traffic.example.com");
+      for (const day of ["Saturday", "Sunday"]) await mailCard.getByRole("button", { name: day, exact: true }).click();
+      await mailCard.getByText("Goes out weekdays.").waitFor();
+      await mailCard.getByText("Not saved yet").waitFor();
+      await saveSchedule.click();
+      await mailCard.getByRole("status").filter({ hasText: "Saved." }).waitFor();
+      assert.deepEqual((await readMail()).schedule, {
+        enabled: true,
+        time: sendAt,
+        days: [0, 1, 2, 3, 4],
+        sender_name: "Elm Street cam",
+        sender_address: "report@mail.example.com",
+        link_url: "https://traffic.example.com",
+      });
+      await mailCard.getByText("On. The next one goes out").waitFor();
+      await reload();
+      await mailCard.waitFor();
+      assert.equal(await mailCard.getByLabel("Send it at").inputValue(), sendAt);
+      assert.equal(await mailCard.getByRole("button", { name: "Saturday", exact: true }).getAttribute("aria-pressed"), "false");
+      assert.equal(await mailCard.getByRole("button", { name: "Monday", exact: true }).getAttribute("aria-pressed"), "true");
+
+      // a test goes out (to a file here) and the result is told next to the address; one that is refused says why
+      await recipients.getByRole("button", { name: "Send a test to owner@example.com" }).click();
+      await recipients.getByText("Sent. Look in that inbox").waitFor();
+      await recipients.getByText("The test mail was sent at").waitFor();
+      await page.waitForTimeout(5_200); // tests are limited to one every five seconds
+      await recipients.getByRole("button", { name: "Send a test to fail@example.com" }).click();
+      await recipients.getByRole("alert").filter({ hasText: "The test did not get through" }).waitFor();
+      await recipients.getByText("The test mail did not get through at").waitFor();
+      const afterTests = await readMail();
+      const byAddress = Object.fromEntries(afterTests.recipients.map((r) => [r.address, r]));
+      assert.equal(byAddress["owner@example.com"].last_status, "sent");
+      assert.equal(byAddress["fail@example.com"].last_status, "failed");
+      assert.match(byAddress["fail@example.com"].last_detail, /fail@/);
+
+      // the preview is the mail as it would be made now, in a sandbox that can touch nothing
+      await mailCard.getByRole("button", { name: "Preview the mail" }).click();
+      await mailCard.getByText("[Test] TrafficPi").first().waitFor();
+      const frame = mailCard.locator('iframe[title="Preview of the daily email"]');
+      await frame.waitFor();
+      assert.equal(await frame.getAttribute("sandbox"), "", "every sandbox restriction is on");
+      await page.frameLocator('iframe[title="Preview of the daily email"]').getByText("TrafficPi daily report").first().waitFor();
+      await mailCard.getByRole("button", { name: "Plain text" }).click();
+      await mailCard.locator("pre").filter({ hasText: "TrafficPi daily report" }).waitFor();
+      await mailCard.getByRole("button", { name: "Close the preview" }).click();
+      assert.equal(await mailCard.locator("iframe").count(), 0);
+      await shot("mail");
+
+      // the System page says it in a line, and a removed address is gone
+      await goTo("System");
+      const summary = page.locator("section").filter({ has: page.getByRole("heading", { level: 2, name: "Daily email", exact: true }) });
+      await summary.getByText("On. The next one goes out").waitFor();
+      await summary.getByTestId("last-mail").getByText("No daily email has been due yet.").waitFor();
+      await summary.getByText("Some addresses did not get their last mail").waitFor();
+      await summary.getByRole("link", { name: "Daily email settings" }).click();
+      await mailCard.waitFor();
+      await recipients.getByRole("button", { name: "Remove fail@example.com" }).click();
+      await recipients.getByText("fail@example.com").waitFor({ state: "detached" });
+      assert.equal((await readMail()).recipients.length, 1);
+    } finally {
+      // the next steps (and the next run) expect an email that is off with nobody on the list
+      await page.evaluate(async (settings) => {
+        const mail = await (await fetch("/api/mail")).json();
+        for (const r of mail.recipients) await fetch(`/api/mail/recipients/${r.id}`, { method: "DELETE" });
+        await fetch("/api/mail/schedule", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(settings) });
+      }, original.schedule);
+    }
+    const restored = await readMail();
+    assert.deepEqual(restored.schedule, original.schedule);
+    assert.equal(restored.recipients.length, 0);
+  });
+
   await step("a viewer who comes through Cloudflare gets a still picture and not the stream, until the owner allows it", async () => {
     // A second browser whose every request carries what Cloudflare adds to those it passes on.
     const remoteContext = await browser.newContext({

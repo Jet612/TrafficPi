@@ -45,6 +45,8 @@ def populate(data: Path) -> Store:
     store.add_trails([finished_trail(BASE_MS + i * 60_000, track_id=i) for i in range(20)])
     (data / "secret.key").write_text("the-session-key\n")
     (data / "secret.key").chmod(0o600)
+    (data / "mail.key").write_text("re_the_mail_key_12345\n")
+    (data / "mail.key").chmod(0o600)
     (data / "reference.jpg").write_bytes(b"\xff\xd8 the reference picture \xff\xd9")
     day = data / "evidence" / "2026-10-09"
     day.mkdir(parents=True)
@@ -116,6 +118,7 @@ def test_a_backup_holds_the_database_and_the_files_beside_it(tmp_path: Path, dat
     assert stat.S_IMODE(archive.parent.stat().st_mode) == 0o700
     with tarfile.open(archive) as tar:
         assert sorted(tar.getnames()) == [
+            "mail.key",
             "manifest.json",
             "reference.jpg",
             "secret.key",
@@ -162,6 +165,34 @@ def test_config_only_leaves_the_history_out_and_keeps_everything_else(
     with tarfile.open(archive) as tar:
         assert json.load(tar.extractfile("manifest.json"))["config_only"] is True  # type: ignore[arg-type]
     assert rows(data / "trafficpi.db")["events"] == 31  # the live database was not touched
+
+
+def test_the_mail_key_comes_with_a_config_only_backup_as_it_is_not_history(
+    tmp_path: Path, data: Path
+) -> None:
+    archive = backup.create_backup(data, tmp_path / "out", config_only=True, now=NOW)
+    with tarfile.open(archive) as tar:
+        assert "mail.key" in tar.getnames()
+
+
+def test_a_data_directory_without_a_mail_key_makes_a_backup_without_one(tmp_path: Path) -> None:
+    folder = tmp_path / "data"
+    populate(folder).close()
+    (folder / "mail.key").unlink()
+    with tarfile.open(backup.create_backup(folder, tmp_path / "out", now=NOW)) as tar:
+        assert "mail.key" not in tar.getnames()
+
+
+def test_restoring_a_backup_from_before_the_email_keeps_the_key_that_is_there(
+    tmp_path: Path, data: Path
+) -> None:
+    (data / "mail.key").unlink()
+    archive = backup.create_backup(data, tmp_path / "out", now=NOW)
+    target = tmp_path / "target"
+    open_store(target).close()
+    (target / "mail.key").write_text("re_a_key_set_since_12345\n")
+    backup.restore_backup(archive, target, now=NOW)
+    assert (target / "mail.key").read_text() == "re_a_key_set_since_12345\n"
 
 
 def test_a_backup_taken_while_the_services_write_is_a_consistent_snapshot(
@@ -269,6 +300,8 @@ def test_a_restore_brings_back_everything_that_was_backed_up(tmp_path: Path, dat
     assert (fresh / "evidence" / "2026-10-09" / "stop-1.mp4").exists()
     assert stat.S_IMODE(fresh.stat().st_mode) == 0o700
     assert stat.S_IMODE((fresh / "secret.key").stat().st_mode) == 0o600
+    assert (fresh / "mail.key").read_text() == "re_the_mail_key_12345\n"  # the email still works
+    assert stat.S_IMODE((fresh / "mail.key").stat().st_mode) == 0o600
     assert rows(fresh / "trafficpi.db") == rows(data / "trafficpi.db")
 
 

@@ -9,7 +9,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import JSON, Float, ForeignKey, Index, Integer, LargeBinary, String
+from sqlalchemy import (
+    JSON,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    LargeBinary,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -124,3 +133,59 @@ class Profile(Base):
     document: Mapped[dict[str, Any]] = mapped_column(JSON)
     version: Mapped[int] = mapped_column(Integer)  # incremented on every change
     updated_at: Mapped[int] = mapped_column(Integer)  # ms
+
+
+class MailRecipient(Base):
+    """Someone who gets the daily email (plan.md D32). Removing one removes their deliveries too:
+    an address that is taken off the list leaves no trace behind it."""
+
+    __tablename__ = "mail_recipients"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    address: Mapped[str] = mapped_column(String, unique=True)  # lower case
+    added_at: Mapped[int] = mapped_column(Integer)  # ms
+    # The last thing tried with this address, a daily mail or a test: when, and how it went.
+    last_at: Mapped[int | None] = mapped_column(Integer)  # ms
+    last_kind: Mapped[str | None] = mapped_column(String)  # "daily" or "test"
+    last_status: Mapped[str | None] = mapped_column(String)  # "sent" or "failed"
+    last_detail: Mapped[str | None] = mapped_column(String)  # the reason, when it failed
+
+
+class MailSend(Base):
+    """One scheduled daily email: the stretch it covers and the mail as it was made, kept so that
+    every recipient, and every retry, gets the same words. One row for each scheduled instant."""
+
+    __tablename__ = "mail_sends"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    scheduled_at: Mapped[int] = mapped_column(Integer, unique=True)  # ms: the instant it was for
+    period_start: Mapped[int] = mapped_column(Integer)  # ms
+    period_end: Mapped[int] = mapped_column(Integer)  # ms
+    created_at: Mapped[int] = mapped_column(Integer)  # ms
+    status: Mapped[str] = mapped_column(String)  # "sending", "done" or "skipped"
+    note: Mapped[str | None] = mapped_column(String)  # why it was skipped
+    sender: Mapped[str] = mapped_column(String)
+    subject: Mapped[str] = mapped_column(String)
+    body_text: Mapped[str] = mapped_column(String)
+    body_html: Mapped[str] = mapped_column(String)
+
+
+class MailDelivery(Base):
+    """One recipient's copy of one daily email, and how far it got."""
+
+    __tablename__ = "mail_deliveries"
+    __table_args__ = (
+        UniqueConstraint("send_id", "recipient_id"),  # each recipient gets each mail once
+        Index("ix_mail_deliveries_due", "status", "next_attempt_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    send_id: Mapped[int] = mapped_column(ForeignKey("mail_sends.id", ondelete="CASCADE"))
+    recipient_id: Mapped[int] = mapped_column(ForeignKey("mail_recipients.id", ondelete="CASCADE"))
+    # "pending", "sending" (claimed by a send in progress), "sent", "failed" or "cancelled"
+    status: Mapped[str] = mapped_column(String)
+    attempts: Mapped[int] = mapped_column(Integer)
+    next_attempt_at: Mapped[int | None] = mapped_column(Integer)  # ms; when a claim was made, too
+    last_error: Mapped[str | None] = mapped_column(String)
+    provider_id: Mapped[str | None] = mapped_column(String)
+    sent_at: Mapped[int | None] = mapped_column(Integer)  # ms

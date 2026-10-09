@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { MailCard } from "@/components/mail-card";
 import { SettingsCard } from "@/components/settings-card";
 import { ZoneEditor } from "@/components/zone-editor";
 
@@ -10,6 +11,7 @@ export default function SetupPage() {
       <h1 className="sr-only">Setup</h1>
       <ZoneEditor />
       <SettingsCard />
+      <MailCard />
     </div>
   );
 }

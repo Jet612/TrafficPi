@@ -21,6 +21,9 @@ def test_migrating_creates_every_table(tmp_path: Path) -> None:
         "settings",
         "profiles",
         "trails",
+        "mail_recipients",
+        "mail_sends",
+        "mail_deliveries",
     } <= tables
     assert "alembic_version" in tables
 
@@ -127,3 +130,42 @@ def test_open_store_creates_the_directory_and_a_usable_store(tmp_path: Path) -> 
     store.set_setting("units", "kmh")
     again = open_store(data_dir)  # opening an existing database migrates nothing and keeps data
     assert again.get_setting("units") == "kmh"
+
+
+def test_a_database_from_before_the_email_keeps_what_it_has_and_gains_its_tables(
+    tmp_path: Path,
+) -> None:
+    """The real database has days of events, trails and health by the time this migration runs."""
+    engine = create_db_engine(tmp_path / "t.db")
+    with engine.begin() as connection:
+        command.upgrade(_alembic_config(connection=connection), "0004")
+        connection.execute(
+            text("INSERT INTO cameras (id, name, created_at) VALUES ('default', 'Front', 1)")
+        )
+        connection.execute(
+            text(
+                "INSERT INTO events (camera_id, occurred_at, type, class_label, line_id, direction)"
+                " VALUES ('default', 5, 'count', 'car', 'main', 1)"
+            )
+        )
+        connection.execute(text("INSERT INTO settings (key, value) VALUES ('units', '\"kmh\"')"))
+    assert "mail_sends" not in set(inspect(engine).get_table_names())
+    upgrade_to_head(engine)
+    assert {"mail_recipients", "mail_sends", "mail_deliveries"} <= set(
+        inspect(engine).get_table_names()
+    )
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT count(*) FROM events")).scalar_one() == 1
+        assert (
+            connection.execute(text("SELECT value FROM settings")).scalar_one() == '"kmh"'
+        )  # JSON text
+
+
+def test_the_email_migration_can_be_undone_and_done_again(tmp_path: Path) -> None:
+    engine = create_db_engine(tmp_path / "t.db")
+    upgrade_to_head(engine)
+    with engine.begin() as connection:
+        command.downgrade(_alembic_config(connection=connection), "0004")
+    assert "mail_sends" not in set(inspect(engine).get_table_names())
+    upgrade_to_head(engine)
+    assert "mail_sends" in set(inspect(engine).get_table_names())

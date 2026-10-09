@@ -4,7 +4,7 @@
 
 TrafficPi is an open-source traffic monitoring system that uses computer vision and edge AI to detect, track, and analyze vehicles in real time.
 
-**Project Status:** In development, and running on one Raspberry Pi 5 with a Hailo-8L and a Camera Module 3. It counts vehicles at counting lines, watches stop signs (a picture and a short clip of every pass that needs a look), keeps the paths vehicles took, and shows all of it in a password-protected dashboard that also reports on the machine's health. Speed estimation, the daily e-mail report and a release are not done. [docs/install.md](docs/install.md) takes a blank Raspberry Pi OS Lite card to a working system, but has not yet been tried on a clean image. See [plan.md](plan.md) for the roadmap and [todo.md](todo.md) for current tasks.
+**Project Status:** In development, and running on one Raspberry Pi 5 with a Hailo-8L and a Camera Module 3. It counts vehicles at counting lines, watches stop signs (a picture and a short clip of every pass that needs a look), keeps the paths vehicles took, and shows all of it in a password-protected dashboard that also reports on the machine's health. It can e-mail a daily report of how the stop signs did (built, and tried with a stand-in sender; not yet with a real mail provider's key). Speed estimation and a release are not done. [docs/install.md](docs/install.md) takes a blank Raspberry Pi OS Lite card to a working system, but has not yet been tried on a clean image. See [plan.md](plan.md) for the roadmap and [todo.md](todo.md) for current tasks.
 
 ---
 
@@ -26,6 +26,7 @@ Users will be able to customize their camera configuration directly from a web d
 - **Custom Detection Zones:** Visually configure roads, lanes, intersections, and monitoring areas.
 - **Web Dashboard:** View live traffic statistics, historical trends, camera feeds, and recorded events.
 - **Remote Access:** Securely access the dashboard from outside the local network.
+- **Daily Email Report:** Optionally e-mail a short report each day, with the number of vehicles that did not stop at the stop signs as its headline (numbers only; no pictures or clips are sent).
 - **Local Processing:** Perform AI inference on the Raspberry Pi without sending continuous video to a cloud AI provider.
 
 ---

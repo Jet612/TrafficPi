@@ -19,6 +19,7 @@ from trafficpi.api.app import create_app
 from trafficpi.api.settings import ApiSettings, normalize_origin
 from trafficpi.core.notify import notify, watchdog_period
 from trafficpi.core.paths import DATA_DIR_HELP
+from trafficpi.mail.scheduler import TICK_S as MAIL_TICK_S
 
 log = logging.getLogger("trafficpi.api")
 
@@ -62,6 +63,13 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="ADDRESS",
         help="also believe the proxy headers of connections from this address (with "
         "--trust-proxy-headers); for a proxy on another machine. May be repeated.",
+    )
+    parser.add_argument(
+        "--mail-transport",
+        choices=("resend", "file"),
+        help="how the daily email is sent: resend (the default), or file, which writes each mail "
+        "into the outbox folder of the data directory instead, for the demo and for trying it out "
+        "(default: $TRAFFICPI_MAIL_TRANSPORT, else resend)",
     )
     return parser
 
@@ -122,6 +130,7 @@ def settings_from(args: argparse.Namespace) -> ApiSettings:
         "trust_proxy_headers": True if args.trust_proxy_headers else None,
         "trusted_proxies": (*ApiSettings().trusted_proxies, *args.trusted_proxy) or None,
         "allowed_origins": tuple(normalize_origin(o) for o in args.allow_origin) or None,
+        "mail_transport": args.mail_transport,
     }
     return dataclasses.replace(
         ApiSettings(), **{k: v for k, v in overrides.items() if v is not None}
@@ -138,7 +147,7 @@ def main(argv: list[str] | None = None) -> int:
     logging.getLogger("alembic").setLevel(logging.WARNING)  # it reports every start-up check
     logging.getLogger("httpx").setLevel(logging.WARNING)  # and httpx every call to the camera
     settings = settings_from(args)
-    app = create_app(settings)
+    app = create_app(settings, mail_tick_s=MAIL_TICK_S)
     log.info("data in %s; vision service at %s", settings.data_dir.resolve(), settings.vision_url)
     if app.state.ctx.store.user_count() == 0:
         log.warning("no user exists yet; create one with `trafficpi-admin set-password`")

@@ -23,7 +23,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from starlette.concurrency import run_in_threadpool
 
-from trafficpi.api import analytics, machine, stats, system_history, trail_views
+from trafficpi.api import analytics, machine, mail_routes, stats, system_history, trail_views
 from trafficpi.api.auth import (
     COOKIE_NAME,
     Busy,
@@ -82,7 +82,11 @@ from trafficpi.core.profile import (
     parse_profile,
 )
 from trafficpi.core.trail_settings import TrailSettings
+from trafficpi.db.mail_store import MailStore
 from trafficpi.db.store import STOP_OUTCOMES, EventRow, Store, open_store
+from trafficpi.mail.mailer import Mailer
+from trafficpi.mail.scheduler import MailScheduler
+from trafficpi.mail.service import MailService
 from trafficpi.vision.trails import trail_classes
 
 log = logging.getLogger("trafficpi.api")
@@ -117,6 +121,8 @@ class ApiContext:
     vision: VisionClient
     clock: WallClock
     dummy_hash: str  # verified against when a username does not exist, so timing does not tell
+    mail: MailStore  # the daily email's settings and tables (plan.md D32)
+    mail_service: MailService  # what is due, who gets what once, tests, the preview
     # Set when the server starts shutting down, so open streams end and shutdown need not wait.
     stopping: threading.Event = field(default_factory=threading.Event)
     busy_logged_at: float = float("-inf")  # time.monotonic() of the last "too busy to log in" line
@@ -126,6 +132,16 @@ class ApiContext:
 
 def _ctx(request: Request) -> ApiContext:
     return request.app.state.ctx  # type: ignore[no-any-return]
+
+
+class _Looker:
+    """The scheduler's view of the mail service: whichever service the context holds at the time."""
+
+    def __init__(self, ctx: ApiContext) -> None:
+        self._ctx = ctx
+
+    def tick(self) -> object:
+        return self._ctx.mail_service.tick()
 
 
 def _by_https(request: Request) -> bool:
@@ -286,10 +302,16 @@ def create_app(
     *,
     store: Store | None = None,
     vision: VisionClient | None = None,
+    mailer: Mailer | None = None,
+    mail_tick_s: float | None = None,
 ) -> FastAPI:
+    """The application. ``mail_tick_s``, when given, starts the thread that looks at the daily
+    email that often (the service passes 30 s; tests leave it out and nothing runs by itself)."""
     settings = settings or ApiSettings()
     if store is None:
         store = open_store(settings.data_dir)
+    clock = WallClock()
+    mail = MailStore(store)
     ctx = ApiContext(
         settings=settings,
         store=store,
@@ -299,13 +321,24 @@ def create_app(
         throttle=LoginThrottle(settings.login_attempts, settings.login_window_s),
         hashing=HashingSlots(settings.hashing_slots),
         vision=vision or VisionClient(settings.vision_url),
-        clock=WallClock(),
+        clock=clock,
         dummy_hash=hash_password("a password that nobody uses"),
+        mail=mail,
+        mail_service=MailService(
+            store, mail, mailer or mail_routes.make_mailer(settings), now_ms=clock.now_ms
+        ),
     )
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):  # type: ignore[no-untyped-def]
+        scheduler = None
+        if mail_tick_s is not None:
+            # looked up by name at each look, so that a test can stand in for the service
+            scheduler = MailScheduler(_Looker(ctx), mail_tick_s)
+            scheduler.start()
         yield
+        if scheduler is not None:
+            scheduler.stop()
         await ctx.vision.close()
 
     # The schema is not served: it is generated offline (trafficpi.api.openapi) for the dashboard.
@@ -313,6 +346,7 @@ def create_app(
         title="TrafficPi", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan
     )
     app.state.ctx = ctx
+    app.include_router(mail_routes.build_router(_ctx, require_user))
 
     @app.exception_handler(RequestValidationError)
     async def unusable_request(_request: Request, exc: RequestValidationError) -> JSONResponse:

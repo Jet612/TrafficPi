@@ -65,6 +65,15 @@ class ApiSettings:
     # is turned away with a 503 instead of waiting.
     hashing_slots: int = 2
 
+    # How the daily email is sent (plan.md D32): "resend", the real thing, or "file", which writes
+    # each mail into ``outbox`` instead, for the demo, the browser test and for trying it out.
+    # `--mail-transport` or TRAFFICPI_MAIL_TRANSPORT; anything else is "resend".
+    mail_transport: str = field(
+        default_factory=lambda: (
+            "file" if os.environ.get("TRAFFICPI_MAIL_TRANSPORT") == "file" else "resend"
+        )
+    )
+
     @property
     def db_path(self) -> Path:
         return self.data_dir / "trafficpi.db"
@@ -77,3 +86,13 @@ class ApiSettings:
     def reference_path(self) -> Path:
         """The camera's reference picture: what the lines and zones were drawn on."""
         return reference_file(self.data_dir)
+
+    @property
+    def mail_key_path(self) -> Path:
+        """The email provider's key: a file of its own, readable by its owner only."""
+        return self.data_dir / "mail.key"
+
+    @property
+    def outbox_path(self) -> Path:
+        """Where the file sender writes its mails."""
+        return self.data_dir / "outbox"

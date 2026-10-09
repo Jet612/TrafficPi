@@ -1,8 +1,9 @@
 """Backup and restore of the database and the files beside it (plan.md D29).
 
-A backup is one ``.tar.gz``, readable by its owner only (it holds the password hash and the key that
-signs the sessions): a ``manifest.json``, a consistent copy of the database, the session key, the
-reference picture and, if asked for, the evidence. The copy is made with SQLite's ``VACUUM INTO``,
+A backup is one ``.tar.gz``, readable by its owner only (it holds the password hash, the key that
+signs the sessions and the email provider's key): a ``manifest.json``, a consistent copy of the
+database, the session key, the mail key if there is one, the reference picture and, if asked for,
+the evidence. The copy is made with SQLite's ``VACUUM INTO``,
 which reads one snapshot of the database without stopping the services that write to it; copying
 the files of a database that is in use could catch it half way between two writes.
 
@@ -31,6 +32,7 @@ from trafficpi.db.store import open_store
 FORMAT = 1  # of the archive; a restore refuses a newer one
 DATABASE = "trafficpi.db"
 SECRET = "secret.key"
+MAIL_KEY = "mail.key"  # the email provider's key (plan.md D32), if one was set
 REFERENCE = reference_file(Path()).name
 EVIDENCE = evidence_dir(Path()).name
 MANIFEST = "manifest.json"
@@ -39,11 +41,19 @@ SUFFIX = ".tar.gz"
 
 # Every table is one or the other, on purpose: `--config-only` drops the first and keeps the
 # second, and a test fails when a table is added that is in neither. (What a person made of a stop
-# event, confirmed or false alarm, lives in `events` and so goes with the history.)
-HISTORY_TABLES = ("events", "minute_counts", "trails", "health_samples")
-CONFIG_TABLES = ("cameras", "users", "settings", "profiles")
+# event, confirmed or false alarm, lives in `events` and so goes with the history. The daily email's
+# recipients are configuration; what was sent, and to whom it got, is history.)
+HISTORY_TABLES = (
+    "events",
+    "minute_counts",
+    "trails",
+    "health_samples",
+    "mail_sends",
+    "mail_deliveries",
+)
+CONFIG_TABLES = ("cameras", "users", "settings", "profiles", "mail_recipients")
 
-_PERMITTED_FILES = {MANIFEST, DATABASE, SECRET, REFERENCE}
+_PERMITTED_FILES = {MANIFEST, DATABASE, SECRET, MAIL_KEY, REFERENCE}
 _ROOM_FACTOR = 2  # a backup or a restore needs about twice the size of what it holds
 
 
@@ -102,7 +112,7 @@ def create_backup(
             with tarfile.open(partial, "w:gz") as tar:
                 _add_bytes(tar, MANIFEST, json.dumps(manifest, indent=1).encode())
                 _add_file(tar, copy, DATABASE)
-                for name in (SECRET, REFERENCE):
+                for name in (SECRET, MAIL_KEY, REFERENCE):
                     if (data_dir / name).is_file():
                         _add_file(tar, data_dir / name, name)
                 if with_evidence:
@@ -373,7 +383,7 @@ def _put_in_place(
 ) -> RestoreReport:
     moment = (now or datetime.now(UTC)).astimezone(UTC)
     with_evidence = bool(manifest.get("with_evidence")) and (work / EVIDENCE).is_dir()
-    incoming = [n for n in (DATABASE, SECRET, REFERENCE) if (work / n).exists()]
+    incoming = [n for n in (DATABASE, SECRET, MAIL_KEY, REFERENCE) if (work / n).exists()]
     if with_evidence:
         incoming.append(EVIDENCE)
     wal_and_shm = [f"{DATABASE}-wal", f"{DATABASE}-shm"]

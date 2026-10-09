@@ -106,6 +106,126 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/mail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get State */
+        get: operations["get_state_api_mail_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mail/key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Key */
+        put: operations["put_key_api_mail_key_put"];
+        post?: never;
+        /** Delete Key */
+        delete: operations["delete_key_api_mail_key_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mail/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Preview */
+        get: operations["preview_api_mail_preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mail/recipients": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add Recipient */
+        post: operations["add_recipient_api_mail_recipients_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mail/recipients/{recipient_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove Recipient */
+        delete: operations["remove_recipient_api_mail_recipients__recipient_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mail/recipients/{recipient_id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Send Test */
+        post: operations["send_test_api_mail_recipients__recipient_id__test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mail/schedule": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Schedule */
+        put: operations["put_schedule_api_mail_schedule_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/preview.mjpg": {
         parameters: {
             query?: never;
@@ -734,6 +854,130 @@ export interface components {
             password: string;
             /** Username */
             username: string;
+        };
+        /** MailAddressBody */
+        MailAddressBody: {
+            /** Address */
+            address: string;
+        };
+        /**
+         * MailKeyBody
+         * @description A secret never shows in a log line or a traceback: ``SecretStr`` prints as stars.
+         */
+        MailKeyBody: {
+            /**
+             * Key
+             * Format: password
+             */
+            key: string;
+        };
+        /** MailPreview */
+        MailPreview: {
+            /** Html */
+            html: string;
+            /** Subject */
+            subject: string;
+            /** Text */
+            text: string;
+        };
+        /** MailRecipientOut */
+        MailRecipientOut: {
+            /** Added At */
+            added_at: number;
+            /** Address */
+            address: string;
+            /** Id */
+            id: number;
+            /** Last At */
+            last_at: number | null;
+            /** Last Detail */
+            last_detail: string | null;
+            /** Last Kind */
+            last_kind: ("daily" | "test") | null;
+            /** Last Status */
+            last_status: ("sent" | "failed" | "retrying") | null;
+        };
+        /**
+         * MailScheduleBody
+         * @description When the email goes and who it is from. A PUT gives every member: a client that does not
+         *     know one cannot reset it by leaving it out. Checked in full by ``MailSchedule``.
+         */
+        MailScheduleBody: {
+            /** Days */
+            days: number[];
+            /** Enabled */
+            enabled: boolean;
+            /** Link Url */
+            link_url: string;
+            /** Sender Address */
+            sender_address: string;
+            /** Sender Name */
+            sender_name: string;
+            /** Time */
+            time: string;
+        };
+        /**
+         * MailSendOut
+         * @description One scheduled mail, for the list of what was sent.
+         */
+        MailSendOut: {
+            /** Cancelled */
+            cancelled: number;
+            /** Failed */
+            failed: number;
+            /** Id */
+            id: number;
+            /** Note */
+            note: string | null;
+            /** Pending */
+            pending: number;
+            /** Period End */
+            period_end: number;
+            /** Period Start */
+            period_start: number;
+            /** Scheduled At */
+            scheduled_at: number;
+            /** Sent */
+            sent: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "sending" | "done" | "skipped";
+            /** Subject */
+            subject: string;
+        };
+        /** MailState */
+        MailState: {
+            /** Key Set */
+            key_set: boolean;
+            /** Max Recipients */
+            max_recipients: number;
+            /** Next At */
+            next_at: number | null;
+            /** Problems */
+            problems: string[];
+            /** Ready */
+            ready: boolean;
+            /** Recent */
+            recent: components["schemas"]["MailSendOut"][];
+            /** Recipients */
+            recipients: components["schemas"]["MailRecipientOut"][];
+            schedule: components["schemas"]["MailScheduleBody"];
+            /** Timezone */
+            timezone: string;
+            /**
+             * Transport
+             * @enum {string}
+             */
+            transport: "resend" | "file";
+        };
+        /** MailTestResult */
+        MailTestResult: {
+            /** Detail */
+            detail: string;
+            /** Ok */
+            ok: boolean;
         };
         /** Me */
         Me: {
@@ -1489,6 +1733,227 @@ export interface operations {
                     "application/json": {
                         [key: string]: string;
                     };
+                };
+            };
+        };
+    };
+    get_state_api_mail_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailState"];
+                };
+            };
+        };
+    };
+    put_key_api_mail_key_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MailKeyBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_key_api_mail_key_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailState"];
+                };
+            };
+        };
+    };
+    preview_api_mail_preview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailPreview"];
+                };
+            };
+        };
+    };
+    add_recipient_api_mail_recipients_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MailAddressBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_recipient_api_mail_recipients__recipient_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                recipient_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    send_test_api_mail_recipients__recipient_id__test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                recipient_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailTestResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_schedule_api_mail_schedule_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MailScheduleBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

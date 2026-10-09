@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 
 from trafficpi.core.evidence_settings import MAX_CLIP_HOURS, MAX_MAX_MB, MIN_MAX_MB
 from trafficpi.core.evidence_settings import MAX_KEEP_DAYS as MAX_EVIDENCE_DAYS
@@ -429,3 +429,78 @@ class StatusResponse(BaseModel):
     events_total: int
     now_ms: int
     timezone: str
+
+
+# --- the daily email (plan.md D32) --------------------------------------------------------------
+
+
+class MailScheduleBody(BaseModel):
+    """When the email goes and who it is from. A PUT gives every member: a client that does not
+    know one cannot reset it by leaving it out. Checked in full by ``MailSchedule``."""
+
+    enabled: bool = Field(strict=True)
+    time: str  # HH:MM in the dashboard's time zone
+    days: list[Annotated[int, Field(strict=True)]]  # Monday 0 to Sunday 6
+    sender_name: str
+    sender_address: str
+    link_url: str  # empty for no link
+
+
+class MailRecipientOut(BaseModel):
+    id: int
+    address: str
+    added_at: int  # ms since the epoch
+    last_at: int | None  # the last try with this address, a daily mail or a test
+    last_kind: Literal["daily", "test"] | None
+    last_status: Literal["sent", "failed", "retrying"] | None
+    last_detail: str | None  # why it did not get through, in the provider's words
+
+
+class MailSendOut(BaseModel):
+    """One scheduled mail, for the list of what was sent."""
+
+    id: int
+    scheduled_at: int  # ms: the time it was for
+    period_start: int
+    period_end: int
+    status: Literal["sending", "done", "skipped"]
+    note: str | None  # why it was skipped
+    subject: str
+    sent: int
+    failed: int
+    pending: int
+    cancelled: int
+
+
+class MailState(BaseModel):
+    schedule: MailScheduleBody
+    recipients: list[MailRecipientOut]
+    key_set: bool  # whether a provider key is stored: the key itself is never given out
+    transport: Literal["resend", "file"]  # "file" writes mails to a folder instead (demo)
+    ready: bool  # switched on, and nothing is missing
+    problems: list[str]  # what is missing before it can send, in words
+    next_at: int | None  # ms: the next scheduled time, when it is on
+    timezone: str
+    recent: list[MailSendOut]  # the latest scheduled mails, newest first
+    max_recipients: int
+
+
+class MailAddressBody(BaseModel):
+    address: str = Field(max_length=300)
+
+
+class MailKeyBody(BaseModel):
+    """A secret never shows in a log line or a traceback: ``SecretStr`` prints as stars."""
+
+    key: SecretStr
+
+
+class MailTestResult(BaseModel):
+    ok: bool
+    detail: str  # the reason, when it did not get through
+
+
+class MailPreview(BaseModel):
+    subject: str
+    text: str
+    html: str

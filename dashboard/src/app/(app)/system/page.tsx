@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { DriftCard } from "@/components/drift-card";
 import { HealthCard } from "@/components/health-card";
+import { MailSummary } from "@/components/mail-summary";
 import { SystemCard } from "@/components/system-card";
 
 export const metadata: Metadata = { title: "System" };
@@ -12,6 +13,7 @@ export default function SystemPage() {
       <SystemCard />
       <HealthCard />
       <DriftCard />
+      <MailSummary />
     </div>
   );
 }

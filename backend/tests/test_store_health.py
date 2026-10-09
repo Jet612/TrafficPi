@@ -70,3 +70,9 @@ def test_health_belongs_to_a_camera(store: Store) -> None:
     assert other.health_between(0, 10**9) == []
     assert other.delete_health_before(10**9, limit=100) == 0
     assert len(store.health_between(0, 10**9)) == 1
+
+
+def test_the_first_minute_ever_recorded_is_known_for_the_daily_email(store: Store) -> None:
+    assert store.first_health_s() is None
+    store.add_health([row(300), row(120), row(180)])
+    assert store.first_health_s() == 120

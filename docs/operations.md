@@ -8,7 +8,7 @@ What to look at, what to do when it needs attention, and how the pieces look aft
 |---|---|
 | The dashboard and its API | `trafficpi-api.service`, port 8000 on every address of the Pi |
 | The camera, the accelerator, the counting | `trafficpi-vision.service`, port 8001 on `127.0.0.1` only (the API is its public door) |
-| The database, pictures, clips, session key | `backend/data` (`$TRAFFICPI_DATA_DIR` if you set one), readable by your user only |
+| The database, pictures, clips, session key, the email provider's key | `backend/data` (`$TRAFFICPI_DATA_DIR` if you set one), readable by your user only |
 | The log | the journal: `journalctl -u trafficpi-vision -u trafficpi-api` (kept across reboots, 256 MB or a month) |
 | The nightly backup, if you chose one | `trafficpi-backup.timer`, archives in `backend/data/backups` |
 | The daily reboot, if you chose one | `trafficpi-reboot.timer` |
@@ -41,9 +41,39 @@ A camera that stops delivering frames is dealt with inside the service, which re
 
 If you installed with `--reboot-at 03:00` the Pi reboots at that local time every day (unless it came up less than ten minutes before). Nothing is counted for about a minute. Because the journal is kept on the disk, `journalctl -b -1` shows how the last boot ended. Turn it off with `scripts/install_services.sh --reboot-off`.
 
+## The daily email
+
+TrafficPi can email a short report every day: how many vehicles **did not stop**, rolled through and stopped at the stop signs since the last report, the stop rate, the busiest hour and the vehicles counted, with a line when the camera was away for part of the time (so that a quiet day is not read as a safe one). The did-not-stop number is the headline, with the figure for the same length of time before it beside it. The numbers are the Data page's, so the two cannot disagree. **It is off until you set it up**: Setup page, "Daily email".
+
+### Setting it up
+
+1. **A Resend account** ([resend.com](https://resend.com); the free plan is enough for a few readers: 100 mails a day and 3,000 a month, each recipient counting as one, and one domain. Check their pricing page, it changes). Resend only sends from a domain you own and have proved it; its test sender delivers to the address the account was opened with and to nobody else.
+2. **A domain**: in Resend, *Domains*, *Add Domain*. Use a **subdomain** such as `mail.yourdomain.com`, so that this mail never touches the mail of your main domain. Resend shows a few DNS records (SPF and DKIM; DMARC is optional): add them where your domain's DNS is managed, and wait until Resend says "Verified" (minutes, sometimes hours).
+3. **An API key**: *API Keys*, *Create*, with the permission **Sending access**, limited to that domain. Copy it: Resend shows it once.
+4. **In the dashboard**: Setup page, *Daily email*. Paste the key into "Resend API key" (or, on the Pi, run `backend/.venv/bin/trafficpi-admin set-mail-key`, which asks for it without showing it, so that it is not left in the shell history). Put a **sender address** on the verified domain (for example `report@mail.yourdomain.com`; any other address is refused), choose the time and the days, add the recipients, press **Send a test** next to your own address, and look in that inbox (and the spam folder). When it arrives, switch "Send the daily email" on and save.
+
+**The key** is kept in `backend/data/mail.key`, readable by your user only, and nowhere else: it is not in the database, it is never shown again (not even in the dashboard), never written to a log, and goes to Resend and nowhere else. It is in the backups, which are private too. To change it, paste a new one; "Remove the key" deletes the file.
+
+### What it does
+
+- **When.** At the time you set, by the clock of the dashboard's time zone, on the days you tick. Each mail covers the time since the previous one: 24 hours on every day (23 or 25 on the days the clocks change), and the Monday mail of a weekdays-only schedule covers the weekend as well. The mail says exactly which stretch it covers. A change of the time or the days applies at the next look (every 30 seconds); nothing needs restarting. Switching it on after today's time has passed does not send today's mail: the first one is the next scheduled time.
+- **If the Pi was off.** A mail that is due while the Pi is off or rebooting is sent when it is next up, if that is less than 6 hours late; after that it is skipped, and the Setup and System pages say so ("Not sent: the Pi was not running at the scheduled time"). A scheduled time that falls in the minute of the nightly reboot is simply sent when the Pi is back.
+- **Who.** Up to 20 addresses; each gets **its own copy**, so nobody sees the others, and one that is refused fails alone. The same address added twice is one recipient. Each address shows how its last mail (or test) went, with the reason if it did not get through. Removing an address removes its history with it.
+- **Once each.** Every copy has its own key for Resend, and each copy is claimed before it is sent, so a restart of the API in the middle of a send gives every recipient their mail once (Resend drops a repeat that carries the same key, for 24 hours).
+- **When it does not get through.** A network failure, a rate limit or Resend's own trouble is tried again after 1, 5 and 15 minutes and then given up on. A refusal is not tried again, and Resend's reason is shown next to the address. The usual ones: *the domain is not verified* or *you can only send testing emails to your own address* (verify the domain, and send from an address on it); *API key is invalid* (paste it again); *daily quota exceeded* (the free plan allows 100 a day; it resets at midnight UTC).
+- **Where to look.** The System page has a "Daily email" card (on or off, the next time, how the latest mail went), and the journal says what each look did: `journalctl -u trafficpi-api | grep -i "daily email"`.
+
+### What leaves this machine
+
+The recipients' addresses and the numbers in the report go to Resend, a third party, which delivers them; Resend's own privacy terms apply to what it holds. **No picture, clip or path is ever attached or linked**, and the HTML mail loads nothing when it is opened. The only address in it is the dashboard's, and only if you fill one in ("Link to this dashboard"); a Pi's own address works at home only, a tunnel's address works anywhere. Remove a recipient, or the key, and nothing more goes to them or to Resend.
+
+### Looking before sending
+
+`backend/.venv/bin/trafficpi-admin digest` prints what the mail would say now (for the past 24 hours) and sends nothing; `--html FILE` also writes the HTML to open in a browser. The same preview is the "Preview the mail" button on the card. To try the card without a provider at all, run the API with `--mail-transport file` (or `TRAFFICPI_MAIL_TRANSPORT=file`): each mail is then written to `outbox/` in the data directory (an `.html` to open in a browser and a `.txt` with the headers), no key is asked for, and an address that starts with `fail@` is refused so that a failure can be seen. That is what the demo and the browser test use.
+
 ## Backups
 
-A backup is one file, `trafficpi-backup-YYYYMMDD-HHMMSS.tar.gz`, holding a consistent copy of the database (taken while the services run), the session key, the reference picture and, if you ask, the pictures and clips. **It holds your password hash and the key that signs sessions: keep it private.**
+A backup is one file, `trafficpi-backup-YYYYMMDD-HHMMSS.tar.gz`, holding a consistent copy of the database (taken while the services run), the session key, the email provider's key if you set one, the reference picture and, if you ask, the pictures and clips. **It holds your password hash, the key that signs sessions and the email provider's key: keep it private.**
 
 ```
 backend/.venv/bin/trafficpi-admin backup                     # into backend/data/backups

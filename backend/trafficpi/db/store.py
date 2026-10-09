@@ -133,6 +133,14 @@ class Store:
         with self._sessions() as session, session.begin():
             yield session
 
+    @contextmanager
+    def transaction(self) -> Iterator[Session]:
+        """One short transaction on this store's database, for a module that keeps tables of its own
+        (the daily email's, ``db/mail_store.py``): committed when the block ends, undone if it
+        raises."""
+        with self._session() as session:
+            yield session
+
     # --- cameras ---------------------------------------------------------------------------
 
     def ensure_camera(self, name: str = "Camera", *, now_ms: int | None = None) -> None:
@@ -606,6 +614,15 @@ class Store:
                 .select_from(HealthSample)
                 .where(HealthSample.camera_id == self.camera_id)
             ).scalar_one()
+
+    def first_health_s(self) -> int | None:
+        """The earliest minute with a health row, in seconds since the epoch; None if none yet."""
+        with self._session() as s:
+            return s.execute(
+                select(func.min(HealthSample.minute_start)).where(
+                    HealthSample.camera_id == self.camera_id
+                )
+            ).scalar_one_or_none()
 
     def health_between(self, from_s: int, to_s: int) -> list[HealthRow]:
         """The minutes that began from ``from_s`` up to ``to_s`` (not included), oldest first."""

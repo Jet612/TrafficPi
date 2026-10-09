@@ -143,6 +143,39 @@ def test_main_serves_the_app_without_trusting_proxy_headers_by_default(
     assert served["app"].state.ctx.settings.data_dir == tmp_path
 
 
+def test_the_service_looks_at_the_daily_email_every_half_minute(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    given: dict[str, Any] = {}
+    real = cli.create_app
+
+    def spy(settings: ApiSettings, **kwargs: Any) -> Any:
+        given.update(kwargs)
+        return real(settings, **kwargs)
+
+    monkeypatch.setattr(cli, "create_app", spy)
+    monkeypatch.setattr(cli.Server, "run", lambda server: None)
+    assert cli.main(["--data-dir", str(tmp_path), "--host", "127.0.0.1"]) == 0
+    assert given["mail_tick_s"] == 30.0
+
+
+def test_the_daily_email_goes_out_through_resend_unless_a_flag_or_the_environment_says_file(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("TRAFFICPI_MAIL_TRANSPORT", raising=False)
+    parser = cli.build_parser()
+    assert cli.settings_from(parser.parse_args([])).mail_transport == "resend"
+    assert (
+        cli.settings_from(parser.parse_args(["--mail-transport", "file"])).mail_transport == "file"
+    )
+    monkeypatch.setenv("TRAFFICPI_MAIL_TRANSPORT", "file")
+    assert cli.settings_from(parser.parse_args([])).mail_transport == "file"
+    flags = ["--mail-transport", "resend"]
+    assert cli.settings_from(parser.parse_args(flags)).mail_transport == "resend"  # the flag wins
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--mail-transport", "carrier-pigeon"])
+
+
 def test_a_shutdown_signal_tells_the_app_to_end_its_streams(tmp_path: Path) -> None:
     import signal
 

@@ -39,6 +39,25 @@ class Period:
     all_time: bool
 
 
+def window_period(
+    start_ms: int, end_ms: int, tz: ZoneInfo, previous_start_ms: int | None = None
+) -> Period:
+    """Any stretch of time ``[start_ms, end_ms)`` as a ``Period``, for sums over something other
+    than whole local days: the daily email's period runs from one scheduled time to the next
+    (plan.md D32). ``days`` counts the local dates it touches, which the per-day sums run over."""
+    first = datetime.fromtimestamp(start_ms / 1000, tz).date()
+    last = datetime.fromtimestamp(max(start_ms, end_ms - 1) / 1000, tz).date()
+    return Period(
+        days=(last - first).days + 1,
+        first_day=first,
+        today=last,
+        start_ms=start_ms,
+        end_ms=end_ms,
+        previous_start_ms=previous_start_ms,
+        all_time=False,
+    )
+
+
 def local_midnight_ms(day: date, tz: ZoneInfo) -> int:
     """The instant a local day begins, in ms since the epoch."""
     return int(datetime.combine(day, time.min, tzinfo=tz).timestamp()) * 1000

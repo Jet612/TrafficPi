@@ -1,6 +1,10 @@
 import type {
   AuthState,
   EventOut,
+  MailPreview,
+  MailSchedule,
+  MailState,
+  MailTestResult,
   Me,
   Profile,
   ProfileCheck,
@@ -60,7 +64,7 @@ export async function errorMessage(response: Response): Promise<string> {
 }
 
 async function request<T>(
-  method: "GET" | "POST" | "PUT",
+  method: "GET" | "POST" | "PUT" | "DELETE",
   path: string,
   body?: unknown,
   signal?: AbortSignal,
@@ -155,6 +159,19 @@ export const api = {
   settings: (signal?: AbortSignal) => request<Settings>("GET", "/api/settings", undefined, signal),
   /** Every member of the settings, which replace what is stored. */
   saveSettings: (settings: Settings) => request<Settings>("PUT", "/api/settings", settings),
+  /** The daily email (plan.md D32): when it goes, to whom, whether a key is stored (never the key), and how the latest mails went. */
+  mail: (signal?: AbortSignal) => request<MailState>("GET", "/api/mail", undefined, signal),
+  /** Every member of the schedule, which replace what is stored; the new state comes back. */
+  saveMailSchedule: (schedule: MailSchedule) => request<MailState>("PUT", "/api/mail/schedule", schedule),
+  addMailRecipient: (address: string) => request<MailState>("POST", "/api/mail/recipients", { address }),
+  removeMailRecipient: (id: number) => request<MailState>("DELETE", `/api/mail/recipients/${id}`),
+  /** Send a test mail to one recipient now; says whether it got through, and why not if it did not. */
+  testMail: (id: number) => request<MailTestResult>("POST", `/api/mail/recipients/${id}/test`),
+  /** The provider's key: write-only. It is sent once, kept on the Pi, and never given back. */
+  setMailKey: (key: string) => request<MailState>("PUT", "/api/mail/key", { key }),
+  removeMailKey: () => request<MailState>("DELETE", "/api/mail/key"),
+  /** The mail as it would be made now, for the past 24 hours. Nothing is sent. */
+  mailPreview: (signal?: AbortSignal) => request<MailPreview>("GET", "/api/mail/preview", undefined, signal),
   /** A local day ("2026-10-09"; today where the camera is, if none) by the hour: when trails began. */
   trailsDay: (day?: string, signal?: AbortSignal) =>
     request<TrailDay>("GET", day === undefined ? "/api/trails/day" : `/api/trails/day?day=${encodeURIComponent(day)}`, undefined, signal),

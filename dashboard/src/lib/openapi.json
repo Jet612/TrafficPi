@@ -718,6 +718,352 @@
         "title": "LoginRequest",
         "type": "object"
       },
+      "MailAddressBody": {
+        "properties": {
+          "address": {
+            "maxLength": 300,
+            "title": "Address",
+            "type": "string"
+          }
+        },
+        "required": [
+          "address"
+        ],
+        "title": "MailAddressBody",
+        "type": "object"
+      },
+      "MailKeyBody": {
+        "description": "A secret never shows in a log line or a traceback: ``SecretStr`` prints as stars.",
+        "properties": {
+          "key": {
+            "format": "password",
+            "title": "Key",
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "key"
+        ],
+        "title": "MailKeyBody",
+        "type": "object"
+      },
+      "MailPreview": {
+        "properties": {
+          "html": {
+            "title": "Html",
+            "type": "string"
+          },
+          "subject": {
+            "title": "Subject",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "subject",
+          "text",
+          "html"
+        ],
+        "title": "MailPreview",
+        "type": "object"
+      },
+      "MailRecipientOut": {
+        "properties": {
+          "added_at": {
+            "title": "Added At",
+            "type": "integer"
+          },
+          "address": {
+            "title": "Address",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "last_at": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last At"
+          },
+          "last_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Detail"
+          },
+          "last_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "daily",
+                  "test"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Kind"
+          },
+          "last_status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "sent",
+                  "failed",
+                  "retrying"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Status"
+          }
+        },
+        "required": [
+          "id",
+          "address",
+          "added_at",
+          "last_at",
+          "last_kind",
+          "last_status",
+          "last_detail"
+        ],
+        "title": "MailRecipientOut",
+        "type": "object"
+      },
+      "MailScheduleBody": {
+        "description": "When the email goes and who it is from. A PUT gives every member: a client that does not\nknow one cannot reset it by leaving it out. Checked in full by ``MailSchedule``.",
+        "properties": {
+          "days": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Days",
+            "type": "array"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "link_url": {
+            "title": "Link Url",
+            "type": "string"
+          },
+          "sender_address": {
+            "title": "Sender Address",
+            "type": "string"
+          },
+          "sender_name": {
+            "title": "Sender Name",
+            "type": "string"
+          },
+          "time": {
+            "title": "Time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "enabled",
+          "time",
+          "days",
+          "sender_name",
+          "sender_address",
+          "link_url"
+        ],
+        "title": "MailScheduleBody",
+        "type": "object"
+      },
+      "MailSendOut": {
+        "description": "One scheduled mail, for the list of what was sent.",
+        "properties": {
+          "cancelled": {
+            "title": "Cancelled",
+            "type": "integer"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "pending": {
+            "title": "Pending",
+            "type": "integer"
+          },
+          "period_end": {
+            "title": "Period End",
+            "type": "integer"
+          },
+          "period_start": {
+            "title": "Period Start",
+            "type": "integer"
+          },
+          "scheduled_at": {
+            "title": "Scheduled At",
+            "type": "integer"
+          },
+          "sent": {
+            "title": "Sent",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "sending",
+              "done",
+              "skipped"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "subject": {
+            "title": "Subject",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "scheduled_at",
+          "period_start",
+          "period_end",
+          "status",
+          "note",
+          "subject",
+          "sent",
+          "failed",
+          "pending",
+          "cancelled"
+        ],
+        "title": "MailSendOut",
+        "type": "object"
+      },
+      "MailState": {
+        "properties": {
+          "key_set": {
+            "title": "Key Set",
+            "type": "boolean"
+          },
+          "max_recipients": {
+            "title": "Max Recipients",
+            "type": "integer"
+          },
+          "next_at": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next At"
+          },
+          "problems": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Problems",
+            "type": "array"
+          },
+          "ready": {
+            "title": "Ready",
+            "type": "boolean"
+          },
+          "recent": {
+            "items": {
+              "$ref": "#/components/schemas/MailSendOut"
+            },
+            "title": "Recent",
+            "type": "array"
+          },
+          "recipients": {
+            "items": {
+              "$ref": "#/components/schemas/MailRecipientOut"
+            },
+            "title": "Recipients",
+            "type": "array"
+          },
+          "schedule": {
+            "$ref": "#/components/schemas/MailScheduleBody"
+          },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          },
+          "transport": {
+            "enum": [
+              "resend",
+              "file"
+            ],
+            "title": "Transport",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schedule",
+          "recipients",
+          "key_set",
+          "transport",
+          "ready",
+          "problems",
+          "next_at",
+          "timezone",
+          "recent",
+          "max_recipients"
+        ],
+        "title": "MailState",
+        "type": "object"
+      },
+      "MailTestResult": {
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok",
+          "detail"
+        ],
+        "title": "MailTestResult",
+        "type": "object"
+      },
       "Me": {
         "properties": {
           "live_video": {
@@ -2571,6 +2917,250 @@
           }
         },
         "summary": "Health"
+      }
+    },
+    "/api/mail": {
+      "get": {
+        "operationId": "get_state_api_mail_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MailState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get State"
+      }
+    },
+    "/api/mail/key": {
+      "delete": {
+        "operationId": "delete_key_api_mail_key_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MailState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Delete Key"
+      },
+      "put": {
+        "operationId": "put_key_api_mail_key_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MailKeyBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MailState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Key"
+      }
+    },
+    "/api/mail/preview": {
+      "get": {
+        "operationId": "preview_api_mail_preview_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MailPreview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Preview"
+      }
+    },
+    "/api/mail/recipients": {
+      "post": {
+        "operationId": "add_recipient_api_mail_recipients_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MailAddressBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MailState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Recipient"
+      }
+    },
+    "/api/mail/recipients/{recipient_id}": {
+      "delete": {
+        "operationId": "remove_recipient_api_mail_recipients__recipient_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "recipient_id",
+            "required": true,
+            "schema": {
+              "title": "Recipient Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MailState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Recipient"
+      }
+    },
+    "/api/mail/recipients/{recipient_id}/test": {
+      "post": {
+        "operationId": "send_test_api_mail_recipients__recipient_id__test_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "recipient_id",
+            "required": true,
+            "schema": {
+              "title": "Recipient Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MailTestResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Send Test"
+      }
+    },
+    "/api/mail/schedule": {
+      "put": {
+        "operationId": "put_schedule_api_mail_schedule_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MailScheduleBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MailState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Schedule"
       }
     },
     "/api/preview.mjpg": {

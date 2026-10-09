@@ -11,7 +11,11 @@ from trafficpi.api import backup
 from trafficpi.api.auth import MIN_PASSWORD_LENGTH, hash_password, normalize_username
 from trafficpi.api.settings import ApiSettings
 from trafficpi.core.paths import DATA_DIR_HELP
+from trafficpi.db.mail_store import MailStore
 from trafficpi.db.store import open_store
+from trafficpi.mail.mailer import MailMessage, SendOutcome
+from trafficpi.mail.service import MailService
+from trafficpi.mail.settings import clean_key, clear_key, write_key
 
 
 def _read_password(from_stdin: bool) -> str:
@@ -40,6 +44,58 @@ def cmd_set_password(args: argparse.Namespace) -> int:
     else:
         store.create_user(username, password_hash)
         print(f"created user {username!r}")
+    return 0
+
+
+def _read_key(from_stdin: bool) -> str:
+    if from_stdin:
+        return sys.stdin.readline().rstrip("\r\n")
+    if not sys.stdin.isatty():
+        raise RuntimeError("no terminal to ask on; pipe the key and use --key-stdin")
+    return getpass.getpass("Resend API key (not shown): ")
+
+
+def cmd_set_mail_key(args: argparse.Namespace) -> int:
+    """Keep the email provider's key (asked for, so that it is not in the shell history), or take
+    it away. It is read from its file at every mail: nothing needs restarting."""
+    path = args.data_dir / "mail.key"
+    if args.remove:
+        clear_key(path)
+        print("removed the email provider's key")
+        return 0
+    try:
+        key = clean_key(_read_key(args.key_stdin))
+    except ValueError as exc:
+        raise RuntimeError(str(exc)) from None  # the message never repeats what was typed
+    write_key(path, key)
+    print(f"kept the key in {path} (readable by you only); the API uses it from the next mail")
+    return 0
+
+
+class _NeverSends:
+    """What ``digest`` hands the mail service in place of a sender: it only builds the mail."""
+
+    name = "none"
+
+    def ready(self) -> bool:
+        return True
+
+    def send(self, message: MailMessage) -> SendOutcome:
+        raise AssertionError("the digest command never sends")
+
+
+def cmd_digest(args: argparse.Namespace) -> int:
+    """Print what the daily email would say now (the past 24 hours); nothing is sent."""
+    store = open_store(args.data_dir)
+    try:
+        digest = MailService(store, MailStore(store), _NeverSends()).preview()
+    finally:
+        store.close()
+    print(f"Subject: {digest.subject}\n\n{digest.text}", end="")
+    if args.html is not None:
+        args.html.write_text(digest.html, encoding="utf-8")
+        args.html.chmod(0o600)
+        print(f"\n(the HTML version is in {args.html}; open it in a browser)")
     return 0
 
 
@@ -149,6 +205,29 @@ def build_parser() -> argparse.ArgumentParser:
     )
     rs.add_argument("archive", type=Path, help="a backup made by `trafficpi-admin backup`")
     rs.set_defaults(func=cmd_restore)
+
+    mk = sub.add_parser(
+        "set-mail-key",
+        help="keep the daily email's provider key (Resend), asked for without echo",
+        description="The key goes into mail.key beside the database, readable by you only, and "
+        "is never shown, logged or sent anywhere but the provider.",
+    )
+    mk.add_argument(
+        "--key-stdin",
+        action="store_true",
+        help="read the key from the first line of standard input instead of asking",
+    )
+    mk.add_argument("--remove", action="store_true", help="remove the stored key instead")
+    mk.set_defaults(func=cmd_set_mail_key)
+
+    dg = sub.add_parser(
+        "digest",
+        help="print what the daily email would say now (it never sends anything)",
+        description="Builds the mail for the past 24 hours from the database and prints it. "
+        "Nothing is sent and nothing is kept.",
+    )
+    dg.add_argument("--html", type=Path, help="also write the HTML version to this file")
+    dg.set_defaults(func=cmd_digest)
     return parser
 
 
