@@ -22,6 +22,7 @@ os.environ.setdefault("HAILORT_LOGGER_PATH", "NONE")
 
 from trafficpi.core.clock import resolve_timezone
 from trafficpi.core.coco import TRAFFIC_CLASS_IDS
+from trafficpi.core.notify import Heartbeat, notify, watchdog_period
 from trafficpi.core.paths import DATA_DIR_HELP, default_data_dir
 from trafficpi.core.profile import ProfileError
 from trafficpi.core.types import Detection
@@ -506,6 +507,16 @@ def cmd_run(args: argparse.Namespace) -> int:
     server = ServerThread(
         create_server_app(service, snapshot=snapshot), host=args.host, port=args.port
     )
+    # Under systemd (Type=notify, WatchdogSec=) the service says when it is up and, while its
+    # camera loop moves, that it is alive; a loop stuck in a call that never returns stops the
+    # messages and systemd restarts the service (plan.md D27). By hand none of this sends anything.
+    period = watchdog_period()
+    heartbeat = Heartbeat(
+        service.alive,
+        period=period,
+        status=service.status_line,
+        tick=min(1.0, period / 4) if period else 1.0,
+    )
     try:
         server.start()
         log.info(
@@ -515,8 +526,11 @@ def cmd_run(args: argparse.Namespace) -> int:
             args.host,
             args.port,
         )
+        notify("READY=1")
+        heartbeat.start()
         service.run(args.stop)
     finally:
+        heartbeat.stop()
         server.stop()
         store.close()
         detector.close()  # for the accelerator this only lets go of our reference (see its close)

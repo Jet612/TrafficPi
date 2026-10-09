@@ -3,17 +3,21 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import dataclasses
 import logging
+import socket
 import sys
 from pathlib import Path
 from types import FrameType
 
 import uvicorn
 from fastapi import FastAPI
+from starlette.concurrency import run_in_threadpool
 
 from trafficpi.api.app import create_app
 from trafficpi.api.settings import ApiSettings, normalize_origin
+from trafficpi.core.notify import notify, watchdog_period
 from trafficpi.core.paths import DATA_DIR_HELP
 
 log = logging.getLogger("trafficpi.api")
@@ -63,19 +67,51 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 class Server(uvicorn.Server):
-    """A uvicorn server that tells the app when shutdown starts.
+    """A uvicorn server that tells the app when shutdown starts, and tells systemd it is alive.
 
     Browsers keep the preview stream and the live socket open for as long as the dashboard is
     showing; the app ends them on this signal instead of making shutdown wait for them.
+
+    Under systemd (Type=notify, WatchdogSec=) it says READY=1 once it listens, and while it still
+    answers it sends WATCHDOG=1 (plan.md D27): a server whose event loop is blocked, or whose
+    thread pool is used up so that no request that touches the database can run, goes quiet and
+    is restarted. By hand none of this sends anything.
     """
 
     def __init__(self, config: uvicorn.Config, app: FastAPI) -> None:
         super().__init__(config)
         self._app = app
+        self._heartbeat: asyncio.Task[None] | None = None
 
     def handle_exit(self, sig: int, frame: FrameType | None) -> None:
         self._app.state.ctx.stopping.set()
         super().handle_exit(sig, frame)
+
+    async def startup(self, sockets: list[socket.socket] | None = None) -> None:
+        await super().startup(sockets=sockets)
+        if self.started:
+            notify("READY=1")
+            period = watchdog_period()
+            if period is not None:
+                self._heartbeat = asyncio.create_task(self._keep_alive(period))
+
+    async def shutdown(self, sockets: list[socket.socket] | None = None) -> None:
+        if self._heartbeat is not None:
+            self._heartbeat.cancel()
+        await super().shutdown(sockets=sockets)
+
+    async def _keep_alive(self, period: float) -> None:
+        """Send WATCHDOG=1 every ``period`` seconds, if a worker thread can still be had."""
+        while True:
+            await asyncio.sleep(period)
+            try:
+                # What any blocking endpoint needs first: the loop is running (this ran), and a
+                # thread of the pool takes a job and gives it back.
+                await asyncio.wait_for(run_in_threadpool(lambda: None), timeout=period)
+            except TimeoutError:
+                log.error("no worker thread answers; not telling the watchdog")
+                continue
+            notify("WATCHDOG=1")
 
 
 def settings_from(args: argparse.Namespace) -> ApiSettings:

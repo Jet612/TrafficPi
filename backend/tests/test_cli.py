@@ -1,4 +1,5 @@
 import argparse
+import contextlib
 import os
 import shutil
 import socket
@@ -278,3 +279,37 @@ def test_demo_and_replay_cannot_be_combined(capsys: pytest.CaptureFixture[str]) 
         cli.build_parser().parse_args(["run", "--demo", "--replay", "clip.mp4"])
     assert refused.value.code == 2
     assert "not allowed with" in capsys.readouterr().err
+
+
+def test_run_tells_systemd_it_is_ready_and_keeps_the_watchdog_fed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Under Type=notify with WatchdogSec the service must say READY=1 once it is up, then ping
+    for as long as its camera loop moves, and keep systemd's status line current (D27)."""
+    monkeypatch.setattr(cli, "_make_detector", lambda args: pytest.fail("the demo needs none"))
+    monkeypatch.setenv("TRAFFICPI_DATA_DIR", str(tmp_path / "data"))
+    systemd = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+    systemd.bind(str(tmp_path / "notify"))
+    systemd.settimeout(0.2)
+    monkeypatch.setenv("NOTIFY_SOCKET", str(tmp_path / "notify"))
+    monkeypatch.setenv("WATCHDOG_USEC", "800000")  # 0.8 s: a ping every 0.4 s
+    port = free_port()
+    thread, stop, result = run_in_thread(["run", "--demo", "--port", str(port)])
+    messages: list[str] = []
+    try:
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline and not (
+            "READY=1" in messages
+            and messages.count("WATCHDOG=1") >= 3
+            and any(m.startswith("STATUS=counting at") for m in messages)
+        ):
+            with contextlib.suppress(TimeoutError):
+                messages.append(systemd.recv(4096).decode())
+        assert "READY=1" in messages[:2]  # first, or just after the status line
+        assert messages.count("WATCHDOG=1") >= 3, messages
+        assert any(m.startswith("STATUS=counting at") and "fps" in m for m in messages), messages
+    finally:
+        stop.request()
+        thread.join(timeout=20)
+        systemd.close()
+    assert result == [0]

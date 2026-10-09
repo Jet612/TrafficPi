@@ -1,4 +1,9 @@
+import asyncio
+import contextlib
 import io
+import socket
+import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -186,3 +191,87 @@ def test_the_environment_can_do_the_same_so_that_a_unit_needs_no_new_command_lin
     assert settings.trusted_proxies == ("127.0.0.1", "::1", "10.1.1.1", "10.2.2.2")
     monkeypatch.setenv("TRAFFICPI_TRUST_PROXY_HEADERS", "yes")  # only "1" switches it on
     assert settings_for().trust_proxy_headers is False
+
+
+# --- telling systemd it is up, and that it still answers (plan.md D27) ---------------------------
+
+
+def serve_in_thread(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, **env: str
+) -> tuple[threading.Thread, cli.Server, socket.socket]:
+    """The real API server under uvicorn, with a fake systemd to listen to it."""
+    systemd = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+    systemd.bind(str(tmp_path / "notify"))
+    systemd.settimeout(0.2)
+    monkeypatch.setenv("NOTIFY_SOCKET", str(tmp_path / "notify"))
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    app = create_app(ApiSettings(data_dir=tmp_path / "data", dashboard_dir=None))
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
+    server = cli.Server(config, app)
+    thread = threading.Thread(target=server.run)
+    thread.start()
+    return thread, server, systemd
+
+
+def messages_until(systemd: socket.socket, done, seconds: float = 20) -> list[str]:  # type: ignore[no-untyped-def]
+    got: list[str] = []
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline and not done(got):
+        with contextlib.suppress(TimeoutError):
+            got.append(systemd.recv(4096).decode())
+    return got
+
+
+def test_the_api_says_ready_once_it_listens_and_then_keeps_the_watchdog_fed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    thread, server, systemd = serve_in_thread(tmp_path, monkeypatch, WATCHDOG_USEC="600000")
+    try:
+        got = messages_until(systemd, lambda m: m.count("WATCHDOG=1") >= 3)
+        assert got[0].startswith("READY=1")  # the first message, and nothing before it
+        assert got.count("WATCHDOG=1") >= 3
+    finally:
+        server.should_exit = True
+        thread.join(20)
+        systemd.close()
+
+
+def test_the_api_without_a_watchdog_limit_says_ready_and_nothing_more(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("WATCHDOG_USEC", raising=False)
+    thread, server, systemd = serve_in_thread(tmp_path, monkeypatch)
+    try:
+        got = messages_until(systemd, lambda m: len(m) >= 1)
+        time.sleep(0.6)
+        got += messages_until(systemd, lambda m: True, seconds=0.5)
+        assert got and got[0].startswith("READY=1") and "WATCHDOG=1" not in got
+    finally:
+        server.should_exit = True
+        thread.join(20)
+        systemd.close()
+
+
+def test_an_exhausted_thread_pool_stops_the_pings_though_the_event_loop_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every blocking endpoint needs a worker thread: if none can be had, the dashboard is dead
+    even though the event loop is fine, and the watchdog should hear nothing."""
+
+    async def never(function, *args, **kwargs):  # type: ignore[no-untyped-def]
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(cli, "run_in_threadpool", never)
+    thread, server, systemd = serve_in_thread(tmp_path, monkeypatch, WATCHDOG_USEC="600000")
+    try:
+        got = messages_until(systemd, lambda m: False, seconds=2.5)
+        assert got and got[0].startswith("READY=1")
+        assert "WATCHDOG=1" not in got
+    finally:
+        server.should_exit = True
+        thread.join(20)
+        systemd.close()

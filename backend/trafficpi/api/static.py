@@ -17,7 +17,7 @@ from functools import lru_cache
 from html.parser import HTMLParser
 from pathlib import Path
 
-import anyio.to_thread
+from starlette.concurrency import run_in_threadpool
 from starlette.responses import FileResponse, Response
 from starlette.staticfiles import StaticFiles
 from starlette.types import Scope
@@ -89,7 +89,7 @@ class DashboardFiles(StaticFiles):
         # (The not-found page does not come through file_response, so look at what comes back.)
         if isinstance(response, FileResponse) and str(response.path).endswith(".html"):
             stat = response.stat_result or Path(response.path).stat()
-            hashes = await anyio.to_thread.run_sync(
+            hashes = await run_in_threadpool(
                 _inline_script_hashes, str(response.path), stat.st_mtime_ns, stat.st_size
             )
             response.headers["Content-Security-Policy"] = content_security_policy(hashes)

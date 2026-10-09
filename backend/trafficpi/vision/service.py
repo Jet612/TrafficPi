@@ -65,6 +65,10 @@ class ServiceConfig:
         6 * 3600.0
     )  # how often trails older than the owner wants are deleted
     evidence_cleanup_every_s: float = 600.0  # and evidence that is too old or too much
+    # The loop counts as stuck when it has not moved for this long (see VisionService.alive). It
+    # has to be longer than the slowest thing the loop legitimately waits for: a read gives up
+    # after 5 s, starting the camera takes a few, a clean-up pass or a busy database a few more.
+    stall_after_s: float = 30.0
 
 
 class LiveState:
@@ -304,6 +308,32 @@ class VisionService:
         self._next_evidence_cleanup = 0.0  # time.monotonic()
         self._stop_signs: dict[str, StopSign] = {}
         self._drift = drift  # None until the service runs, and always without a data directory
+        self._last_beat = time.monotonic()  # when the loop last moved (see beat and alive)
+
+    # --- is it moving? (plan.md D27) --------------------------------------------------------
+
+    def beat(self) -> None:
+        """Note that the loop has moved. Called on every pass, and while it waits for the camera."""
+        self._last_beat = time.monotonic()
+
+    def alive(self) -> bool:
+        """Whether the loop has moved lately.
+
+        False when it has been inside one call for ``stall_after_s``: the camera, the accelerator
+        or the database does not answer, and none of our own timeouts reaches that (HailoRT, for
+        one, has none). The heartbeat to systemd stops then, and systemd restarts the service.
+        """
+        return time.monotonic() - self._last_beat < self.config.stall_after_s
+
+    def status_line(self) -> str:
+        """One line for ``systemctl status``."""
+        state = self.live.snapshot()
+        camera = state["camera"]
+        if camera["ok"]:
+            return f"counting at {state['fps']:.1f} fps with {state['detector'] or 'no model'}"
+        if camera["error"]:
+            return f"camera offline: {camera['error']}"
+        return "waiting for the camera"
 
     # --- configuration ----------------------------------------------------------------------
 
@@ -378,6 +408,7 @@ class VisionService:
         camera that cannot be started, fails or stops delivering is reported through the live
         state and started again every ``camera_retry_s`` seconds; the loop never gives up.
         """
+        self.beat()
         self.load_profile()
         self._load_trail_settings()
         self._load_evidence_settings()
@@ -399,6 +430,7 @@ class VisionService:
         interval = 0.0  # smoothed time between frames; the frame rate is its inverse
         last = self._perf_counter()
         while not stop.requested and (max_frames is None or self.frames < max_frames):
+            self.beat()
             if self._reload.is_set():
                 self._reload.clear()
                 self.load_profile()
@@ -413,6 +445,7 @@ class VisionService:
                 self._close_source()
                 if stop.wait(self.config.camera_retry_s) or not self._open_source(stop):
                     break
+                self.beat()
                 continue
             if self._camera_failures:
                 log.info("the camera is delivering frames again")
@@ -457,6 +490,7 @@ class VisionService:
     def _open_source(self, stop: StopRequest) -> bool:
         """Start the source, trying again until it works. False if a stop came first."""
         while not stop.requested:
+            self.beat()  # a wait for a camera that is not there is the service's own business
             try:
                 self.source.start()
             except Exception as exc:
@@ -466,6 +500,7 @@ class VisionService:
                 if stop.wait(self.config.camera_retry_s):
                     return False
                 continue
+            self.beat()
             return True
         return False
 
