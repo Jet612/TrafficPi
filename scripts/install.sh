@@ -32,8 +32,10 @@ NODE_SHA256=a44aeb94849a299b22df10b9e622ec2f605c2183501bc40590705131de7c740f
 
 # The apt packages (plan.md D15: the four HailoRT ones, not the hailo-all bundle with TAPPAS).
 HAILO_PACKAGES=(hailort hailort-pcie-driver python3-hailort hailo-models)
+# (xz-utils unpacks Node's tarball, python3 is what uv builds the virtualenv from, kmod gives lsmod.
+# Raspberry Pi OS Lite has them; naming them keeps this from depending on that.)
 APT_PACKAGES=(dkms linux-headers-rpi-2712 "${HAILO_PACKAGES[@]}" python3-picamera2 python3-numpy
-  sqlite3 ffmpeg memtester curl ca-certificates git)
+  sqlite3 ffmpeg memtester curl ca-certificates git xz-utils python3 kmod)
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 data_dir="$root/backend/data"
