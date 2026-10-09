@@ -20,7 +20,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from trafficpi.api import stats, trail_views
+from trafficpi.api import analytics, stats, trail_views
 from trafficpi.api.auth import (
     COOKIE_NAME,
     LoginThrottle,
@@ -47,9 +47,11 @@ from trafficpi.api.schemas import (
     Settings,
     StatusResponse,
     StopOut,
+    StopStats,
     StopSummary,
     StopTotals,
     TodaySummary,
+    TrafficStats,
     TrailDay,
     TrailPaths,
     VisionStatus,
@@ -394,6 +396,45 @@ def create_app(
         start_s, end_s = from_ms // 1000, to_ms // 1000
         rows = ctx.store.minute_counts(start_s, end_s)
         return stats.series(rows, _timezone(ctx.store), start_s, end_s, bucket)
+
+    @app.get("/api/stats/stops", response_model=StopStats)
+    def stats_stops(
+        user: User,
+        days: Annotated[int, Query(ge=0, le=analytics.MAX_DAYS)] = 7,
+        sign: Annotated[str | None, Query(max_length=64)] = None,
+    ) -> dict[str, Any]:
+        """How vehicles did at the stop signs over the last ``days`` local days (today included),
+        and over the same number of days before; ``days=0`` is everything since the first pass."""
+        tz = _timezone(ctx.store)
+        period = analytics.period_for(
+            ctx.clock.now_ms(), tz, days, ctx.store.first_stop_ms(sign=sign)
+        )
+        rows = ctx.store.stop_rows(period.start_ms, period.end_ms, sign=sign)
+        previous = (
+            None
+            if period.previous_start_ms is None
+            else ctx.store.stop_rows(period.previous_start_ms, period.start_ms, sign=sign)
+        )
+        units = ctx.store.get_setting("units", "mph")
+        return {
+            **analytics.stop_stats(rows, previous, tz, period, sign=sign),
+            "units": "kmh" if units == "kmh" else "mph",
+        }
+
+    @app.get("/api/stats/traffic", response_model=TrafficStats)
+    def stats_traffic(
+        user: User,
+        days: Annotated[int, Query(ge=0, le=analytics.MAX_DAYS)] = 7,
+    ) -> dict[str, Any]:
+        """Vehicles counted over the last ``days`` local days (today included); ``days=0`` is
+        everything since the first count."""
+        tz = _timezone(ctx.store)
+        first_s = ctx.store.first_count_s()
+        period = analytics.period_for(
+            ctx.clock.now_ms(), tz, days, None if first_s is None else first_s * 1000
+        )
+        rows = ctx.store.minute_counts(period.start_ms // 1000, period.end_ms // 1000)
+        return analytics.traffic_stats(rows, tz, period, line_names())
 
     @app.get("/api/events", response_model=list[EventOut])
     def events(

@@ -7,6 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from trafficpi.core.clock import WallClock
 from trafficpi.core.evidence_settings import EvidenceSettings
 from trafficpi.db import create_db_engine, upgrade_to_head
+from trafficpi.db.models import Event
 from trafficpi.db.store import Store
 from trafficpi.vision.rules import CountEvent, StopEvent
 
@@ -284,6 +285,57 @@ def test_an_evidence_setting_that_is_stored_but_makes_no_sense_is_ignored(store:
     store.set_setting("evidence_keep_days", "30")
     store.set_setting("evidence_max_mb", 10**9)
     assert store.get_evidence_settings() == EvidenceSettings(True, 30, 2048)
+
+
+def test_stop_rows_carry_what_the_sums_need_oldest_first_and_only_those_in_range(
+    store: Store,
+) -> None:
+    truck = store.record_stop(
+        StopEvent(0, 1, 2, "truck", "elm", "rolling", hold_s=0.4, min_speed=0.31, observed_s=4.2),
+        minute(1),
+    )
+    store.record_stop(stop("stopped", sign="oak"), minute(0))
+    store.record_stop(stop("did_not_stop"), minute(5))  # outside the range below
+    store.record_count(count(), minute(1))  # a count is not a stop
+    store.review_stop(truck, "confirmed")
+    rows = store.stop_rows(minute(0), minute(2))
+    assert [(r.occurred_at, r.kind, r.sign, r.outcome) for r in rows] == [
+        (minute(0), "car", "oak", "stopped"),
+        (minute(1), "truck", "elm", "rolling"),
+    ]
+    assert (rows[0].review, rows[1].review) == (None, "confirmed")  # the truck was
+    assert (rows[1].hold_s, rows[1].min_speed, rows[1].observed_s) == (0.4, 0.31, 4.2)
+    assert [r.sign for r in store.stop_rows(minute(0), minute(9), sign="elm")] == ["elm", "elm"]
+    assert store.stop_rows(minute(2), minute(3)) == []
+
+
+def test_a_stop_event_with_missing_details_gets_plain_defaults(store: Store) -> None:
+    with store._session() as session:
+        session.add(
+            Event(
+                camera_id=store.camera_id,
+                occurred_at=minute(0),
+                type="stop",
+                class_label=None,
+                line_id=None,
+                details={"outcome": "rolling"},
+            )
+        )
+    (row,) = store.stop_rows(minute(0), minute(1))
+    assert (row.kind, row.sign, row.outcome, row.review) == ("", "", "rolling", None)
+    assert (row.hold_s, row.min_speed, row.observed_s) == (0.0, -1.0, 0.0)
+
+
+def test_the_first_stop_and_the_first_count_are_found(store: Store) -> None:
+    assert store.first_stop_ms() is None and store.first_count_s() is None
+    store.record_stop(stop("rolling", sign="oak"), minute(7))
+    store.record_stop(stop("stopped", sign="elm"), minute(3))
+    store.record_count(count(), minute(9))
+    store.record_count(count(), minute(4))
+    assert store.first_stop_ms() == minute(3)
+    assert store.first_stop_ms(sign="oak") == minute(7)
+    assert store.first_stop_ms(sign="nowhere") is None
+    assert store.first_count_s() == minute(4) // 1000  # the minutes are aligned already
 
 
 def test_the_outcomes_of_stop_events_can_be_asked_for_by_id(store: Store) -> None:

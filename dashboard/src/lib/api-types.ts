@@ -250,6 +250,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/stats/stops": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stats Stops
+         * @description How vehicles did at the stop signs over the last ``days`` local days (today included),
+         *     and over the same number of days before; ``days=0`` is everything since the first pass.
+         */
+        get: operations["stats_stops_api_stats_stops_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/stats/today": {
         parameters: {
             query?: never;
@@ -259,6 +280,27 @@ export interface paths {
         };
         /** Stats Today */
         get: operations["stats_today_api_stats_today_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/stats/traffic": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stats Traffic
+         * @description Vehicles counted over the last ``days`` local days (today included); ``days=0`` is
+         *     everything since the first count.
+         */
+        get: operations["stats_traffic_api_stats_traffic_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -471,6 +513,21 @@ export interface components {
              */
             point: "ground" | "center";
         };
+        /** DayOutcomes */
+        DayOutcomes: {
+            /** Date */
+            date: string;
+            /** Did Not Stop */
+            did_not_stop: number;
+            /** Indeterminate */
+            indeterminate: number;
+            /** Rolling */
+            rolling: number;
+            /** Stopped */
+            stopped: number;
+            /** T */
+            t: number;
+        };
         /** DiskStatus */
         DiskStatus: {
             /** Free Gb */
@@ -511,6 +568,32 @@ export interface components {
             /** T */
             t: number;
         };
+        /** HourOutcomes */
+        HourOutcomes: {
+            /** Did Not Stop */
+            did_not_stop: number;
+            /** Hour */
+            hour: number;
+            /** Indeterminate */
+            indeterminate: number;
+            /** Rolling */
+            rolling: number;
+            /** Stopped */
+            stopped: number;
+        };
+        /** KindOutcomes */
+        KindOutcomes: {
+            /** Did Not Stop */
+            did_not_stop: number;
+            /** Indeterminate */
+            indeterminate: number;
+            /** Label */
+            label: string;
+            /** Rolling */
+            rolling: number;
+            /** Stopped */
+            stopped: number;
+        };
         /** LineDirections */
         LineDirections: {
             /** Forward */
@@ -544,6 +627,20 @@ export interface components {
         Me: {
             /** Username */
             username: string;
+        };
+        /**
+         * OutcomeCounts
+         * @description How many passes at stop signs had each outcome; passes called false alarms are not in it.
+         */
+        OutcomeCounts: {
+            /** Did Not Stop */
+            did_not_stop: number;
+            /** Indeterminate */
+            indeterminate: number;
+            /** Rolling */
+            rolling: number;
+            /** Stopped */
+            stopped: number;
         };
         /**
          * Profile
@@ -651,6 +748,19 @@ export interface components {
              */
             units: "mph" | "kmh";
         };
+        /** SignOutcomes */
+        SignOutcomes: {
+            /** Did Not Stop */
+            did_not_stop: number;
+            /** Indeterminate */
+            indeterminate: number;
+            /** Rolling */
+            rolling: number;
+            /** Sign */
+            sign: string;
+            /** Stopped */
+            stopped: number;
+        };
         /** StatusResponse */
         StatusResponse: {
             disk: components["schemas"]["DiskStatus"];
@@ -694,6 +804,15 @@ export interface components {
             snapshot_url: string | null;
             /** T */
             t: number;
+        };
+        /** StopReviews */
+        StopReviews: {
+            /** Confirmed */
+            confirmed: number;
+            /** False Alarms */
+            false_alarms: number;
+            /** Waiting */
+            waiting: number;
         };
         /**
          * StopSignConfig
@@ -743,6 +862,43 @@ export interface components {
             /** Still Radius */
             still_radius: number;
         };
+        /**
+         * StopStats
+         * @description How vehicles did at the stop signs over some local days (plan.md D25).
+         */
+        StopStats: {
+            /** All Time */
+            all_time: boolean;
+            /** By Day */
+            by_day: components["schemas"]["DayOutcomes"][];
+            /** By Hour */
+            by_hour: components["schemas"]["HourOutcomes"][];
+            /** By Kind */
+            by_kind: components["schemas"]["KindOutcomes"][];
+            /** By Sign */
+            by_sign: components["schemas"]["SignOutcomes"][];
+            /** By Weekday */
+            by_weekday: components["schemas"]["WeekdayOutcomes"][];
+            /** Days */
+            days: number;
+            /** From Ms */
+            from_ms: number;
+            previous: components["schemas"]["OutcomeCounts"] | null;
+            review: components["schemas"]["StopReviews"];
+            /** Sign */
+            sign: string | null;
+            /** Timezone */
+            timezone: string;
+            timing: components["schemas"]["StopTiming"];
+            /** To Ms */
+            to_ms: number;
+            totals: components["schemas"]["OutcomeCounts"];
+            /**
+             * Units
+             * @enum {string}
+             */
+            units: "mph" | "kmh";
+        };
         /** StopSummary */
         StopSummary: {
             /** From Ms */
@@ -751,6 +907,18 @@ export interface components {
             outcomes: components["schemas"]["StopTotals"][];
             /** To Ms */
             to_ms: number;
+        };
+        /**
+         * StopTiming
+         * @description What a typical pass looked like, as the middle value (None where there is none).
+         */
+        StopTiming: {
+            /** Did Not Stop Min Speed */
+            did_not_stop_min_speed: number | null;
+            /** Rolling Min Speed */
+            rolling_min_speed: number | null;
+            /** Stopped Hold S */
+            stopped_hold_s: number | null;
         };
         /**
          * StopTotals
@@ -813,6 +981,69 @@ export interface components {
             timezone: string;
             /** Total */
             total: number;
+        };
+        /** TrafficDay */
+        TrafficDay: {
+            /** By Class */
+            by_class: {
+                [key: string]: number;
+            };
+            /** Date */
+            date: string;
+            /** T */
+            t: number;
+            /** Total */
+            total: number;
+        };
+        /** TrafficHour */
+        TrafficHour: {
+            /** By Class */
+            by_class: {
+                [key: string]: number;
+            };
+            /** Hour */
+            hour: number;
+            /** Total */
+            total: number;
+        };
+        /**
+         * TrafficStats
+         * @description Vehicles counted over some local days (plan.md D25).
+         */
+        TrafficStats: {
+            /** All Time */
+            all_time: boolean;
+            /** By Class */
+            by_class: {
+                [key: string]: number;
+            };
+            /** By Day */
+            by_day: components["schemas"]["TrafficDay"][];
+            /** By Hour */
+            by_hour: components["schemas"]["TrafficHour"][];
+            /** By Weekday */
+            by_weekday: components["schemas"]["TrafficWeekday"][];
+            /** Days */
+            days: number;
+            /** From Ms */
+            from_ms: number;
+            /** Lines */
+            lines: components["schemas"]["LineTotals"][];
+            /** Removed */
+            removed: number;
+            /** Timezone */
+            timezone: string;
+            /** To Ms */
+            to_ms: number;
+            /** Total */
+            total: number;
+        };
+        /** TrafficWeekday */
+        TrafficWeekday: {
+            /** Total */
+            total: number;
+            /** Weekday */
+            weekday: number;
         };
         /**
          * TrailDay
@@ -914,6 +1145,19 @@ export interface components {
             system: components["schemas"]["SystemMetrics"];
             /** Uptime S */
             uptime_s?: number | null;
+        };
+        /** WeekdayOutcomes */
+        WeekdayOutcomes: {
+            /** Did Not Stop */
+            did_not_stop: number;
+            /** Indeterminate */
+            indeterminate: number;
+            /** Rolling */
+            rolling: number;
+            /** Stopped */
+            stopped: number;
+            /** Weekday */
+            weekday: number;
         };
         /**
          * ZoneConfig
@@ -1335,6 +1579,38 @@ export interface operations {
             };
         };
     };
+    stats_stops_api_stats_stops_get: {
+        parameters: {
+            query?: {
+                days?: number;
+                sign?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StopStats"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     stats_today_api_stats_today_get: {
         parameters: {
             query?: never;
@@ -1351,6 +1627,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TodaySummary"];
+                };
+            };
+        };
+    };
+    stats_traffic_api_stats_traffic_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrafficStats"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

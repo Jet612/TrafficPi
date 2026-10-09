@@ -65,6 +65,20 @@ class EventRow:
 
 
 @dataclass(frozen=True, slots=True)
+class StopStatRow:
+    """What the sums over stop events need of one of them (the Data page, plan.md D25)."""
+
+    occurred_at: int  # ms since the epoch, UTC
+    kind: str  # the vehicle's class label; "" if the event has none
+    sign: str  # the stop sign's id; "" if the event has none
+    outcome: str
+    review: str | None  # "confirmed", "false_positive", or None
+    hold_s: float
+    min_speed: float  # in the vehicle's own sizes a second; -1 if it was not measured
+    observed_s: float
+
+
+@dataclass(frozen=True, slots=True)
 class CountRow:
     bucket_start: int  # s since the epoch, UTC, aligned to a minute
     line_id: str
@@ -298,6 +312,68 @@ class Store:
             totals[name]["total"] += count
             totals[name][review or "unreviewed"] += count
         return totals
+
+    def stop_rows(
+        self, start_ms: int, end_ms: int, *, sign: str | None = None
+    ) -> list[StopStatRow]:
+        """Every stop event in ``[start_ms, end_ms)`` (of one stop sign, if given), as the few
+        fields that sums over them need; oldest first. Events without a recognised outcome are
+        left to the caller to ignore."""
+        details = Event.details
+        query = (
+            select(
+                Event.occurred_at,
+                Event.class_label,
+                Event.line_id,
+                details["outcome"].as_string(),
+                Event.review,
+                details["hold_s"].as_float(),
+                details["min_speed"].as_float(),
+                details["observed_s"].as_float(),
+            )
+            .where(
+                Event.camera_id == self.camera_id,
+                Event.type == "stop",
+                Event.occurred_at >= start_ms,
+                Event.occurred_at < end_ms,
+            )
+            .order_by(Event.occurred_at, Event.id)
+        )
+        if sign is not None:
+            query = query.where(Event.line_id == sign)
+        with self._session() as s:
+            return [
+                StopStatRow(
+                    occurred_at=at,
+                    kind=kind or "",
+                    sign=line or "",
+                    outcome=outcome or "",
+                    review=review,
+                    hold_s=0.0 if hold is None else float(hold),
+                    min_speed=-1.0 if speed is None else float(speed),
+                    observed_s=0.0 if watched is None else float(watched),
+                )
+                for at, kind, line, outcome, review, hold, speed, watched in s.execute(query)
+            ]
+
+    def first_stop_ms(self, *, sign: str | None = None) -> int | None:
+        """When the earliest stop event happened (of one stop sign, if given); None if none has."""
+        query = select(func.min(Event.occurred_at)).where(
+            Event.camera_id == self.camera_id, Event.type == "stop"
+        )
+        if sign is not None:
+            query = query.where(Event.line_id == sign)
+        with self._session() as s:
+            return s.execute(query).scalar_one_or_none()
+
+    def first_count_s(self) -> int | None:
+        """The earliest minute with a count, in seconds since the epoch; None if there is none."""
+        with self._session() as s:
+            return s.execute(
+                select(func.min(MinuteCount.bucket_start)).where(
+                    MinuteCount.camera_id == self.camera_id
+                )
+            ).scalar_one_or_none()
 
     def stop_event(self, event_id: int) -> EventRow | None:
         """One stop event, or None if there is no such one (a count has no evidence to show)."""

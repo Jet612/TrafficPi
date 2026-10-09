@@ -111,6 +111,108 @@ class StopSummary(BaseModel):
     ]  # all four, in the order stopped, rolling, did_not_stop, indeterminate
 
 
+class OutcomeCounts(BaseModel):
+    """How many passes at stop signs had each outcome; passes called false alarms are not in it."""
+
+    stopped: int
+    rolling: int
+    did_not_stop: int
+    indeterminate: int
+
+
+class HourOutcomes(OutcomeCounts):
+    hour: int  # local hour of the day, 0 to 23, over every day of the period
+
+
+class DayOutcomes(OutcomeCounts):
+    date: str  # the local day, YYYY-MM-DD
+    t: int  # when that local day began, ms since the epoch
+
+
+class WeekdayOutcomes(OutcomeCounts):
+    weekday: int  # 0 is Monday, 6 is Sunday
+
+
+class KindOutcomes(OutcomeCounts):
+    label: str  # the kind of vehicle
+
+
+class SignOutcomes(OutcomeCounts):
+    sign: str  # the stop sign's id (the name is in the profile)
+
+
+class StopTiming(BaseModel):
+    """What a typical pass looked like, as the middle value (None where there is none)."""
+
+    stopped_hold_s: float | None  # how long a vehicle that stopped stood still
+    rolling_min_speed: (
+        float | None
+    )  # how slowly one that rolled through went, in its sizes a second
+    did_not_stop_min_speed: float | None  # and one that did not stop
+
+
+class StopReviews(BaseModel):
+    confirmed: int  # passes a person agreed with
+    false_alarms: int  # passes a person called false alarms (left out of every count above)
+    waiting: int  # passes that need a look (not a clean stop) and have not had one
+
+
+class StopStats(BaseModel):
+    """How vehicles did at the stop signs over some local days (plan.md D25)."""
+
+    timezone: str
+    units: Literal["mph", "kmh"]  # the owner's choice, for speeds shown in words
+    from_ms: int  # the period begins: local midnight of its first day
+    to_ms: int  # and ends: local midnight at the end of today
+    days: int  # local days in it, today included
+    all_time: bool  # asked for "all time": from the first pass (a year at most)
+    sign: str | None  # only this stop sign, if asked
+    totals: OutcomeCounts
+    previous: OutcomeCounts | None  # the same number of days before it; None for all time
+    by_hour: list[HourOutcomes]  # all 24
+    by_day: list[DayOutcomes]  # every day of the period, oldest first, empty ones included
+    by_weekday: list[WeekdayOutcomes]  # all 7, Monday first
+    by_kind: list[KindOutcomes]  # kinds with passes, most passes first
+    by_sign: list[SignOutcomes]  # stop signs with passes, most passes first
+    timing: StopTiming
+    review: StopReviews
+
+
+class TrafficHour(BaseModel):
+    hour: int  # local hour of the day, 0 to 23, over every day of the period
+    total: int
+    by_class: dict[str, int]
+
+
+class TrafficDay(BaseModel):
+    date: str  # the local day, YYYY-MM-DD
+    t: int  # when that local day began, ms since the epoch
+    total: int
+    by_class: dict[str, int]
+
+
+class TrafficWeekday(BaseModel):
+    weekday: int  # 0 is Monday, 6 is Sunday
+    total: int
+
+
+class TrafficStats(BaseModel):
+    """Vehicles counted over some local days (plan.md D25)."""
+
+    timezone: str
+    from_ms: int
+    to_ms: int
+    days: int
+    all_time: bool
+    total: int
+    by_class: dict[str, int]
+    removed: int  # of the total, counted by lines that have been deleted since (not in `lines`)
+    lines: list[LineTotals]
+    by_hour: list[TrafficHour]  # all 24
+    by_day: list[TrafficDay]  # every day of the period, oldest first, empty ones included
+    by_weekday: list[TrafficWeekday]  # all 7, Monday first
+
+
 class ReviewRequest(BaseModel):
     """What a person made of a stop event; null takes the review back."""
 

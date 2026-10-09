@@ -119,6 +119,44 @@
         "title": "CountingLineConfig",
         "type": "object"
       },
+      "DayOutcomes": {
+        "properties": {
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "did_not_stop": {
+            "title": "Did Not Stop",
+            "type": "integer"
+          },
+          "indeterminate": {
+            "title": "Indeterminate",
+            "type": "integer"
+          },
+          "rolling": {
+            "title": "Rolling",
+            "type": "integer"
+          },
+          "stopped": {
+            "title": "Stopped",
+            "type": "integer"
+          },
+          "t": {
+            "title": "T",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "stopped",
+          "rolling",
+          "did_not_stop",
+          "indeterminate",
+          "date",
+          "t"
+        ],
+        "title": "DayOutcomes",
+        "type": "object"
+      },
       "DiskStatus": {
         "properties": {
           "free_gb": {
@@ -249,6 +287,72 @@
         "title": "HourCount",
         "type": "object"
       },
+      "HourOutcomes": {
+        "properties": {
+          "did_not_stop": {
+            "title": "Did Not Stop",
+            "type": "integer"
+          },
+          "hour": {
+            "title": "Hour",
+            "type": "integer"
+          },
+          "indeterminate": {
+            "title": "Indeterminate",
+            "type": "integer"
+          },
+          "rolling": {
+            "title": "Rolling",
+            "type": "integer"
+          },
+          "stopped": {
+            "title": "Stopped",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "stopped",
+          "rolling",
+          "did_not_stop",
+          "indeterminate",
+          "hour"
+        ],
+        "title": "HourOutcomes",
+        "type": "object"
+      },
+      "KindOutcomes": {
+        "properties": {
+          "did_not_stop": {
+            "title": "Did Not Stop",
+            "type": "integer"
+          },
+          "indeterminate": {
+            "title": "Indeterminate",
+            "type": "integer"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "rolling": {
+            "title": "Rolling",
+            "type": "integer"
+          },
+          "stopped": {
+            "title": "Stopped",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "stopped",
+          "rolling",
+          "did_not_stop",
+          "indeterminate",
+          "label"
+        ],
+        "title": "KindOutcomes",
+        "type": "object"
+      },
       "LineDirections": {
         "properties": {
           "forward": {
@@ -336,6 +440,35 @@
           "username"
         ],
         "title": "Me",
+        "type": "object"
+      },
+      "OutcomeCounts": {
+        "description": "How many passes at stop signs had each outcome; passes called false alarms are not in it.",
+        "properties": {
+          "did_not_stop": {
+            "title": "Did Not Stop",
+            "type": "integer"
+          },
+          "indeterminate": {
+            "title": "Indeterminate",
+            "type": "integer"
+          },
+          "rolling": {
+            "title": "Rolling",
+            "type": "integer"
+          },
+          "stopped": {
+            "title": "Stopped",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "stopped",
+          "rolling",
+          "did_not_stop",
+          "indeterminate"
+        ],
+        "title": "OutcomeCounts",
         "type": "object"
       },
       "Profile": {
@@ -635,6 +768,39 @@
         "title": "Settings",
         "type": "object"
       },
+      "SignOutcomes": {
+        "properties": {
+          "did_not_stop": {
+            "title": "Did Not Stop",
+            "type": "integer"
+          },
+          "indeterminate": {
+            "title": "Indeterminate",
+            "type": "integer"
+          },
+          "rolling": {
+            "title": "Rolling",
+            "type": "integer"
+          },
+          "sign": {
+            "title": "Sign",
+            "type": "string"
+          },
+          "stopped": {
+            "title": "Stopped",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "stopped",
+          "rolling",
+          "did_not_stop",
+          "indeterminate",
+          "sign"
+        ],
+        "title": "SignOutcomes",
+        "type": "object"
+      },
       "StatusResponse": {
         "properties": {
           "disk": {
@@ -780,6 +946,29 @@
         "title": "StopOut",
         "type": "object"
       },
+      "StopReviews": {
+        "properties": {
+          "confirmed": {
+            "title": "Confirmed",
+            "type": "integer"
+          },
+          "false_alarms": {
+            "title": "False Alarms",
+            "type": "integer"
+          },
+          "waiting": {
+            "title": "Waiting",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "confirmed",
+          "false_alarms",
+          "waiting"
+        ],
+        "title": "StopReviews",
+        "type": "object"
+      },
       "StopSignConfig": {
         "additionalProperties": false,
         "description": "A stop line, and the stretch of road before it where a vehicle has to stop (plan.md D23).\n\n``approach`` is that stretch, as corners in order: a stop counts anywhere in it, so a vehicle\nthat waited in a queue has stopped as much as one that waited at the line. ``a`` and ``b`` are\nthe ends of the stop line. ``direction`` is the way across it that goes through the sign:\n1 from the left of the line's own direction (``a`` to ``b``, as on screen with y pointing\ndown) to its right, -1 the other way; a vehicle crossing the other way came out of the\nintersection and is not judged. ``classes`` are the kinds that must stop. A vehicle has\nstopped if it is still for ``hold_s`` seconds, moving less than ``still_radius`` of its own\nsize meanwhile; it is rolling if it slowed below ``roll_speed`` of its own sizes a second but\nnever held still; it cannot be judged if it was watched for less than ``min_observed_s`` seconds\nbefore the line.",
@@ -894,6 +1083,124 @@
         "title": "StopSignConfig",
         "type": "object"
       },
+      "StopStats": {
+        "description": "How vehicles did at the stop signs over some local days (plan.md D25).",
+        "properties": {
+          "all_time": {
+            "title": "All Time",
+            "type": "boolean"
+          },
+          "by_day": {
+            "items": {
+              "$ref": "#/components/schemas/DayOutcomes"
+            },
+            "title": "By Day",
+            "type": "array"
+          },
+          "by_hour": {
+            "items": {
+              "$ref": "#/components/schemas/HourOutcomes"
+            },
+            "title": "By Hour",
+            "type": "array"
+          },
+          "by_kind": {
+            "items": {
+              "$ref": "#/components/schemas/KindOutcomes"
+            },
+            "title": "By Kind",
+            "type": "array"
+          },
+          "by_sign": {
+            "items": {
+              "$ref": "#/components/schemas/SignOutcomes"
+            },
+            "title": "By Sign",
+            "type": "array"
+          },
+          "by_weekday": {
+            "items": {
+              "$ref": "#/components/schemas/WeekdayOutcomes"
+            },
+            "title": "By Weekday",
+            "type": "array"
+          },
+          "days": {
+            "title": "Days",
+            "type": "integer"
+          },
+          "from_ms": {
+            "title": "From Ms",
+            "type": "integer"
+          },
+          "previous": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OutcomeCounts"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "review": {
+            "$ref": "#/components/schemas/StopReviews"
+          },
+          "sign": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sign"
+          },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          },
+          "timing": {
+            "$ref": "#/components/schemas/StopTiming"
+          },
+          "to_ms": {
+            "title": "To Ms",
+            "type": "integer"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/OutcomeCounts"
+          },
+          "units": {
+            "enum": [
+              "mph",
+              "kmh"
+            ],
+            "title": "Units",
+            "type": "string"
+          }
+        },
+        "required": [
+          "timezone",
+          "units",
+          "from_ms",
+          "to_ms",
+          "days",
+          "all_time",
+          "sign",
+          "totals",
+          "previous",
+          "by_hour",
+          "by_day",
+          "by_weekday",
+          "by_kind",
+          "by_sign",
+          "timing",
+          "review"
+        ],
+        "title": "StopStats",
+        "type": "object"
+      },
       "StopSummary": {
         "properties": {
           "from_ms": {
@@ -918,6 +1225,51 @@
           "outcomes"
         ],
         "title": "StopSummary",
+        "type": "object"
+      },
+      "StopTiming": {
+        "description": "What a typical pass looked like, as the middle value (None where there is none).",
+        "properties": {
+          "did_not_stop_min_speed": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Did Not Stop Min Speed"
+          },
+          "rolling_min_speed": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rolling Min Speed"
+          },
+          "stopped_hold_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stopped Hold S"
+          }
+        },
+        "required": [
+          "stopped_hold_s",
+          "rolling_min_speed",
+          "did_not_stop_min_speed"
+        ],
+        "title": "StopTiming",
         "type": "object"
       },
       "StopTotals": {
@@ -1077,6 +1429,165 @@
           "hourly"
         ],
         "title": "TodaySummary",
+        "type": "object"
+      },
+      "TrafficDay": {
+        "properties": {
+          "by_class": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "By Class",
+            "type": "object"
+          },
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "t": {
+            "title": "T",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "date",
+          "t",
+          "total",
+          "by_class"
+        ],
+        "title": "TrafficDay",
+        "type": "object"
+      },
+      "TrafficHour": {
+        "properties": {
+          "by_class": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "By Class",
+            "type": "object"
+          },
+          "hour": {
+            "title": "Hour",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "hour",
+          "total",
+          "by_class"
+        ],
+        "title": "TrafficHour",
+        "type": "object"
+      },
+      "TrafficStats": {
+        "description": "Vehicles counted over some local days (plan.md D25).",
+        "properties": {
+          "all_time": {
+            "title": "All Time",
+            "type": "boolean"
+          },
+          "by_class": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "By Class",
+            "type": "object"
+          },
+          "by_day": {
+            "items": {
+              "$ref": "#/components/schemas/TrafficDay"
+            },
+            "title": "By Day",
+            "type": "array"
+          },
+          "by_hour": {
+            "items": {
+              "$ref": "#/components/schemas/TrafficHour"
+            },
+            "title": "By Hour",
+            "type": "array"
+          },
+          "by_weekday": {
+            "items": {
+              "$ref": "#/components/schemas/TrafficWeekday"
+            },
+            "title": "By Weekday",
+            "type": "array"
+          },
+          "days": {
+            "title": "Days",
+            "type": "integer"
+          },
+          "from_ms": {
+            "title": "From Ms",
+            "type": "integer"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/LineTotals"
+            },
+            "title": "Lines",
+            "type": "array"
+          },
+          "removed": {
+            "title": "Removed",
+            "type": "integer"
+          },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          },
+          "to_ms": {
+            "title": "To Ms",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "timezone",
+          "from_ms",
+          "to_ms",
+          "days",
+          "all_time",
+          "total",
+          "by_class",
+          "removed",
+          "lines",
+          "by_hour",
+          "by_day",
+          "by_weekday"
+        ],
+        "title": "TrafficStats",
+        "type": "object"
+      },
+      "TrafficWeekday": {
+        "properties": {
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "weekday": {
+            "title": "Weekday",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "weekday",
+          "total"
+        ],
+        "title": "TrafficWeekday",
         "type": "object"
       },
       "TrailDay": {
@@ -1374,6 +1885,39 @@
           "status"
         ],
         "title": "VisionStatus",
+        "type": "object"
+      },
+      "WeekdayOutcomes": {
+        "properties": {
+          "did_not_stop": {
+            "title": "Did Not Stop",
+            "type": "integer"
+          },
+          "indeterminate": {
+            "title": "Indeterminate",
+            "type": "integer"
+          },
+          "rolling": {
+            "title": "Rolling",
+            "type": "integer"
+          },
+          "stopped": {
+            "title": "Stopped",
+            "type": "integer"
+          },
+          "weekday": {
+            "title": "Weekday",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "stopped",
+          "rolling",
+          "did_not_stop",
+          "indeterminate",
+          "weekday"
+        ],
+        "title": "WeekdayOutcomes",
         "type": "object"
       },
       "ZoneConfig": {
@@ -1887,6 +2431,66 @@
         "summary": "Stats Series"
       }
     },
+    "/api/stats/stops": {
+      "get": {
+        "description": "How vehicles did at the stop signs over the last ``days`` local days (today included),\nand over the same number of days before; ``days=0`` is everything since the first pass.",
+        "operationId": "stats_stops_api_stats_stops_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 7,
+              "maximum": 366,
+              "minimum": 0,
+              "title": "Days",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sign",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sign"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StopStats"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stats Stops"
+      }
+    },
     "/api/stats/today": {
       "get": {
         "operationId": "stats_today_api_stats_today_get",
@@ -1903,6 +2507,49 @@
           }
         },
         "summary": "Stats Today"
+      }
+    },
+    "/api/stats/traffic": {
+      "get": {
+        "description": "Vehicles counted over the last ``days`` local days (today included); ``days=0`` is\neverything since the first count.",
+        "operationId": "stats_traffic_api_stats_traffic_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 7,
+              "maximum": 366,
+              "minimum": 0,
+              "title": "Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrafficStats"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stats Traffic"
       }
     },
     "/api/status": {
