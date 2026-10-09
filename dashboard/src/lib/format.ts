@@ -47,6 +47,11 @@ export function formatDateTime(ms: number, timeZone: string): string {
   return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
 }
 
+/** The date and time down to the second, as for an event that happened at that moment: "2026-10-09 14:05:09". */
+export function formatDateTimeSeconds(ms: number, timeZone: string): string {
+  return `${formatDateTime(ms, timeZone)}:${formatClock(ms, timeZone).slice(-2)}`;
+}
+
 /** The local hour (0-23) of an instant in a time zone. */
 export function localHour(ms: number, timeZone: string): number {
   const parts = new Intl.DateTimeFormat("en-GB", {

@@ -4,6 +4,7 @@ import {
   formatClock,
   formatCount,
   formatDateTime,
+  formatDateTimeSeconds,
   formatDuration,
   formatMegabytes,
   hourLabel,
@@ -25,6 +26,14 @@ describe("formatting", () => {
     expect(formatDuration(7500)).toBe("2 h 05 m");
     expect(formatDuration(3 * 86400 + 4 * 3600 + 59)).toBe("3 d 4 h");
     expect(formatDuration(-5)).toBe("0 s");
+  });
+
+  it("shows an event's moment down to the second, in the zone of the camera", () => {
+    const instant = Date.UTC(2026, 9, 9, 4, 16, 56);
+    expect(formatDateTimeSeconds(instant, "UTC")).toBe("2026-10-09 04:16:56");
+    expect(formatDateTimeSeconds(instant, "America/New_York")).toBe("2026-10-09 00:16:56");
+    expect(formatDateTimeSeconds(Date.UTC(2026, 9, 9, 4, 17, 0), "UTC")).toBe("2026-10-09 04:17:00"); // a minute, not a minute less a second
+    expect(formatDateTimeSeconds(instant, "Mars/Olympus")).toBe("2026-10-09 04:16:56"); // a zone that is not one: UTC
   });
 
   it("shows the date and time in the configured zone, across a day boundary and a daylight-saving change", () => {

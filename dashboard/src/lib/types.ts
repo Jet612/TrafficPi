@@ -24,6 +24,11 @@ export type TrailHour = Schemas["TrailHour"];
 export type TrailPath = Schemas["TrailPath"];
 export type TrailPaths = Schemas["TrailPaths"];
 export type Settings = Schemas["Settings"];
+export type StopOut = Schemas["StopOut"];
+export type StopSummary = Schemas["StopSummary"];
+export type StopTotals = Schemas["StopTotals"];
+export type StopOutcome = StopOut["outcome"];
+export type ReviewState = NonNullable<StopOut["review"]>;
 
 /**
  * The live socket is not part of OpenAPI, so its messages are described here. They come from

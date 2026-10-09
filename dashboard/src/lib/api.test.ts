@@ -76,6 +76,23 @@ describe("api", () => {
     expect([path, init.method, init.body]).toEqual(["/api/settings", "PUT", JSON.stringify(settings)]);
   });
 
+  it("lists the latest counts without the stops, and reviews a stop with a PUT", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(respond(200, [])));
+    vi.stubGlobal("fetch", fetchMock);
+    await api.events(10);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/events?limit=10&type=count");
+    fetchMock.mockImplementation(() => Promise.resolve(respond(200, { id: 5, review: "confirmed" })));
+    await api.reviewStop(5, "confirmed");
+    const [path, init] = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect([path, init.method, init.body]).toEqual(["/api/stops/5/review", "PUT", '{"state":"confirmed"}']);
+    await api.reviewStop(5, null);
+    expect((fetchMock.mock.calls[2] as [string, RequestInit])[1].body).toBe('{"state":null}');
+    await api.stopSummary(1, 2);
+    expect(fetchMock.mock.calls[3]?.[0]).toBe("/api/stops/summary?from_ms=1&to_ms=2");
+    await api.stops({ fromMs: 1, toMs: 2, limit: 5 });
+    expect(fetchMock.mock.calls[4]?.[0]).toBe("/api/stops?from_ms=1&to_ms=2&limit=5");
+  });
+
   it("asks for a day by the hour, today if none is named", async () => {
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(respond(200, { day: "2026-10-09", hours: [] })));
     vi.stubGlobal("fetch", fetchMock);

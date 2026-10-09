@@ -37,7 +37,7 @@ class Event(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     camera_id: Mapped[str] = mapped_column(ForeignKey("cameras.id"))
     occurred_at: Mapped[int] = mapped_column(Integer)  # ms
-    type: Mapped[str] = mapped_column(String)  # "count"
+    type: Mapped[str] = mapped_column(String)  # "count" or "stop"
     track_id: Mapped[int | None] = mapped_column(Integer)
     class_label: Mapped[str | None] = mapped_column(String)
     line_id: Mapped[str | None] = mapped_column(String)
@@ -46,6 +46,9 @@ class Event(Base):
     evidence_path: Mapped[str | None] = mapped_column(
         String
     )  # snapshot or clip, relative to the data dir
+    # What a person made of a stop event: "confirmed", "false_positive", or None (not looked at).
+    review: Mapped[str | None] = mapped_column(String)
+    reviewed_at: Mapped[int | None] = mapped_column(Integer)  # ms
 
 
 class MinuteCount(Base):

@@ -67,6 +67,119 @@ def test_a_stop_is_an_event_with_its_outcome_and_changes_no_count(store: Store) 
     assert [e.type for e in store.recent_events(type="stop")] == ["stop"]
 
 
+def stop(
+    outcome: str = "rolling", sign: str = "elm", label: str = "car", track: int = 7
+) -> StopEvent:
+    return StopEvent(0, track, 2, label, sign, outcome, hold_s=0.4, min_speed=0.3, observed_s=4.0)  # type: ignore[arg-type]
+
+
+def test_stops_are_found_by_time_outcome_review_and_sign_newest_first_and_in_pages(
+    store: Store,
+) -> None:
+    store.record_stop(stop("stopped"), minute(0) + 1_000)
+    store.record_stop(stop("rolling"), minute(0) + 2_000)
+    store.record_stop(stop("did_not_stop", sign="oak"), minute(0) + 3_000)
+    store.record_stop(stop("indeterminate"), minute(1))
+    store.record_count(count(), minute(0) + 4_000)  # a count is not a stop
+    everything = (minute(0), minute(2))
+    found = store.stops_between(*everything)
+    assert [(e.details or {})["outcome"] for e in found] == [
+        "indeterminate",
+        "did_not_stop",
+        "rolling",
+        "stopped",
+    ]
+    assert [e.type for e in found] == ["stop"] * 4
+    # a range is closed at its start and open at its end
+    assert len(store.stops_between(minute(0) + 2_000, minute(0) + 3_000)) == 1
+    assert [(e.details or {})["outcome"] for e in store.stops_between(minute(0), minute(1))] == [
+        "did_not_stop",
+        "rolling",
+        "stopped",
+    ]
+    needing_a_look = store.stops_between(*everything, outcomes=["rolling", "did_not_stop"])
+    assert [(e.details or {})["outcome"] for e in needing_a_look] == ["did_not_stop", "rolling"]
+    assert store.stops_between(*everything, outcomes=[]) == []
+    assert [e.line_id for e in store.stops_between(*everything, sign="oak")] == ["oak"]
+    # pages: the last id seen, then the ones before it
+    first = store.stops_between(*everything, limit=2)
+    second = store.stops_between(*everything, limit=2, before_id=first[-1].id)
+    assert [e.id for e in first + second] == sorted([e.id for e in first + second], reverse=True)
+    assert len(first) == len(second) == 2
+
+
+def test_a_stop_is_reviewed_and_the_review_taken_back(store: Store) -> None:
+    event_id = store.record_stop(stop(), minute(0) + 1_000)
+    (before,) = store.stops_between(minute(0), minute(1))
+    assert (before.review, before.reviewed_at) == (None, None)
+    confirmed = store.review_stop(event_id, "confirmed", now_ms=minute(5))
+    assert confirmed is not None and (confirmed.review, confirmed.reviewed_at) == (
+        "confirmed",
+        minute(5),
+    )
+    (after,) = store.stops_between(minute(0), minute(1))
+    assert after.review == "confirmed"
+    marked = store.review_stop(event_id, "false_positive", now_ms=minute(6))
+    assert marked is not None and (marked.review, marked.reviewed_at) == (
+        "false_positive",
+        minute(6),
+    )
+    undone = store.review_stop(event_id, None)
+    assert undone is not None and (undone.review, undone.reviewed_at) == (None, None)
+    assert store.stops_between(minute(0), minute(1), review="unreviewed")
+
+
+def test_reviews_are_filtered_and_only_known_ones_are_taken(store: Store) -> None:
+    ids = [store.record_stop(stop(), minute(0) + i * 1_000) for i in range(3)]
+    store.review_stop(ids[0], "confirmed")
+    store.review_stop(ids[1], "false_positive")
+    mine = (minute(0), minute(1))
+    assert [e.id for e in store.stops_between(*mine, review="confirmed")] == [ids[0]]
+    assert [e.id for e in store.stops_between(*mine, review="false_positive")] == [ids[1]]
+    assert [e.id for e in store.stops_between(*mine, review="unreviewed")] == [ids[2]]
+    assert len(store.stops_between(*mine)) == 3
+    with pytest.raises(ValueError, match="confirmed"):
+        store.review_stop(ids[2], "maybe")
+    assert store.stops_between(*mine, review="unreviewed")[0].id == ids[2]  # and nothing changed
+
+
+def test_only_a_stop_event_of_this_camera_can_be_reviewed(store: Store) -> None:
+    counted = store.record_count(count(), minute(0))
+    assert store.review_stop(counted, "confirmed") is None  # a count has nothing to review
+    assert store.review_stop(9_999, "confirmed") is None
+    other = Store(store._engine, camera_id="side")
+    other.ensure_camera("Side", now_ms=minute(0))
+    theirs = other.record_stop(stop(), minute(0))
+    assert store.review_stop(theirs, "confirmed") is None
+    assert store.stops_between(minute(0), minute(1)) == []  # and theirs are not ours to list
+
+
+def test_the_summary_counts_each_outcome_by_review_and_leaves_out_what_is_outside_the_range(
+    store: Store,
+) -> None:
+    a = store.record_stop(stop("rolling"), minute(0) + 1_000)
+    b = store.record_stop(stop("rolling"), minute(0) + 2_000)
+    store.record_stop(stop("rolling"), minute(0) + 3_000)
+    store.record_stop(stop("stopped"), minute(0) + 4_000)
+    store.record_stop(stop("stopped"), minute(5))  # outside the range
+    store.review_stop(a, "confirmed")
+    store.review_stop(b, "false_positive")
+    summary = store.stop_summary(minute(0), minute(1))
+    assert list(summary) == ["stopped", "rolling", "did_not_stop", "indeterminate"]
+    assert summary["rolling"] == {"total": 3, "confirmed": 1, "false_positive": 1, "unreviewed": 1}
+    assert summary["stopped"] == {"total": 1, "confirmed": 0, "false_positive": 0, "unreviewed": 1}
+    assert summary["did_not_stop"]["total"] == summary["indeterminate"]["total"] == 0
+
+
+def test_only_stops_are_summed_even_when_a_count_carries_an_outcome_of_its_own(
+    store: Store,
+) -> None:
+    store.record_count(count(), minute(0) + 1_000, details={"outcome": "rolling"})
+    store.record_stop(stop("rolling"), minute(0) + 2_000)
+    assert store.stop_summary(minute(0), minute(1))["rolling"]["total"] == 1
+    assert len(store.stops_between(minute(0), minute(1))) == 1
+
+
 def test_counts_in_the_same_minute_add_up_and_others_stay_separate(store: Store) -> None:
     for i in range(3):
         store.record_count(count(track=i), minute(0) + i * 1000)

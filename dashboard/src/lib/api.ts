@@ -6,9 +6,12 @@ import type {
   ProfileOut,
   ProfileSaved,
   ReferenceSaved,
+  ReviewState,
   SeriesPoint,
   Settings,
   StatusResponse,
+  StopOut,
+  StopSummary,
   TodaySummary,
   TrailDay,
   TrailPaths,
@@ -85,6 +88,28 @@ async function request<T>(
 
 export type Bucket = "minute" | "hour" | "day";
 
+export interface StopsQuery {
+  fromMs: number;
+  toMs: number;
+  /** Only these outcomes (all when missing or when every one is named is the same thing). */
+  outcomes?: readonly string[];
+  review?: "unreviewed" | "confirmed" | "false_positive";
+  sign?: string;
+  limit?: number;
+  beforeId?: number;
+}
+
+/** The query string of a list of stops: only what was asked for is in it. */
+export function stopsQuery(query: StopsQuery): string {
+  const params = new URLSearchParams({ from_ms: String(query.fromMs), to_ms: String(query.toMs) });
+  if (query.outcomes !== undefined) params.set("outcome", query.outcomes.join(","));
+  if (query.review !== undefined) params.set("review", query.review);
+  if (query.sign !== undefined) params.set("sign", query.sign);
+  if (query.limit !== undefined) params.set("limit", String(query.limit));
+  if (query.beforeId !== undefined) params.set("before_id", String(query.beforeId));
+  return params.toString();
+}
+
 export const api = {
   authState: () => request<AuthState>("GET", "/api/auth/state"),
   me: () => request<{ username: string }>("GET", "/api/auth/me"),
@@ -100,8 +125,15 @@ export const api = {
       undefined,
       signal,
     ),
+  /** The newest counts (not the stops, which have their own list). */
   events: (limit: number, signal?: AbortSignal) =>
-    request<EventOut[]>("GET", `/api/events?limit=${limit}`, undefined, signal),
+    request<EventOut[]>("GET", `/api/events?limit=${limit}&type=count`, undefined, signal),
+  /** What vehicles did at stop signs in [fromMs, toMs), newest first; `beforeId` asks for the page after the one that ended there. */
+  stops: (query: StopsQuery, signal?: AbortSignal) => request<StopOut[]>("GET", `/api/stops?${stopsQuery(query)}`, undefined, signal),
+  stopSummary: (fromMs: number, toMs: number, signal?: AbortSignal) =>
+    request<StopSummary>("GET", `/api/stops/summary?from_ms=${fromMs}&to_ms=${toMs}`, undefined, signal),
+  /** What a person made of a stop event; null takes it back. */
+  reviewStop: (id: number, state: ReviewState | null) => request<StopOut>("PUT", `/api/stops/${id}/review`, { state }),
   profile: (signal?: AbortSignal) => request<ProfileOut>("GET", "/api/profile", undefined, signal),
   saveProfile: (profile: Profile) => request<ProfileSaved>("PUT", "/api/profile", profile),
   /** Whether a document (a file being imported) is a usable profile; nothing is saved. */

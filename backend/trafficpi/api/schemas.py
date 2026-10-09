@@ -70,6 +70,49 @@ class EventOut(BaseModel):
     direction: int | None
 
 
+StopOutcome = Literal["stopped", "rolling", "did_not_stop", "indeterminate"]
+ReviewState = Literal["confirmed", "false_positive"]
+
+
+class StopOut(BaseModel):
+    """What one vehicle did at one stop sign (plan.md D23), and what a person made of it."""
+
+    id: int
+    t: int  # ms since the epoch: when it crossed the stop line
+    sign: str  # the stop sign's id (the name is in the profile; a deleted sign's events remain)
+    label: str | None  # the kind of vehicle
+    outcome: StopOutcome
+    hold_s: float  # the longest it was still in the approach zone
+    min_speed: float  # the slowest it went there, in its own sizes a second; -1 if not measured
+    observed_s: float  # how long it was watched in the zone before the line
+    review: ReviewState | None  # None: not looked at yet
+    reviewed_at: int | None
+
+
+class StopTotals(BaseModel):
+    """How many stop events had one outcome, and how many of them a person has looked at."""
+
+    outcome: StopOutcome
+    total: int
+    confirmed: int
+    false_positive: int
+    unreviewed: int
+
+
+class StopSummary(BaseModel):
+    from_ms: int
+    to_ms: int
+    outcomes: list[
+        StopTotals
+    ]  # all four, in the order stopped, rolling, did_not_stop, indeterminate
+
+
+class ReviewRequest(BaseModel):
+    """What a person made of a stop event; null takes the review back."""
+
+    state: ReviewState | None
+
+
 class ProfileOut(BaseModel):
     version: int  # counts saves; 0 when none has been saved
     profile: Profile

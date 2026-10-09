@@ -798,6 +798,80 @@ try {
     return first;
   };
 
+  if (demo) {
+    await step("the Stop signs card says what the vehicles did, lists the passes that need a look, and a review is kept", async () => {
+      await goTo("History");
+      const passes = page.getByRole("list", { name: "Passes at stop signs" });
+      const rowsOf = () => passes.getByRole("listitem");
+      await eventually(async () => assert.match(await page.getByTestId("stops-headline").innerText(), /judged: /), "the summary says what was seen");
+      const tile = (outcome) => page.getByRole("button", { name: new RegExp(`^${outcome}`) });
+      assert.equal(await tile("Did not stop").getAttribute("aria-pressed"), "true", "what needs a look is shown to begin with");
+      assert.equal(await tile("Stopped").getAttribute("aria-pressed"), "false", "and a clean stop is not");
+      await eventually(async () => assert.ok((await rowsOf().count()) >= 1, "a pass is listed"));
+      const kinds = await rowsOf().evaluateAll((items) => items.map((item) => item.getAttribute("data-outcome")));
+      assert.ok(kinds.every((kind) => ["rolling", "did_not_stop", "indeterminate"].includes(kind)), `only those that need a look: ${kinds}`);
+
+      // a tile that is pressed again takes its outcome off the list, and one pressed adds it
+      await tile("Did not stop").click();
+      await eventually(async () => {
+        const now = await rowsOf().evaluateAll((items) => items.map((item) => item.getAttribute("data-outcome")));
+        assert.ok(now.every((kind) => kind !== "did_not_stop"), `no passes that did not stop are left: ${now}`);
+      });
+      await tile("Did not stop").click();
+      await eventually(async () => assert.ok((await rowsOf().evaluateAll((items) => items.some((i) => i.getAttribute("data-outcome") === "did_not_stop"))) === true));
+
+      // the newest pass is called a false alarm: it is kept, found under "False alarms", and taken back
+      const first = rowsOf().first();
+      const when = await first.locator("time").innerText();
+      const alarm = first.getByRole("button", { name: /^False alarm: / });
+      await alarm.click();
+      await eventually(async () => assert.equal(await alarm.getAttribute("aria-pressed"), "true"));
+      await page.reload();
+      await page.getByRole("button", { name: "False alarms", exact: true }).click();
+      await eventually(async () => assert.ok((await passes.locator("time", { hasText: when }).count()) >= 1, "the reviewed pass is under False alarms, after a reload"));
+      const marked = rowsOf().filter({ has: page.locator("time", { hasText: when }) }).first();
+      assert.equal(await marked.getAttribute("data-review"), "false_positive");
+      await marked.getByRole("button", { name: /^False alarm: / }).click(); // pressed again: taken back
+      await eventually(async () => assert.equal(await passes.locator("time", { hasText: when }).count(), 0, "it is no longer a false alarm"));
+
+      // and one is confirmed, which is a different button and a different state
+      await page.getByRole("button", { name: "All", exact: true }).click();
+      await eventually(async () => assert.ok((await rowsOf().count()) >= 1));
+      const second = rowsOf().first();
+      await second.getByRole("button", { name: /^Confirm: / }).click();
+      await eventually(async () => assert.equal(await second.getAttribute("data-review"), "confirmed"));
+      assert.equal(await second.getByRole("button", { name: /^False alarm: / }).getAttribute("aria-pressed"), "false");
+      await second.getByRole("button", { name: /^Confirm: / }).click(); // leave things as they were
+      await eventually(async () => assert.equal(await second.getAttribute("data-review"), "none"));
+
+      // the period is kept
+      await page.getByRole("button", { name: "7 days", exact: true }).click();
+      await page.reload();
+      assert.equal(await page.getByRole("button", { name: "7 days", exact: true }).getAttribute("aria-pressed"), "true");
+      await page.getByRole("button", { name: "24 hours", exact: true }).click();
+      await shot("stop-signs-card");
+    });
+  }
+
+  await step("with no stop sign set up the card says how to add one, and a failed request is said", async () => {
+    await goTo("History");
+    const json = (body, status = 200) => ({ status, contentType: "application/json", body: JSON.stringify(body) });
+    const none = { outcomes: ["stopped", "rolling", "did_not_stop", "indeterminate"].map((outcome) => ({ outcome, total: 0, confirmed: 0, false_positive: 0, unreviewed: 0 })), from_ms: 0, to_ms: 1 };
+    const profileRoute = "**/api/profile";
+    const summaryRoute = "**/api/stops/summary**";
+    await page.route(summaryRoute, (route) => route.fulfill(json(none)));
+    await page.route(profileRoute, (route) => route.fulfill(json({ version: 1, problem: null, reference_at: null, profile: { schema_version: 2, lines: [], detection_zones: [], exclusion_zones: [], stop_signs: [] } })));
+    await page.reload();
+    await page.getByText("No stop sign is set up yet.").waitFor();
+    await page.getByRole("link", { name: "Add one on the Setup page" }).click();
+    await page.getByRole("heading", { level: 1, name: "Setup" }).waitFor({ state: "attached" });
+    await page.unroute(profileRoute);
+    await page.unroute(summaryRoute);
+    await goTo("History");
+    await page.reload();
+    await page.getByTestId("stops-headline").waitFor();
+  });
+
   await step("the Trails card draws a day's paths over the camera picture", async () => {
     await goTo("History");
     await page.waitForFunction(() => Number(document.querySelector('[data-testid="trail-canvas"]')?.dataset.paths) > 0, undefined, { timeout: 60_000 });

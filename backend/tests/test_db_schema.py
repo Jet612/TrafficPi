@@ -1,10 +1,12 @@
 from pathlib import Path
 
+from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from sqlalchemy import inspect, text
 
 from trafficpi.db import Base, create_db_engine, upgrade_to_head
+from trafficpi.db.session import _alembic_config
 
 
 def test_migrating_creates_every_table(tmp_path: Path) -> None:
@@ -30,6 +32,33 @@ def test_the_migration_matches_the_models(tmp_path: Path) -> None:
     with engine.connect() as connection:
         diff = compare_metadata(MigrationContext.configure(connection), Base.metadata)
     assert diff == []
+
+
+def test_a_database_from_before_reviews_keeps_its_events_and_gains_the_columns(
+    tmp_path: Path,
+) -> None:
+    """The real database has months of events by the time a migration is added: none may be lost."""
+    engine = create_db_engine(tmp_path / "t.db")
+    with engine.begin() as connection:
+        command.upgrade(_alembic_config(connection=connection), "0002")
+        connection.execute(
+            text("INSERT INTO cameras (id, name, created_at) VALUES ('default', 'Front', 1)")
+        )
+        connection.execute(
+            text(
+                "INSERT INTO events (camera_id, occurred_at, type, class_label, line_id, direction)"
+                " VALUES ('default', 5, 'count', 'car', 'main', 1)"
+            )
+        )
+    assert "review" not in {c["name"] for c in inspect(engine).get_columns("events")}
+    upgrade_to_head(engine)
+    columns = {c["name"] for c in inspect(engine).get_columns("events")}
+    assert {"review", "reviewed_at"} <= columns
+    with engine.connect() as connection:
+        row = connection.execute(
+            text("SELECT occurred_at, class_label, review, reviewed_at FROM events")
+        ).one()
+    assert tuple(row) == (5, "car", None, None)
 
 
 def test_upgrading_twice_is_harmless(tmp_path: Path) -> None:

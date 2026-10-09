@@ -41,9 +41,13 @@ from trafficpi.api.schemas import (
     ProfileOut,
     ProfileSaved,
     ReferenceSaved,
+    ReviewRequest,
     SeriesPoint,
     Settings,
     StatusResponse,
+    StopOut,
+    StopSummary,
+    StopTotals,
     TodaySummary,
     TrailDay,
     TrailPaths,
@@ -60,12 +64,13 @@ from trafficpi.core.profile import (
     parse_profile,
 )
 from trafficpi.core.trail_settings import TrailSettings
-from trafficpi.db.store import Store, open_store
+from trafficpi.db.store import STOP_OUTCOMES, EventRow, Store, open_store
 from trafficpi.vision.trails import trail_classes
 
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 WHERE_FROM = {"body", "query", "path", "header", "cookie"}  # the first part of a FastAPI error path
 SERIES_LIMITS_S = {"minute": 2 * 86400, "hour": 62 * 86400, "day": 1100 * 86400}
+MAX_STOP_RANGE_S = 366 * 86400
 SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
@@ -115,6 +120,43 @@ def _same_origin(origin: str | None, host: str | None, allowed: tuple[str, ...] 
 def _error_path(location: tuple[str | int, ...]) -> tuple[str | int, ...]:
     """Where a request went wrong, without the part of the request: lines[0].a, not body.lines..."""
     return tuple(location[1:]) if location and location[0] in WHERE_FROM else tuple(location)
+
+
+def _stop_out(event: EventRow) -> StopOut:
+    details = event.details or {}
+    return StopOut(
+        id=event.id,
+        t=event.occurred_at,
+        sign=event.line_id or "",
+        label=event.class_label,
+        outcome=details.get("outcome", "indeterminate"),
+        hold_s=details.get("hold_s", 0.0),
+        min_speed=details.get("min_speed", -1.0),
+        observed_s=details.get("observed_s", 0.0),
+        review=event.review,  # type: ignore[arg-type]
+        reviewed_at=event.reviewed_at,
+    )
+
+
+def _check_stop_range(from_ms: int, to_ms: int) -> None:
+    if to_ms <= from_ms:
+        raise HTTPException(status_code=422, detail="to_ms must be after from_ms")
+    if to_ms - from_ms > MAX_STOP_RANGE_S * 1000:
+        raise HTTPException(status_code=422, detail="ask for at most a year of stops at a time")
+
+
+def _outcomes(names: str | None) -> list[str] | None:
+    """The outcomes asked for in ``?outcome=rolling,did_not_stop`` (None: any), or a refusal."""
+    if names is None:
+        return None
+    asked = [name.strip() for name in names.split(",")]
+    for name in asked:
+        if name not in STOP_OUTCOMES:
+            raise HTTPException(
+                status_code=422,
+                detail=f"unknown outcome {name!r}; use {', '.join(STOP_OUTCOMES)}",
+            )
+    return list(dict.fromkeys(asked))
 
 
 def _trail_kinds(kinds: str | None) -> list[str] | None:
@@ -354,6 +396,55 @@ def create_app(
             )
             for e in ctx.store.recent_events(limit=limit, before_id=before_id, type=type)
         ]
+
+    # --- stops (plan.md D23, M5) -----------------------------------------------------------
+
+    @app.get("/api/stops", response_model=list[StopOut])
+    def stops(
+        user: User,
+        from_ms: Annotated[int, Query(ge=0)],
+        to_ms: Annotated[int, Query(ge=0)],
+        outcome: str | None = None,
+        review: Literal["unreviewed", "confirmed", "false_positive"] | None = None,
+        sign: str | None = None,
+        limit: Annotated[int, Query(ge=1, le=500)] = 50,
+        before_id: int | None = None,
+    ) -> list[StopOut]:
+        """What vehicles did at stop signs in a range, newest first; ``before_id`` pages on."""
+        _check_stop_range(from_ms, to_ms)
+        found = ctx.store.stops_between(
+            from_ms,
+            to_ms,
+            outcomes=_outcomes(outcome),
+            review=review,
+            sign=sign,
+            limit=limit,
+            before_id=before_id,
+        )
+        return [_stop_out(event) for event in found]
+
+    @app.get("/api/stops/summary", response_model=StopSummary)
+    def stops_summary(
+        user: User,
+        from_ms: Annotated[int, Query(ge=0)],
+        to_ms: Annotated[int, Query(ge=0)],
+    ) -> StopSummary:
+        """How many stop events had each outcome in a range, and how many have been looked at."""
+        _check_stop_range(from_ms, to_ms)
+        totals = ctx.store.stop_summary(from_ms, to_ms)
+        return StopSummary(
+            from_ms=from_ms,
+            to_ms=to_ms,
+            outcomes=[StopTotals(outcome=name, **counts) for name, counts in totals.items()],  # type: ignore[arg-type]
+        )
+
+    @app.put("/api/stops/{event_id}/review", response_model=StopOut)
+    def review_stop(event_id: int, body: ReviewRequest, user: User) -> StopOut:
+        """Say what a person made of a stop event: confirmed, a false positive, or null to undo."""
+        reviewed = ctx.store.review_stop(event_id, body.state, now_ms=ctx.clock.now_ms())
+        if reviewed is None:
+            raise HTTPException(status_code=404, detail="no such stop event")
+        return _stop_out(reviewed)
 
     def reference_taken_at() -> int | None:
         try:

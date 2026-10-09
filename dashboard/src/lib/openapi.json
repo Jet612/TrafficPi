@@ -498,6 +498,31 @@
         "title": "ReferenceSaved",
         "type": "object"
       },
+      "ReviewRequest": {
+        "description": "What a person made of a stop event; null takes the review back.",
+        "properties": {
+          "state": {
+            "anyOf": [
+              {
+                "enum": [
+                  "confirmed",
+                  "false_positive"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "ReviewRequest",
+        "type": "object"
+      },
       "SeriesPoint": {
         "properties": {
           "by_class": {
@@ -606,6 +631,96 @@
           "timezone"
         ],
         "title": "StatusResponse",
+        "type": "object"
+      },
+      "StopOut": {
+        "description": "What one vehicle did at one stop sign (plan.md D23), and what a person made of it.",
+        "properties": {
+          "hold_s": {
+            "title": "Hold S",
+            "type": "number"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "min_speed": {
+            "title": "Min Speed",
+            "type": "number"
+          },
+          "observed_s": {
+            "title": "Observed S",
+            "type": "number"
+          },
+          "outcome": {
+            "enum": [
+              "stopped",
+              "rolling",
+              "did_not_stop",
+              "indeterminate"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "review": {
+            "anyOf": [
+              {
+                "enum": [
+                  "confirmed",
+                  "false_positive"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review"
+          },
+          "reviewed_at": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed At"
+          },
+          "sign": {
+            "title": "Sign",
+            "type": "string"
+          },
+          "t": {
+            "title": "T",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "t",
+          "sign",
+          "label",
+          "outcome",
+          "hold_s",
+          "min_speed",
+          "observed_s",
+          "review",
+          "reviewed_at"
+        ],
+        "title": "StopOut",
         "type": "object"
       },
       "StopSignConfig": {
@@ -720,6 +835,72 @@
           "min_observed_s"
         ],
         "title": "StopSignConfig",
+        "type": "object"
+      },
+      "StopSummary": {
+        "properties": {
+          "from_ms": {
+            "title": "From Ms",
+            "type": "integer"
+          },
+          "outcomes": {
+            "items": {
+              "$ref": "#/components/schemas/StopTotals"
+            },
+            "title": "Outcomes",
+            "type": "array"
+          },
+          "to_ms": {
+            "title": "To Ms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "from_ms",
+          "to_ms",
+          "outcomes"
+        ],
+        "title": "StopSummary",
+        "type": "object"
+      },
+      "StopTotals": {
+        "description": "How many stop events had one outcome, and how many of them a person has looked at.",
+        "properties": {
+          "confirmed": {
+            "title": "Confirmed",
+            "type": "integer"
+          },
+          "false_positive": {
+            "title": "False Positive",
+            "type": "integer"
+          },
+          "outcome": {
+            "enum": [
+              "stopped",
+              "rolling",
+              "did_not_stop",
+              "indeterminate"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "unreviewed": {
+            "title": "Unreviewed",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "outcome",
+          "total",
+          "confirmed",
+          "false_positive",
+          "unreviewed"
+        ],
+        "title": "StopTotals",
         "type": "object"
       },
       "SystemMetrics": {
@@ -1683,6 +1864,243 @@
           }
         },
         "summary": "Status"
+      }
+    },
+    "/api/stops": {
+      "get": {
+        "description": "What vehicles did at stop signs in a range, newest first; ``before_id`` pages on.",
+        "operationId": "stops_api_stops_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from_ms",
+            "required": true,
+            "schema": {
+              "minimum": 0,
+              "title": "From Ms",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to_ms",
+            "required": true,
+            "schema": {
+              "minimum": 0,
+              "title": "To Ms",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "outcome",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Outcome"
+            }
+          },
+          {
+            "in": "query",
+            "name": "review",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "unreviewed",
+                    "confirmed",
+                    "false_positive"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Review"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sign",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sign"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "before_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/StopOut"
+                  },
+                  "title": "Response Stops Api Stops Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stops"
+      }
+    },
+    "/api/stops/summary": {
+      "get": {
+        "description": "How many stop events had each outcome in a range, and how many have been looked at.",
+        "operationId": "stops_summary_api_stops_summary_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from_ms",
+            "required": true,
+            "schema": {
+              "minimum": 0,
+              "title": "From Ms",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to_ms",
+            "required": true,
+            "schema": {
+              "minimum": 0,
+              "title": "To Ms",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StopSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stops Summary"
+      }
+    },
+    "/api/stops/{event_id}/review": {
+      "put": {
+        "description": "Say what a person made of a stop event: confirmed, a false positive, or null to undo.",
+        "operationId": "review_stop_api_stops__event_id__review_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StopOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Review Stop"
       }
     },
     "/api/trails": {

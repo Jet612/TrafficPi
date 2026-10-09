@@ -27,6 +27,24 @@ from trafficpi.vision.rules import CountEvent, StopEvent
 from trafficpi.vision.trails import FinishedTrail
 
 DEFAULT_CAMERA = "default"
+STOP_OUTCOMES = ("stopped", "rolling", "did_not_stop", "indeterminate")
+REVIEW_STATES = ("confirmed", "false_positive")  # and None: not looked at yet
+
+
+def _event_row(r: Event) -> EventRow:
+    return EventRow(
+        r.id,
+        r.occurred_at,
+        r.type,
+        r.track_id,
+        r.class_label,
+        r.line_id,
+        r.direction,
+        r.details,
+        r.evidence_path,
+        r.review,
+        r.reviewed_at,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +58,8 @@ class EventRow:
     direction: int | None
     details: dict[str, Any] | None
     evidence_path: str | None
+    review: str | None = None  # stop events: "confirmed", "false_positive", or None
+    reviewed_at: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -211,20 +231,95 @@ class Store:
             query = query.where(Event.occurred_at >= since_ms)
         with self._session() as s:
             rows = s.execute(query.order_by(Event.id.desc()).limit(limit)).scalars()
-            return [
-                EventRow(
-                    r.id,
-                    r.occurred_at,
-                    r.type,
-                    r.track_id,
-                    r.class_label,
-                    r.line_id,
-                    r.direction,
-                    r.details,
-                    r.evidence_path,
+            return [_event_row(r) for r in rows]
+
+    # --- stops: what vehicles did at stop signs, and what a person made of it -------------------
+
+    def stops_between(
+        self,
+        start_ms: int,
+        end_ms: int,
+        *,
+        outcomes: Collection[str] | None = None,
+        review: str | None = None,
+        sign: str | None = None,
+        limit: int = 50,
+        before_id: int | None = None,
+    ) -> list[EventRow]:
+        """Stop events in ``[start_ms, end_ms)``, newest first.
+
+        ``review`` is "unreviewed", "confirmed" or "false_positive" (None: whichever). Pass the
+        last id seen as ``before_id`` to get the next page.
+        """
+        query = select(Event).where(
+            Event.camera_id == self.camera_id,
+            Event.type == "stop",
+            Event.occurred_at >= start_ms,
+            Event.occurred_at < end_ms,
+        )
+        if outcomes is not None:
+            query = query.where(Event.details["outcome"].as_string().in_(list(outcomes)))
+        if review == "unreviewed":
+            query = query.where(Event.review.is_(None))
+        elif review is not None:
+            query = query.where(Event.review == review)
+        if sign is not None:
+            query = query.where(Event.line_id == sign)
+        if before_id is not None:
+            query = query.where(Event.id < before_id)
+        with self._session() as s:
+            rows = s.execute(query.order_by(Event.id.desc()).limit(limit)).scalars()
+            return [_event_row(r) for r in rows]
+
+    def stop_summary(self, start_ms: int, end_ms: int) -> dict[str, dict[str, int]]:
+        """For each outcome, how many stop events in the range, and how many are confirmed, marked
+        as false positives, or not looked at yet. Every outcome is there, with zeros if need be."""
+        outcome = Event.details["outcome"].as_string()
+        with self._session() as s:
+            rows = s.execute(
+                select(outcome, Event.review, func.count(Event.id))
+                .where(
+                    Event.camera_id == self.camera_id,
+                    Event.type == "stop",
+                    Event.occurred_at >= start_ms,
+                    Event.occurred_at < end_ms,
                 )
-                for r in rows
-            ]
+                .group_by(outcome, Event.review)
+            ).all()
+        totals = {
+            name: {"total": 0, "confirmed": 0, "false_positive": 0, "unreviewed": 0}
+            for name in STOP_OUTCOMES
+        }
+        for name, review, count in rows:
+            if name not in totals:
+                continue  # an outcome that a newer version knew of
+            totals[name]["total"] += count
+            totals[name][review or "unreviewed"] += count
+        return totals
+
+    def review_stop(
+        self, event_id: int, state: str | None, *, now_ms: int | None = None
+    ) -> EventRow | None:
+        """Record what a person made of a stop event (None takes it back to not looked at).
+
+        Returns the event as it is now, or None if there is no such stop event.
+        """
+        if state is not None and state not in REVIEW_STATES:
+            raise ValueError(f"a review is one of {', '.join(REVIEW_STATES)}, or nothing")
+        with self._session() as s:
+            row = s.execute(
+                select(Event).where(
+                    Event.id == event_id,
+                    Event.camera_id == self.camera_id,
+                    Event.type == "stop",
+                )
+            ).scalar_one_or_none()
+            if row is None:
+                return None
+            row.review = state
+            row.reviewed_at = None if state is None else (now_ms or WallClock().now_ms())
+            s.flush()
+            return _event_row(row)
 
     def event_count(self) -> int:
         with self._session() as s:

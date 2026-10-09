@@ -284,6 +284,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/stops": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stops
+         * @description What vehicles did at stop signs in a range, newest first; ``before_id`` pages on.
+         */
+        get: operations["stops_api_stops_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/stops/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stops Summary
+         * @description How many stop events had each outcome in a range, and how many have been looked at.
+         */
+        get: operations["stops_summary_api_stops_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/stops/{event_id}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Review Stop
+         * @description Say what a person made of a stop event: confirmed, a false positive, or null to undo.
+         */
+        put: operations["review_stop_api_stops__event_id__review_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/trails": {
         parameters: {
             query?: never;
@@ -497,6 +557,14 @@ export interface components {
             /** Reference At */
             reference_at: number;
         };
+        /**
+         * ReviewRequest
+         * @description What a person made of a stop event; null takes the review back.
+         */
+        ReviewRequest: {
+            /** State */
+            state: ("confirmed" | "false_positive") | null;
+        };
         /** SeriesPoint */
         SeriesPoint: {
             /** By Class */
@@ -545,6 +613,35 @@ export interface components {
             vision: components["schemas"]["VisionStatus"];
         };
         /**
+         * StopOut
+         * @description What one vehicle did at one stop sign (plan.md D23), and what a person made of it.
+         */
+        StopOut: {
+            /** Hold S */
+            hold_s: number;
+            /** Id */
+            id: number;
+            /** Label */
+            label: string | null;
+            /** Min Speed */
+            min_speed: number;
+            /** Observed S */
+            observed_s: number;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "stopped" | "rolling" | "did_not_stop" | "indeterminate";
+            /** Review */
+            review: ("confirmed" | "false_positive") | null;
+            /** Reviewed At */
+            reviewed_at: number | null;
+            /** Sign */
+            sign: string;
+            /** T */
+            t: number;
+        };
+        /**
          * StopSignConfig
          * @description A stop line, and the stretch of road before it where a vehicle has to stop (plan.md D23).
          *
@@ -591,6 +688,34 @@ export interface components {
             roll_speed: number;
             /** Still Radius */
             still_radius: number;
+        };
+        /** StopSummary */
+        StopSummary: {
+            /** From Ms */
+            from_ms: number;
+            /** Outcomes */
+            outcomes: components["schemas"]["StopTotals"][];
+            /** To Ms */
+            to_ms: number;
+        };
+        /**
+         * StopTotals
+         * @description How many stop events had one outcome, and how many of them a person has looked at.
+         */
+        StopTotals: {
+            /** Confirmed */
+            confirmed: number;
+            /** False Positive */
+            false_positive: number;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "stopped" | "rolling" | "did_not_stop" | "indeterminate";
+            /** Total */
+            total: number;
+            /** Unreviewed */
+            unreviewed: number;
         };
         /**
          * SystemMetrics
@@ -1192,6 +1317,110 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StatusResponse"];
+                };
+            };
+        };
+    };
+    stops_api_stops_get: {
+        parameters: {
+            query: {
+                from_ms: number;
+                to_ms: number;
+                outcome?: string | null;
+                review?: ("unreviewed" | "confirmed" | "false_positive") | null;
+                sign?: string | null;
+                limit?: number;
+                before_id?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StopOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stops_summary_api_stops_summary_get: {
+        parameters: {
+            query: {
+                from_ms: number;
+                to_ms: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StopSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    review_stop_api_stops__event_id__review_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StopOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
