@@ -768,6 +768,8 @@ def create_app(
             evidence_max_mb=evidence.max_mb,
             evidence_rolling_clip_hours=evidence.rolling_clip_hours,
             evidence_did_not_stop_clip_hours=evidence.did_not_stop_clip_hours,
+            evidence_keep_rolling=evidence.keep_rolling,
+            evidence_keep_did_not_stop=evidence.keep_did_not_stop,
             remote_live_video=remote_video_allowed(),
             detect_people=people_wanted(ctx.store.get_setting(DETECT_PEOPLE_KEY, True)),
         )
@@ -798,6 +800,8 @@ def create_app(
                 max_mb=body.evidence_max_mb,
                 rolling_clip_hours=body.evidence_rolling_clip_hours,
                 did_not_stop_clip_hours=body.evidence_did_not_stop_clip_hours,
+                keep_rolling=body.evidence_keep_rolling,
+                keep_did_not_stop=body.evidence_keep_did_not_stop,
             )
         )
         await ctx.vision.reload()  # the vision service reads these settings when told to

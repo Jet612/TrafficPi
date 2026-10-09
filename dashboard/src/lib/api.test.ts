@@ -78,6 +78,8 @@ describe("api", () => {
       evidence_max_mb: 2048,
       evidence_rolling_clip_hours: 3,
       evidence_did_not_stop_clip_hours: 48,
+      evidence_keep_rolling: true,
+      evidence_keep_did_not_stop: true,
       remote_live_video: false,
       detect_people: true,
     };

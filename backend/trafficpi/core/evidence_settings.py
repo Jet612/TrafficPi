@@ -2,9 +2,9 @@
 
 Evidence is a picture and a short clip of a pass that needs a look (rolling, did not stop, could
 not tell), kept on this machine for a while and then deleted (the clips of rolls and of passes that
-did not stop sooner than the rest). They live in the database's settings table, like the trail
-settings, so that the dashboard can change them and the vision service picks the change up when it
-is told to reload.
+did not stop sooner than the rest). A roll and a pass that did not stop can each be switched off
+(D33). They live in the database's settings table, like the trail settings, so that the dashboard
+can change them and the vision service picks the change up when it is told to reload.
 """
 
 from __future__ import annotations
@@ -16,6 +16,8 @@ KEEP_DAYS_KEY = "evidence_keep_days"
 MAX_MB_KEY = "evidence_max_mb"
 ROLLING_CLIP_HOURS_KEY = "evidence_rolling_clip_hours"
 DID_NOT_STOP_CLIP_HOURS_KEY = "evidence_did_not_stop_clip_hours"
+KEEP_ROLLING_KEY = "evidence_keep_rolling"
+KEEP_DID_NOT_STOP_KEY = "evidence_keep_did_not_stop"
 
 DEFAULT_KEEP_DAYS = 30
 DEFAULT_MAX_MB = 2048
@@ -36,6 +38,11 @@ class EvidenceSettings:
     # than ``keep_days`` when it was a roll or a pass that did not stop; the days still cap these.
     rolling_clip_hours: int = DEFAULT_ROLLING_CLIP_HOURS
     did_not_stop_clip_hours: int = DEFAULT_DID_NOT_STOP_CLIP_HOURS
+    # One switch for each outcome, beside ``enabled`` (D33). Off means no picture and no clip of
+    # that kind of pass; the pass is still judged and counted. A pass that could not be told has
+    # no switch of its own and follows ``enabled``. What is already kept is not deleted.
+    keep_rolling: bool = True
+    keep_did_not_stop: bool = True
 
     def __post_init__(self) -> None:
         if not 1 <= self.keep_days <= MAX_KEEP_DAYS:

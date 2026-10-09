@@ -867,6 +867,10 @@ export interface components {
             evidence_enabled: boolean;
             /** Evidence Keep Days */
             evidence_keep_days: number;
+            /** Evidence Keep Did Not Stop */
+            evidence_keep_did_not_stop: boolean;
+            /** Evidence Keep Rolling */
+            evidence_keep_rolling: boolean;
             /** Evidence Max Mb */
             evidence_max_mb: number;
             /** Evidence Rolling Clip Hours */

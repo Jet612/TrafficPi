@@ -271,6 +271,29 @@ def test_evidence_settings_start_as_the_defaults_and_round_trip(store: Store) ->
     assert store.get_evidence_settings() == changed
 
 
+def test_the_evidence_switches_for_each_outcome_round_trip(store: Store) -> None:
+    both = store.get_evidence_settings()
+    assert (both.keep_rolling, both.keep_did_not_stop) == (True, True)  # on from the start
+    store.set_evidence_settings(EvidenceSettings(keep_rolling=False))
+    got = store.get_evidence_settings()
+    assert (got.keep_rolling, got.keep_did_not_stop) == (False, True)
+    store.set_evidence_settings(EvidenceSettings(keep_did_not_stop=False))
+    got = store.get_evidence_settings()
+    assert (got.keep_rolling, got.keep_did_not_stop) == (True, False)
+    store.set_evidence_settings(EvidenceSettings(keep_rolling=False, keep_did_not_stop=False))
+    got = store.get_evidence_settings()
+    assert (got.keep_rolling, got.keep_did_not_stop) == (False, False)
+
+
+def test_only_a_plain_no_turns_an_outcomes_evidence_off(store: Store) -> None:
+    """A damaged value must never leave the owner without the evidence they asked for."""
+    for junk in ("no", "false", 0, None, [], {}):
+        store.set_setting("evidence_keep_rolling", junk)
+        store.set_setting("evidence_keep_did_not_stop", junk)
+        got = store.get_evidence_settings()
+        assert (got.keep_rolling, got.keep_did_not_stop) == (True, True), junk
+
+
 def test_an_evidence_setting_that_is_stored_but_makes_no_sense_is_ignored(store: Store) -> None:
     for key, value in [
         ("evidence_keep_days", 0),

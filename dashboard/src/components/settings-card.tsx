@@ -248,6 +248,25 @@ export function SettingsCard() {
                 checked={draft.evidenceEnabled}
                 onChange={(evidenceEnabled) => change({ evidenceEnabled })}
               />
+              <div className="grid gap-3 border-l-2 border-edge pl-4">
+                <p className="text-sm text-ink-2">
+                  Each kind of pass has a switch of its own. With one off, no picture and no clip are made of that kind of pass, but it is still judged and counted, on the Stop
+                  signs card, on the Data page and in the daily email. What was kept already stays until its time is up. A pass that could not be told follows the switch above.
+                </p>
+                <Switch
+                  label="Keep a picture and a clip of rolled-through stops"
+                  checked={draft.evidenceKeepRolling}
+                  disabled={!draft.evidenceEnabled}
+                  onChange={(evidenceKeepRolling) => change({ evidenceKeepRolling })}
+                />
+                <Switch
+                  label="Keep a picture and a clip of vehicles that did not stop"
+                  checked={draft.evidenceKeepDidNotStop}
+                  disabled={!draft.evidenceEnabled}
+                  onChange={(evidenceKeepDidNotStop) => change({ evidenceKeepDidNotStop })}
+                />
+                {!draft.evidenceEnabled && <p className="text-sm text-ink-2">Nothing is kept while the switch above is off, whatever these say.</p>}
+              </div>
               <div>
                 <Label htmlFor={evidenceDaysId}>Keep pictures and clips for (days)</Label>
                 <Input

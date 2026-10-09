@@ -266,6 +266,10 @@ class Settings(BaseModel):
     # that did not stop, is kept; sooner than the days, to spare the disk. The counts stay for ever.
     evidence_rolling_clip_hours: int = Field(strict=True, ge=1, le=MAX_CLIP_HOURS)
     evidence_did_not_stop_clip_hours: int = Field(strict=True, ge=1, le=MAX_CLIP_HOURS)
+    # Whether a picture and a clip are kept of a roll, and of a pass that did not stop. Off: the
+    # pass is still judged and counted, only its evidence is not made (plan.md D33).
+    evidence_keep_rolling: bool = Field(strict=True)
+    evidence_keep_did_not_stop: bool = Field(strict=True)
     # May viewers who come through Cloudflare open the continuous live stream? Off: Cloudflare's
     # terms let it limit video on its CDN and do not say whether a Tunnel counts (plan.md D28).
     remote_live_video: bool = Field(strict=True)

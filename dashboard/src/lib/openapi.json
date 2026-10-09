@@ -1041,6 +1041,14 @@
             "title": "Evidence Keep Days",
             "type": "integer"
           },
+          "evidence_keep_did_not_stop": {
+            "title": "Evidence Keep Did Not Stop",
+            "type": "boolean"
+          },
+          "evidence_keep_rolling": {
+            "title": "Evidence Keep Rolling",
+            "type": "boolean"
+          },
           "evidence_max_mb": {
             "maximum": 1000000.0,
             "minimum": 50.0,
@@ -1095,6 +1103,8 @@
           "evidence_max_mb",
           "evidence_rolling_clip_hours",
           "evidence_did_not_stop_clip_hours",
+          "evidence_keep_rolling",
+          "evidence_keep_did_not_stop",
           "remote_live_video",
           "detect_people"
         ],

@@ -665,8 +665,17 @@ class VisionService:
             log.info("evidence is switched off")
 
     def _ask_for_evidence(self, event: StopEvent, event_id: int, at_ms: int) -> None:
-        """A stop that needs a look gets a picture and a clip, once the seconds after it are in."""
+        """A stop that needs a look gets a picture and a clip, once the seconds after it are in.
+
+        A roll and a pass that did not stop each have a switch (D33); with theirs off they are
+        judged and stored as ever and get no evidence. A pass that could not be told has none.
+        """
         if self._evidence is None or event.outcome == "stopped":
+            return
+        settings = self._evidence_settings
+        if event.outcome == "rolling" and not settings.keep_rolling:
+            return
+        if event.outcome == "did_not_stop" and not settings.keep_did_not_stop:
             return
         try:
             sign = self._stop_signs.get(event.sign_id)

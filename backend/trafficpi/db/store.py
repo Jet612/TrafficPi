@@ -712,6 +712,10 @@ class Store:
                 1,
                 ev.MAX_CLIP_HOURS,
             ),
+            # only a plain "no" turns one off, so that a damaged value never costs the owner the
+            # evidence they asked for
+            keep_rolling=self.get_setting(ev.KEEP_ROLLING_KEY, True) is not False,
+            keep_did_not_stop=self.get_setting(ev.KEEP_DID_NOT_STOP_KEY, True) is not False,
         )
 
     def set_evidence_settings(self, settings: EvidenceSettings) -> None:
@@ -720,6 +724,8 @@ class Store:
         self.set_setting(ev.MAX_MB_KEY, settings.max_mb)
         self.set_setting(ev.ROLLING_CLIP_HOURS_KEY, settings.rolling_clip_hours)
         self.set_setting(ev.DID_NOT_STOP_CLIP_HOURS_KEY, settings.did_not_stop_clip_hours)
+        self.set_setting(ev.KEEP_ROLLING_KEY, settings.keep_rolling)
+        self.set_setting(ev.KEEP_DID_NOT_STOP_KEY, settings.keep_did_not_stop)
 
     # --- settings and profile --------------------------------------------------------------
 

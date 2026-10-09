@@ -13,6 +13,8 @@ const saved: Settings = {
   evidence_max_mb: 2048,
   evidence_rolling_clip_hours: 3,
   evidence_did_not_stop_clip_hours: 48,
+  evidence_keep_rolling: true,
+  evidence_keep_did_not_stop: true,
   remote_live_video: false,
   detect_people: true,
 };
@@ -31,6 +33,8 @@ describe("the settings form", () => {
       evidenceMb: "2048",
       rollingClipHours: "3",
       didNotStopClipHours: "48",
+      evidenceKeepRolling: true,
+      evidenceKeepDidNotStop: true,
       remoteLiveVideo: false,
       detectPeople: true,
     });
@@ -84,6 +88,8 @@ describe("the settings form", () => {
       evidenceMb: "500 ",
       rollingClipHours: " 6",
       didNotStopClipHours: "72 ",
+      evidenceKeepRolling: false,
+      evidenceKeepDidNotStop: false,
       remoteLiveVideo: true,
       detectPeople: false,
     });
@@ -100,10 +106,21 @@ describe("the settings form", () => {
         evidence_max_mb: 500,
         evidence_rolling_clip_hours: 6,
         evidence_did_not_stop_clip_hours: 72,
+        evidence_keep_rolling: false,
+        evidence_keep_did_not_stop: false,
         remote_live_video: true,
         detect_people: false,
       },
     });
+  });
+
+  it("shows and sends the switch of each outcome on its own", () => {
+    const rollingOff: Settings = { ...saved, evidence_keep_rolling: false };
+    expect(toDraft(rollingOff)).toMatchObject({ evidenceKeepRolling: false, evidenceKeepDidNotStop: true });
+    expect(fromDraft(toDraft(rollingOff))).toEqual({ ok: true, settings: rollingOff });
+    const missOff: Settings = { ...saved, evidence_keep_did_not_stop: false };
+    expect(toDraft(missOff)).toMatchObject({ evidenceKeepRolling: true, evidenceKeepDidNotStop: false });
+    expect(fromDraft(toDraft(missOff))).toEqual({ ok: true, settings: missOff });
   });
 
   it("knows when something has changed, and when it only looks it", () => {
@@ -117,6 +134,8 @@ describe("the settings form", () => {
     expect(isChanged({ ...toDraft(saved), timezone: "UTC" }, saved)).toBe(true);
     expect(isChanged({ ...toDraft(saved), keepDays: "" }, saved)).toBe(true); // half typed is a change, though it cannot be saved
     expect(isChanged({ ...toDraft(saved), evidenceEnabled: false }, saved)).toBe(true);
+    expect(isChanged({ ...toDraft(saved), evidenceKeepRolling: false }, saved)).toBe(true);
+    expect(isChanged({ ...toDraft(saved), evidenceKeepDidNotStop: false }, saved)).toBe(true);
     expect(isChanged({ ...toDraft(saved), evidenceDays: "31" }, saved)).toBe(true);
     expect(isChanged({ ...toDraft(saved), evidenceDays: " 30 " }, saved)).toBe(false);
     expect(isChanged({ ...toDraft(saved), rollingClipHours: "4" }, saved)).toBe(true);

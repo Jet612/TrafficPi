@@ -1453,6 +1453,8 @@ try {
     const evidenceMb = page.getByLabel("Keep at most (megabytes)");
     const rollingHours = page.getByLabel("Keep the clip of a rolled-through stop for (hours)");
     const didNotStopHours = page.getByLabel("Keep the clip of a vehicle that did not stop for (hours)");
+    const keepRolling = page.getByRole("switch", { name: "Keep a picture and a clip of rolled-through stops", exact: true });
+    const keepDidNotStop = page.getByRole("switch", { name: "Keep a picture and a clip of vehicles that did not stop", exact: true });
     try {
       assert.equal(await zone.inputValue(), original.timezone, "the form shows what is saved");
       assert.equal(await days.inputValue(), String(original.trails_keep_days));
@@ -1462,6 +1464,8 @@ try {
       assert.equal(await evidenceMb.inputValue(), String(original.evidence_max_mb));
       assert.equal(await rollingHours.inputValue(), String(original.evidence_rolling_clip_hours));
       assert.equal(await didNotStopHours.inputValue(), String(original.evidence_did_not_stop_clip_hours));
+      assert.equal(await keepRolling.getAttribute("aria-checked"), String(original.evidence_keep_rolling));
+      assert.equal(await keepDidNotStop.getAttribute("aria-checked"), String(original.evidence_keep_did_not_stop));
       assert.equal(await save.isDisabled(), true, "nothing to save yet");
 
       await days.fill("0");
@@ -1518,7 +1522,13 @@ try {
       await page.getByRole("button", { name: "km/h" }).click();
       if ((await people.getAttribute("aria-checked")) !== "true") await people.click();
       if ((await enabled.getAttribute("aria-checked")) === "true") await enabled.click();
+      // each kind of pass has its own switch; the rolled-through one is turned off, the other left
+      assert.equal(await keepRolling.isEnabled(), true, "while evidence is on, each outcome's switch can be used");
+      if ((await keepRolling.getAttribute("aria-checked")) === "true") await keepRolling.click();
       if ((await evidence.getAttribute("aria-checked")) === "true") await evidence.click();
+      assert.equal(await keepRolling.isDisabled(), true, "with evidence off, the outcomes' switches are greyed out");
+      assert.equal(await keepDidNotStop.isDisabled(), true);
+      await page.getByText("Nothing is kept while the switch above is off, whatever these say.").waitFor();
       await save.click();
       await page.getByRole("status").filter({ hasText: "Saved." }).waitFor();
       assert.deepEqual(await readSettings(), {
@@ -1532,6 +1542,8 @@ try {
         evidence_max_mb: 1500,
         evidence_rolling_clip_hours: 6,
         evidence_did_not_stop_clip_hours: 72,
+        evidence_keep_rolling: false,
+        evidence_keep_did_not_stop: original.evidence_keep_did_not_stop,
         remote_live_video: original.remote_live_video,
         detect_people: original.detect_people,
       });
@@ -1548,6 +1560,8 @@ try {
       assert.equal(await evidenceMb.inputValue(), "1500");
       assert.equal(await rollingHours.inputValue(), "6");
       assert.equal(await didNotStopHours.inputValue(), "72");
+      assert.equal(await keepRolling.getAttribute("aria-checked"), "false", "the switch of the rolled-through stops stays off after a reload");
+      assert.equal(await keepDidNotStop.getAttribute("aria-checked"), String(original.evidence_keep_did_not_stop), "and the other is as it was");
 
       // people can be left out altogether, which makes keeping their paths moot
       const lookForPeople = page.getByRole("switch", { name: "Look for people" });

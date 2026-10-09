@@ -172,6 +172,118 @@ def test_the_time_in_the_caption_is_the_cameras(
     assert job.caption.endswith(local.strftime("%Y-%m-%d %H:%M:%S"))
 
 
+# --- one switch for each outcome (D33) ------------------------------------------------------------
+
+ROLLED = (ROLLING_STOP, "rolling", "keep_rolling")
+DID_NOT_STOP = (STRAIGHT_THROUGH, "did_not_stop", "keep_did_not_stop")
+
+
+@pytest.mark.parametrize(("drive", "outcome", "switch"), [ROLLED, DID_NOT_STOP])
+def test_an_outcome_whose_switch_is_off_gets_no_picture_and_no_clip_but_is_still_counted(
+    store: Store,
+    tmp_path: Path,
+    recorder: Recorded,
+    encoder: FakeEncoder,
+    drive: list[tuple[float, float, float]],
+    outcome: str,
+    switch: str,
+) -> None:
+    store.set_evidence_settings(EvidenceSettings(**{switch: False}))
+    service = run(car_driving(drive) + AFTER, store, tmp_path, recorder)
+    (event,) = stops(store)  # the pass is judged and stored: the Data page and the email need it
+    assert (event.details or {})["outcome"] == outcome
+    assert recorder.jobs == [] and not (tmp_path / "evidence").exists()
+    assert event.evidence_path is None and "clip" not in (event.details or {})
+    assert encoder.calls == 0 and service.evidence_written == 0
+
+
+@pytest.mark.parametrize(
+    ("drive", "outcome", "other_switch"),
+    [
+        (ROLLING_STOP, "rolling", "keep_did_not_stop"),
+        (STRAIGHT_THROUGH, "did_not_stop", "keep_rolling"),
+    ],
+)
+def test_the_switch_of_the_other_outcome_does_not_touch_this_one(
+    store: Store,
+    tmp_path: Path,
+    recorder: Recorded,
+    drive: list[tuple[float, float, float]],
+    outcome: str,
+    other_switch: str,
+) -> None:
+    store.set_evidence_settings(EvidenceSettings(**{other_switch: False}))
+    run(car_driving(drive) + AFTER, store, tmp_path, recorder)
+    (event,) = stops(store)
+    assert (event.details or {})["outcome"] == outcome
+    assert len(recorder.jobs) == 1 and event.evidence_path is not None
+
+
+def test_a_pass_that_could_not_be_told_follows_the_main_switch_alone(
+    store: Store, tmp_path: Path, recorder: Recorded
+) -> None:
+    store.set_evidence_settings(EvidenceSettings(keep_rolling=False, keep_did_not_stop=False))
+    first_seen_at_the_line = car_driving([(1.0, 0.15, 0.15)], x0=0.46)
+    run(first_seen_at_the_line + AFTER, store, tmp_path, recorder)
+    (event,) = stops(store)
+    assert (event.details or {})["outcome"] == "indeterminate"
+    assert len(recorder.jobs) == 1 and event.evidence_path is not None
+
+
+def test_a_clean_stop_gets_none_whatever_the_switches_say(
+    store: Store, tmp_path: Path, recorder: Recorded
+) -> None:
+    store.set_evidence_settings(EvidenceSettings(keep_rolling=True, keep_did_not_stop=True))
+    run(car_driving(FULL_STOP) + AFTER, store, tmp_path, recorder)
+    assert recorder.jobs == []
+
+
+@pytest.mark.parametrize(("drive", "outcome", "switch"), [ROLLED, DID_NOT_STOP])
+def test_an_outcomes_switch_is_turned_off_for_a_running_service_when_it_is_told(
+    store: Store,
+    tmp_path: Path,
+    recorder: Recorded,
+    drive: list[tuple[float, float, float]],
+    outcome: str,
+    switch: str,
+) -> None:
+    holder: list[VisionService] = []
+
+    def at_frame(i: int) -> None:
+        time.sleep(0.001)
+        if i == 5:  # the owner turns the switch off, and the API tells the service
+            store.set_evidence_settings(EvidenceSettings(**{switch: False}))
+            holder[0].request_reload()
+
+    source = ScriptedSource(car_driving(drive) + AFTER, on_read=at_frame)
+    source.frame_size = (640, 360)
+    service = VisionService(
+        source, ScriptedDetector(source), store, data_dir=tmp_path, evidence=recorder
+    )
+    holder.append(service)
+    service.run(StopRequest())
+    (event,) = stops(store)
+    assert (event.details or {})["outcome"] == outcome  # still judged
+    assert recorder.jobs == [] and event.evidence_path is None
+
+
+def test_what_was_kept_stays_when_an_outcomes_switch_is_turned_off(
+    store: Store, tmp_path: Path, recorder: Recorded
+) -> None:
+    run(car_driving(ROLLING_STOP) + AFTER, store, tmp_path, recorder)
+    (first,) = stops(store)
+    assert first.evidence_path is not None
+    store.set_evidence_settings(EvidenceSettings(keep_rolling=False))
+    later = Recorded(tmp_path, encoder=FakeEncoder(), max_waiting=2_000)
+    try:
+        run(car_driving(ROLLING_STOP) + AFTER, store, tmp_path, later)
+    finally:
+        later.close()
+    assert later.jobs == []  # nothing new is made ...
+    assert len(stops(store)) == 2  # ... the second pass is counted all the same ...
+    assert (tmp_path / first.evidence_path).exists()  # ... and nothing already kept is deleted
+
+
 # --- when there is none ---------------------------------------------------------------------------
 
 

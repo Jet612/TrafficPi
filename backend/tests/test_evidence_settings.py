@@ -16,6 +16,13 @@ def test_evidence_is_kept_for_a_month_up_to_two_gigabytes_unless_said_otherwise(
     assert (DEFAULT_KEEP_DAYS, DEFAULT_MAX_MB) == (30, 2048)
 
 
+def test_evidence_of_each_outcome_is_kept_unless_its_switch_is_turned_off() -> None:
+    settings = EvidenceSettings()
+    assert settings.keep_rolling is True and settings.keep_did_not_stop is True
+    assert EvidenceSettings(keep_rolling=False).keep_did_not_stop is True  # each on its own
+    assert EvidenceSettings(keep_did_not_stop=False).keep_rolling is True
+
+
 @pytest.mark.parametrize("days", [0, -1, MAX_KEEP_DAYS + 1])
 def test_a_keep_time_that_makes_no_sense_is_refused(days: int) -> None:
     with pytest.raises(ValueError, match="1 to 3650 days"):

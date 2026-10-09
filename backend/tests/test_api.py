@@ -649,6 +649,8 @@ def settings(**over: object) -> dict[str, object]:
         "evidence_max_mb": 2048,
         "evidence_rolling_clip_hours": 3,
         "evidence_did_not_stop_clip_hours": 48,
+        "evidence_keep_rolling": True,
+        "evidence_keep_did_not_stop": True,
         "remote_live_video": False,
         "detect_people": True,
         **over,
@@ -675,6 +677,8 @@ def test_settings_default_save_and_validate(logged_in: TestClient, vision: FakeV
         3,
         48,
     )
+    # and a picture and clip are kept of both kinds of pass, until a switch is turned off (D33)
+    assert (first["evidence_keep_rolling"], first["evidence_keep_did_not_stop"]) == (True, True)
     body = settings(
         timezone="Europe/Paris",
         units="kmh",
@@ -685,6 +689,8 @@ def test_settings_default_save_and_validate(logged_in: TestClient, vision: FakeV
         evidence_max_mb=500,
         evidence_rolling_clip_hours=6,
         evidence_did_not_stop_clip_hours=72,
+        evidence_keep_rolling=False,
+        evidence_keep_did_not_stop=False,
     )
     saved = logged_in.put("/api/settings", json=body)
     assert saved.json() == body
@@ -737,7 +743,16 @@ def test_the_most_evidence_that_may_be_kept_must_be_a_sensible_size(
     assert logged_in.get("/api/settings").json()["evidence_max_mb"] == 2048
 
 
-@pytest.mark.parametrize("member", ["trails_enabled", "trails_people", "evidence_enabled"])
+@pytest.mark.parametrize(
+    "member",
+    [
+        "trails_enabled",
+        "trails_people",
+        "evidence_enabled",
+        "evidence_keep_rolling",
+        "evidence_keep_did_not_stop",
+    ],
+)
 @pytest.mark.parametrize("value", ["yes", "true", 1, 0, None])
 def test_the_trail_switches_must_be_true_or_false(
     logged_in: TestClient, member: str, value: object
@@ -759,6 +774,29 @@ def test_every_member_of_the_settings_must_be_given(logged_in: TestClient) -> No
     assert (
         logged_in.put("/api/settings", json={"timezone": "UTC", "units": "mph"}).status_code == 422
     )
+
+
+@pytest.mark.parametrize("member", ["evidence_keep_rolling", "evidence_keep_did_not_stop"])
+def test_a_body_without_an_evidence_switch_changes_nothing(
+    logged_in: TestClient, member: str
+) -> None:
+    """The switches are part of a PUT like every other member; leaving one out is not "on"."""
+    before = logged_in.get("/api/settings").json()
+    body = settings(evidence_keep_rolling=False, evidence_keep_did_not_stop=False)
+    del body[member]
+    assert logged_in.put("/api/settings", json=body).status_code == 422
+    assert logged_in.get("/api/settings").json() == before
+
+
+def test_one_evidence_switch_is_turned_off_alone_and_the_vision_service_is_told(
+    logged_in: TestClient, vision: FakeVision
+) -> None:
+    body = settings(evidence_keep_rolling=False)
+    assert logged_in.put("/api/settings", json=body).json() == body
+    got = logged_in.get("/api/settings").json()
+    assert (got["evidence_keep_rolling"], got["evidence_keep_did_not_stop"]) == (False, True)
+    assert got["evidence_enabled"] is True  # the main switch is its own
+    assert vision.reloads == 1
 
 
 # --- relays -----------------------------------------------------------------------------------

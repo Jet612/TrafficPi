@@ -22,6 +22,8 @@ export interface SettingsDraft {
   evidenceMb: string;
   rollingClipHours: string;
   didNotStopClipHours: string;
+  evidenceKeepRolling: boolean;
+  evidenceKeepDidNotStop: boolean;
   remoteLiveVideo: boolean;
   detectPeople: boolean;
 }
@@ -38,6 +40,8 @@ export function toDraft(settings: Settings): SettingsDraft {
     evidenceMb: String(settings.evidence_max_mb),
     rollingClipHours: String(settings.evidence_rolling_clip_hours),
     didNotStopClipHours: String(settings.evidence_did_not_stop_clip_hours),
+    evidenceKeepRolling: settings.evidence_keep_rolling,
+    evidenceKeepDidNotStop: settings.evidence_keep_did_not_stop,
     remoteLiveVideo: settings.remote_live_video,
     detectPeople: settings.detect_people,
   };
@@ -98,6 +102,8 @@ export function fromDraft(draft: SettingsDraft): DraftResult {
       evidence_max_mb: evidenceMb,
       evidence_rolling_clip_hours: rollingHours,
       evidence_did_not_stop_clip_hours: didNotStopHours,
+      evidence_keep_rolling: draft.evidenceKeepRolling,
+      evidence_keep_did_not_stop: draft.evidenceKeepDidNotStop,
       remote_live_video: draft.remoteLiveVideo,
       detect_people: draft.detectPeople,
     },
