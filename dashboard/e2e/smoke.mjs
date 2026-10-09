@@ -107,6 +107,15 @@ async function dragCorner(index, fx, fy) {
   await drag(await centreOf(corners().nth(index)), await inPicture(fx, fy));
 }
 
+/**
+ * Reload, and wait until the page is up: the header's Sign out button is there only once the session is known, which
+ * is after the page has been taken over by its scripts. A click made before that finds a button that does nothing yet.
+ */
+async function reload() {
+  await page.reload();
+  await page.getByRole("button", { name: "Sign out" }).waitFor();
+}
+
 /** Where the keyboard focus is, in a few words: the element and what it is called. */
 const focusNow = () =>
   page.evaluate(() => {
@@ -640,8 +649,11 @@ try {
     assert.equal(await lines.getAttribute("aria-checked"), "false");
     await page.reload();
     await page.getByRole("heading", { name: "Live view" }).waitFor();
-    assert.equal(await page.getByRole("switch", { name: "Lines" }).getAttribute("aria-checked"), "false");
-    assert.equal(await page.getByRole("switch", { name: "Zones" }).getAttribute("aria-checked"), "true");
+    // what was kept is read from the browser's storage once the page is up, so it is waited for
+    await eventually(async () => {
+      assert.equal(await page.getByRole("switch", { name: "Lines" }).getAttribute("aria-checked"), "false");
+      assert.equal(await page.getByRole("switch", { name: "Zones" }).getAttribute("aria-checked"), "true");
+    }, "the switches are as they were left");
     await page.getByRole("switch", { name: "Lines" }).click(); // put it back
   });
 
@@ -695,7 +707,7 @@ try {
   });
 
   await step("the video goes full screen by the browser where it can, and comes back", async () => {
-    await page.reload(); // gives back the browser's own call
+    await reload(); // gives back the browser's own call
     await page.getByRole("heading", { name: "Live view" }).waitFor();
     const stage = page.getByTestId("live-stage");
     await stage.scrollIntoViewIfNeeded();
@@ -826,7 +838,7 @@ try {
       const alarm = first.getByRole("button", { name: /^False alarm: / });
       await alarm.click();
       await eventually(async () => assert.equal(await alarm.getAttribute("aria-pressed"), "true"));
-      await page.reload();
+      await reload();
       await page.getByRole("button", { name: "False alarms", exact: true }).click();
       await eventually(async () => assert.ok((await passes.locator("time", { hasText: when }).count()) >= 1, "the reviewed pass is under False alarms, after a reload"));
       const marked = rowsOf().filter({ has: page.locator("time", { hasText: when }) }).first();
@@ -847,7 +859,7 @@ try {
       // the period is kept
       await page.getByRole("button", { name: "7 days", exact: true }).click();
       await page.reload();
-      assert.equal(await page.getByRole("button", { name: "7 days", exact: true }).getAttribute("aria-pressed"), "true");
+      await eventually(async () => assert.equal(await page.getByRole("button", { name: "7 days", exact: true }).getAttribute("aria-pressed"), "true"), "the period is the one that was kept");
       await page.getByRole("button", { name: "24 hours", exact: true }).click();
       await shot("stop-signs-card");
     });
