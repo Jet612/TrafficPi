@@ -34,6 +34,8 @@ OOMScoreAdjust=300
 # What a compromised web server could do is kept small. NoNewPrivileges, the private /tmp and
 # /dev, the read-only file system (the data directory excepted) and no capabilities were here
 # first; the rest is from `systemd-analyze security`, each option tried against the whole API.
+# (Not RemoveIPC: it would delete the shared memory of every process of this user when the unit
+# stops, and this is the login user.)
 NoNewPrivileges=yes
 PrivateTmp=yes
 PrivateDevices=yes
@@ -54,7 +56,6 @@ LockPersonality=yes
 RestrictRealtime=yes
 RestrictSUIDSGID=yes
 RestrictNamespaces=yes
-RemoveIPC=yes
 SystemCallArchitectures=native
 # The usual set for a service, less what only root needs. A call that is refused fails with EPERM
 # instead of killing the process.

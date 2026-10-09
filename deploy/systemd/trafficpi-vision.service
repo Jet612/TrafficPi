@@ -42,7 +42,8 @@ OOMScoreAdjust=-300
 # without new privileges: PrivateDevices and DeviceAllow (the camera and accelerator need many
 # device nodes), SystemCallFilter (HailoRT cannot be audited), MemoryDenyWriteExecute,
 # RestrictRealtime, RestrictNamespaces and ProtectKernelTunables (libcamera's isolated IPA
-# modules and the drivers may use them).
+# modules and the drivers may use them), and RemoveIPC (it deletes the shared memory of every
+# process of the same user when the unit stops, and this is the login user).
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
@@ -55,7 +56,6 @@ ProtectClock=yes
 ProtectHostname=yes
 LockPersonality=yes
 RestrictSUIDSGID=yes
-RemoveIPC=yes
 SystemCallArchitectures=native
 # libcamera finds its devices through udev, which listens on a netlink socket.
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
