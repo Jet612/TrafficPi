@@ -2,13 +2,16 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   boundsOf,
+  centreOf,
   clampPoint,
   closestPointOnSegment,
+  distanceToPolygon,
   distanceToSegment,
   isSimplePolygon,
   outlineProblem,
   pointInPolygon,
   polygonArea,
+  sideOfLine,
   toFraction,
   toPixels,
   type Point,
@@ -71,5 +74,32 @@ describe("segments and points", () => {
   });
   it("gives the bounds of some points", () => {
     expect(boundsOf([[0.2, 0.9], [0.7, 0.1], [0.4, 0.5]])).toEqual({ x0: 0.2, y0: 0.1, x1: 0.7, y1: 0.9 });
+  });
+});
+
+describe("which side of a line", () => {
+  it("is the right of a line from a to b, with y pointing down: the way the server judges it", () => {
+    // a line pointing up the screen: its right is the right of the screen
+    expect(sideOfLine([0.5, 0.9], [0.5, 0.3], [0.7, 0.6])).toBe(1);
+    expect(sideOfLine([0.5, 0.9], [0.5, 0.3], [0.2, 0.6])).toBe(-1);
+    expect(sideOfLine([0.5, 0.9], [0.5, 0.3], [0.5, 0.6])).toBe(0);
+    // the other way along it, the sides change places
+    expect(sideOfLine([0.5, 0.3], [0.5, 0.9], [0.7, 0.6])).toBe(-1);
+  });
+});
+
+describe("where an outline is", () => {
+  const square: Point[] = [[0.2, 0.2], [0.6, 0.2], [0.6, 0.6], [0.2, 0.6]];
+
+  it("has a middle", () => {
+    const [x, y] = centreOf(square);
+    expect([x, y]).toEqual([expect.closeTo(0.4), expect.closeTo(0.4)]);
+  });
+
+  it("is 0 away from a point inside it or on its edge, and as far as the nearest edge from one outside", () => {
+    expect(distanceToPolygon([0.4, 0.4], square)).toBe(0);
+    expect(distanceToPolygon([0.6, 0.4], square)).toBe(0);
+    expect(distanceToPolygon([0.9, 0.4], square)).toBeCloseTo(0.3);
+    expect(distanceToPolygon([0.9, 0.9], square)).toBeCloseTo(Math.hypot(0.3, 0.3));
   });
 });

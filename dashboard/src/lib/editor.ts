@@ -7,18 +7,23 @@ import { boundsOf, clamp01, clampPoint, type Point } from "./geometry";
 import {
   COUNTABLE_CLASSES,
   DEFAULT_LINE_CLASSES,
+  DEFAULT_STOP_CLASSES,
   MAX_NAME_LENGTH,
   MAX_POINTS,
+  STOPPABLE_CLASSES,
+  STOP_DEFAULTS,
+  STOP_NUMBERS,
   countOf,
   isFull,
   newId,
   suggestName,
-  type ElementKind,
   type ElementRef,
+  type StopNumber,
 } from "./profile";
-import type { LineConfig, Profile, ZoneConfig } from "./types";
+import type { LineConfig, Profile, StopSignConfig, ZoneConfig } from "./types";
 
-export type ZoneKind = Exclude<ElementKind, "line">;
+/** The kinds of element that are just an outline. */
+export type ZoneKind = "detection" | "exclusion";
 
 /** A zone has at least three corners; fewer is a line. */
 export const MIN_CORNERS = 3;
@@ -51,13 +56,39 @@ function mapZone(profile: Profile, kind: ZoneKind, id: string, change: (zone: Zo
   return { ...profile, [key]: profile[key].map((zone, i) => (i === index ? next : zone)) };
 }
 
-/** The points of an element, whatever its kind: the two ends of a line, or the corners of a zone. */
+function mapStop(profile: Profile, id: string, change: (sign: StopSignConfig) => StopSignConfig): Profile {
+  const index = profile.stop_signs.findIndex((sign) => sign.id === id);
+  if (index === -1) return profile;
+  const current = profile.stop_signs[index]!;
+  const next = change(current);
+  if (next === current) return profile;
+  return { ...profile, stop_signs: profile.stop_signs.map((sign, i) => (i === index ? next : sign)) };
+}
+
+/**
+ * The points of an element, whatever its kind: the two ends of a line, the corners of a zone, or
+ * for a stop sign the corners of its approach zone followed by the two ends of its stop line.
+ */
 export function pointsOf(profile: Profile, ref: ElementRef): Point[] {
   if (ref.kind === "line") {
     const line = profile.lines.find((candidate) => candidate.id === ref.id);
     return line ? [line.a, line.b] : [];
   }
+  if (ref.kind === "stop") {
+    const sign = profile.stop_signs.find((candidate) => candidate.id === ref.id);
+    return sign ? [...sign.approach, sign.a, sign.b] : [];
+  }
   return profile[zonesKey(ref.kind)].find((zone) => zone.id === ref.id)?.points ?? [];
+}
+
+/**
+ * How many of an element's first points are the corners of an outline: all of a zone's, none of a
+ * line's, and a stop sign's approach zone's (its last two points are the ends of the stop line).
+ */
+export function cornerCount(profile: Profile, ref: ElementRef): number {
+  if (ref.kind === "line") return 0;
+  if (ref.kind === "stop") return profile.stop_signs.find((sign) => sign.id === ref.id)?.approach.length ?? 0;
+  return pointsOf(profile, ref).length;
 }
 
 const samePoint = (a: Point, b: Point): boolean => a[0] === b[0] && a[1] === b[1];
@@ -83,6 +114,37 @@ export function addLine(profile: Profile, random?: Random): Added | null {
     persistence: null,
   };
   return { profile: { ...profile, lines: [...profile.lines, line] }, ref: { kind: "line", id: line.id } };
+}
+
+/**
+ * A new stop sign: an approach zone on the left of the middle of the picture and, at its right
+ * edge, a stop line that vehicles drive across from left to right. The line reaches a little past
+ * the zone at both ends, as a stop line does across a road, so that no handle sits on another.
+ * Later signs start further down, so that they do not hide one another. Null when the profile has
+ * as many as it can hold.
+ */
+export function addStop(profile: Profile, random?: Random): Added | null {
+  if (isFull(profile, "stop")) return null;
+  const drop = 0.05 * (countOf(profile, "stop") % 5);
+  const top = 0.45 + drop;
+  const bottom = 0.75 + drop;
+  const sign: StopSignConfig = {
+    id: newId(profile, "stop", random),
+    name: suggestName(profile, "stop"),
+    approach: [
+      [0.15, top],
+      [0.5, top],
+      [0.5, bottom],
+      [0.15, bottom],
+    ],
+    // the line is drawn from the bottom to the top, so that its right-hand side is where vehicles go
+    a: [0.5, bottom + 0.05],
+    b: [0.5, top - 0.05],
+    direction: 1,
+    classes: [...DEFAULT_STOP_CLASSES],
+    ...STOP_DEFAULTS,
+  };
+  return { profile: { ...profile, stop_signs: [...profile.stop_signs, sign] }, ref: { kind: "stop", id: sign.id } };
 }
 
 /** Where a new zone of each kind starts: a detection zone over the road, an exclusion zone beside it. */
@@ -116,9 +178,25 @@ export function addZone(profile: Profile, kind: ZoneKind, random?: Random): Adde
 
 // --- reshaping -----------------------------------------------------------------------------------
 
-/** Move one end of a line (0 is `a`, 1 is `b`) or one corner of a zone to `to`, kept inside the picture. */
+/**
+ * Move one end of a line (0 is `a`, 1 is `b`) or one corner of a zone to `to`, kept inside the
+ * picture. For a stop sign the corners of its approach zone come first, then the ends of its line.
+ */
 export function movePoint(profile: Profile, ref: ElementRef, index: number, to: Point): Profile {
   const target = clampPoint(to);
+  if (ref.kind === "stop") {
+    return mapStop(profile, ref.id, (sign) => {
+      const corners = sign.approach.length;
+      if (index >= 0 && index < corners) {
+        if (samePoint(sign.approach[index]!, target)) return sign;
+        return { ...sign, approach: sign.approach.map((p, i) => (i === index ? target : p)) };
+      }
+      if (index !== corners && index !== corners + 1) return sign;
+      const current = index === corners ? sign.a : sign.b;
+      if (samePoint(current, target)) return sign;
+      return index === corners ? { ...sign, a: target } : { ...sign, b: target };
+    });
+  }
   if (ref.kind === "line") {
     return mapLine(profile, ref.id, (line) => {
       if (index !== 0 && index !== 1) return line;
@@ -146,25 +224,41 @@ export function moveElement(profile: Profile, ref: ElementRef, dx: number, dy: n
   const sy = Math.min(Math.max(dy, -y0), 1 - y1);
   if (sx === 0 && sy === 0) return profile;
   const shift = (p: Point): Point => [clamp01(p[0] + sx), clamp01(p[1] + sy)];
+  if (ref.kind === "stop") {
+    return mapStop(profile, ref.id, (sign) => ({ ...sign, approach: sign.approach.map(shift), a: shift(sign.a), b: shift(sign.b) }));
+  }
   if (ref.kind === "line") return mapLine(profile, ref.id, (line) => ({ ...line, a: shift(line.a), b: shift(line.b) }));
   return mapZone(profile, ref.kind, ref.id, (zone) => ({ ...zone, points: zone.points.map(shift) }));
 }
 
-/** Whether a zone can take another corner. */
+/** Whether a zone (or a stop sign's approach zone) can take another corner. */
 export const canAddCorner = (profile: Profile, ref: ElementRef): boolean =>
-  ref.kind !== "line" && pointsOf(profile, ref).length > 0 && pointsOf(profile, ref).length < MAX_POINTS;
+  cornerCount(profile, ref) > 0 && cornerCount(profile, ref) < MAX_POINTS;
 
-/** Whether a zone can lose a corner and still be a zone. */
-export const canRemoveCorner = (profile: Profile, ref: ElementRef): boolean =>
-  ref.kind !== "line" && pointsOf(profile, ref).length > MIN_CORNERS;
+/**
+ * Whether a zone can lose a corner and still be a zone. With an index, whether that point is a
+ * corner at all (the ends of a stop sign's line are not).
+ */
+export const canRemoveCorner = (profile: Profile, ref: ElementRef, index?: number): boolean =>
+  cornerCount(profile, ref) > MIN_CORNERS && (index === undefined || (index >= 0 && index < cornerCount(profile, ref)));
 
 /** Add a corner to a zone, after corner `afterIndex` (so it becomes corner `afterIndex + 1`). */
 export function insertCorner(profile: Profile, ref: ElementRef, afterIndex: number, at: Point): Profile {
   if (ref.kind === "line" || !canAddCorner(profile, ref)) return profile;
-  return mapZone(profile, ref.kind, ref.id, (zone) => {
-    if (afterIndex < 0 || afterIndex >= zone.points.length) return zone;
+  const grow = (points: [number, number][]): [number, number][] | null => {
+    if (afterIndex < 0 || afterIndex >= points.length) return null;
     const index = afterIndex + 1;
-    return { ...zone, points: [...zone.points.slice(0, index), clampPoint(at), ...zone.points.slice(index)] };
+    return [...points.slice(0, index), clampPoint(at), ...points.slice(index)];
+  };
+  if (ref.kind === "stop") {
+    return mapStop(profile, ref.id, (sign) => {
+      const approach = grow(sign.approach);
+      return approach ? { ...sign, approach } : sign;
+    });
+  }
+  return mapZone(profile, ref.kind, ref.id, (zone) => {
+    const points = grow(zone.points);
+    return points ? { ...zone, points } : zone;
   });
 }
 
@@ -174,7 +268,7 @@ export function insertCorner(profile: Profile, ref: ElementRef, afterIndex: numb
  */
 export function splitLongestEdge(profile: Profile, ref: ElementRef): { profile: Profile; index: number } | null {
   if (ref.kind === "line" || !canAddCorner(profile, ref)) return null;
-  const points = pointsOf(profile, ref);
+  const points = pointsOf(profile, ref).slice(0, cornerCount(profile, ref));
   let longest = 0;
   let longestLength = -1;
   points.forEach((p, i) => {
@@ -190,10 +284,11 @@ export function splitLongestEdge(profile: Profile, ref: ElementRef): { profile: 
 
 /** Take a corner out of a zone. A zone keeps at least three. */
 export function removeCorner(profile: Profile, ref: ElementRef, index: number): Profile {
-  if (ref.kind === "line" || !canRemoveCorner(profile, ref)) return profile;
-  return mapZone(profile, ref.kind, ref.id, (zone) =>
-    index < 0 || index >= zone.points.length ? zone : { ...zone, points: zone.points.filter((_, i) => i !== index) },
-  );
+  if (ref.kind === "line" || !canRemoveCorner(profile, ref, index)) return profile;
+  if (ref.kind === "stop") {
+    return mapStop(profile, ref.id, (sign) => ({ ...sign, approach: sign.approach.filter((_, i) => i !== index) }));
+  }
+  return mapZone(profile, ref.kind, ref.id, (zone) => ({ ...zone, points: zone.points.filter((_, i) => i !== index) }));
 }
 
 /** The point halfway along the edge that starts at corner `index` (the last edge closes the outline). */
@@ -207,6 +302,7 @@ export function edgeMiddle(points: readonly Point[], index: number): Point {
 
 export function renameElement(profile: Profile, ref: ElementRef, name: string): Profile {
   const next = name.slice(0, MAX_NAME_LENGTH);
+  if (ref.kind === "stop") return mapStop(profile, ref.id, (sign) => (sign.name === next ? sign : { ...sign, name: next }));
   if (ref.kind === "line") return mapLine(profile, ref.id, (line) => (line.name === next ? line : { ...line, name: next }));
   return mapZone(profile, ref.kind, ref.id, (zone) => (zone.name === next ? zone : { ...zone, name: next }));
 }
@@ -231,7 +327,45 @@ export function flipLine(profile: Profile, id: string): Profile {
   return mapLine(profile, id, (line) => ({ ...line, a: line.b, b: line.a }));
 }
 
+/** Turn the way through a stop sign round: what was the approach is now the far side. */
+export function flipStop(profile: Profile, id: string): Profile {
+  return mapStop(profile, id, (sign) => ({ ...sign, direction: sign.direction === 1 ? -1 : 1 }));
+}
+
+/** Tick or untick a kind of vehicle that has to stop, keeping the usual order of the kinds. */
+export function toggleStopClass(profile: Profile, id: string, name: string): Profile {
+  return mapStop(profile, id, (sign) => {
+    const next = sign.classes.includes(name) ? sign.classes.filter((kind) => kind !== name) : [...sign.classes, name];
+    const known = STOPPABLE_CLASSES.filter((kind) => next.includes(kind));
+    const others = next.filter((kind) => !STOPPABLE_CLASSES.includes(kind));
+    return { ...sign, classes: [...known, ...others] };
+  });
+}
+
+/**
+ * Change one of a stop sign's numbers. A number that is not a number, or is outside what the server
+ * takes, is not applied (the form says so); thousandths are as fine as any of them needs to be.
+ */
+export function setStopNumber(profile: Profile, id: string, field: StopNumber, value: number): Profile {
+  const { min, max } = STOP_NUMBERS[field];
+  if (!Number.isFinite(value) || value < min || value > max) return profile;
+  const rounded = Math.round(value * 1000) / 1000;
+  return mapStop(profile, id, (sign) => (sign[field] === rounded ? sign : { ...sign, [field]: rounded }));
+}
+
+/** Put a stop sign's numbers back to what a stop is to begin with. */
+export function resetStopNumbers(profile: Profile, id: string): Profile {
+  return mapStop(profile, id, (sign) =>
+    (Object.keys(STOP_DEFAULTS) as StopNumber[]).every((field) => sign[field] === STOP_DEFAULTS[field]) ? sign : { ...sign, ...STOP_DEFAULTS },
+  );
+}
+
 export function deleteElement(profile: Profile, ref: ElementRef): Profile {
+  if (ref.kind === "stop") {
+    return profile.stop_signs.some((sign) => sign.id === ref.id)
+      ? { ...profile, stop_signs: profile.stop_signs.filter((sign) => sign.id !== ref.id) }
+      : profile;
+  }
   if (ref.kind === "line") {
     return profile.lines.some((line) => line.id === ref.id)
       ? { ...profile, lines: profile.lines.filter((line) => line.id !== ref.id) }

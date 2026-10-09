@@ -5,6 +5,7 @@ import { ImageOff } from "lucide-react";
 import {
   canAddCorner,
   canRemoveCorner,
+  cornerCount,
   edgeMiddle,
   insertCorner,
   moveElement,
@@ -32,6 +33,9 @@ const NUDGE_RUN_MS = 600;
 
 const INK = "#0b0b0b";
 const PAPER = "#ffffff";
+/** The road before a stop line, in red: where a stop counts. */
+const STOP_FILL = "rgba(214, 48, 48, 0.16)";
+const STOP_FILL_SELECTED = "rgba(214, 48, 48, 0.28)";
 
 type Gesture =
   | { kind: "corner"; ref: ElementRef; index: number; base: Profile; startedAt: Point; moved: boolean }
@@ -41,8 +45,13 @@ const cornerKey = (ref: ElementRef, index: number) => `${ref.kind}:${ref.id}:${i
 
 type ZoneElement = Extract<Element, { kind: "detection" | "exclusion" }>;
 type LineElement = Extract<Element, { kind: "line" }>;
-const isZone = (element: Element): element is ZoneElement => element.kind !== "line";
+type StopElement = Extract<Element, { kind: "stop" }>;
+const isZone = (element: Element): element is ZoneElement => element.kind === "detection" || element.kind === "exclusion";
 const isLine = (element: Element): element is LineElement => element.kind === "line";
+const isStop = (element: Element): element is StopElement => element.kind === "stop";
+
+/** The corners of an element's outline: its points, but for a stop sign not the ends of its line. */
+const cornersOf = (profile: Profile, ref: ElementRef): Point[] => pointsOf(profile, ref).slice(0, cornerCount(profile, ref));
 
 export interface ZoneCanvasProps {
   profile: Profile;
@@ -124,7 +133,7 @@ export function ZoneCanvas(props: ZoneCanvasProps) {
     const key = cornerKey(ref, index);
     const previous = lastPress.current;
     lastPress.current = null;
-    if (previous?.key === key && event.timeStamp - previous.at < DOUBLE_PRESS_MS && canRemoveCorner(profile, ref)) {
+    if (previous?.key === key && event.timeStamp - previous.at < DOUBLE_PRESS_MS && canRemoveCorner(profile, ref, index)) {
       props.onChange(removeCorner(profile, ref, index));
       return;
     }
@@ -133,7 +142,7 @@ export function ZoneCanvas(props: ZoneCanvasProps) {
 
   const pressMiddle = (event: React.PointerEvent, ref: ElementRef, index: number) => {
     if (event.button !== 0) return;
-    const grown = insertCorner(profile, ref, index, edgeMiddle(pointsOf(profile, ref), index));
+    const grown = insertCorner(profile, ref, index, edgeMiddle(cornersOf(profile, ref), index));
     if (grown === profile) return;
     props.onLive(grown);
     begin(event, { kind: "corner", ref, index: index + 1, base: grown, startedAt: clientPoint(event), moved: true });
@@ -179,7 +188,7 @@ export function ZoneCanvas(props: ZoneCanvasProps) {
       );
       if (nudgeTimer.current) clearTimeout(nudgeTimer.current);
       nudgeTimer.current = setTimeout(props.onSettle, NUDGE_RUN_MS);
-    } else if ((event.key === "Delete" || event.key === "Backspace") && canRemoveCorner(profile, ref)) {
+    } else if ((event.key === "Delete" || event.key === "Backspace") && canRemoveCorner(profile, ref, index)) {
       event.preventDefault();
       event.stopPropagation();
       props.onChange(removeCorner(profile, ref, index));
@@ -188,6 +197,7 @@ export function ZoneCanvas(props: ZoneCanvasProps) {
 
   const all = elements(profile);
   const zones = all.filter(isZone);
+  const stops = all.filter(isStop);
   const lines = all.filter(isLine);
   const selected = selection ? all.find((element) => sameRef(refOf(element), selection)) : undefined;
   const hasError = (ref: ElementRef) => problems.some((problem) => problem.level === "error" && sameRef(problem.ref, ref));
@@ -295,6 +305,67 @@ export function ZoneCanvas(props: ZoneCanvasProps) {
             );
           })}
 
+          {stops.map((element) => {
+            const ref = refOf(element);
+            const sign = element.value;
+            const corners = sign.approach.map(px);
+            const outline = corners.map(([x, y]) => `${x},${y}`).join(" ");
+            const a = px(sign.a);
+            const b = px(sign.b);
+            // The arrow shows the way through the sign: to the right of a -> b for +1, the left for -1.
+            const through = sign.direction === 1 ? { a: sign.a, b: sign.b } : { a: sign.b, b: sign.a };
+            const arrow = directionArrow(through, size);
+            const [wingOne, wingTwo] = arrowHead(arrow.from, arrow.to);
+            const arrowPath =
+              `M${arrow.from[0]} ${arrow.from[1]} L${arrow.to[0]} ${arrow.to[1]} ` +
+              `M${arrow.to[0]} ${arrow.to[1]} L${wingOne[0]} ${wingOne[1]} M${arrow.to[0]} ${arrow.to[1]} L${wingTwo[0]} ${wingTwo[1]}`;
+            const isSelected = sameRef(selection, ref);
+            const bad = hasError(ref);
+            const left = Math.min(...corners.map((c) => c[0]));
+            const top = Math.min(...corners.map((c) => c[1]));
+            return (
+              <g key={`stop:${sign.id}`} data-element={`stop:${sign.id}`}>
+                <polygon
+                  points={outline}
+                  fill={isSelected ? STOP_FILL_SELECTED : STOP_FILL}
+                  stroke={INK}
+                  strokeWidth={isSelected ? 5.5 : 4}
+                  strokeLinejoin="round"
+                  style={{ cursor: "move", touchAction: "none" }}
+                  onPointerDown={(event) => pressBody(event, ref)}
+                />
+                <polygon
+                  points={outline}
+                  fill="none"
+                  stroke={bad ? "var(--critical)" : PAPER}
+                  strokeWidth={isSelected ? 3 : 2}
+                  strokeDasharray="7 5"
+                  strokeLinejoin="round"
+                  pointerEvents="none"
+                />
+                <line
+                  x1={a[0]}
+                  y1={a[1]}
+                  x2={b[0]}
+                  y2={b[1]}
+                  stroke="transparent"
+                  strokeWidth={22}
+                  style={{ cursor: "move", touchAction: "none" }}
+                  onPointerDown={(event) => pressBody(event, ref)}
+                />
+                <path d={`M${a[0]} ${a[1]} L${b[0]} ${b[1]}`} fill="none" stroke={INK} strokeWidth={isSelected ? 9 : 8} strokeLinecap="butt" pointerEvents="none" />
+                <path d={`M${a[0]} ${a[1]} L${b[0]} ${b[1]}`} fill="none" stroke={bad ? "var(--critical)" : "#d63030"} strokeWidth={isSelected ? 6 : 5} strokeLinecap="butt" pointerEvents="none" />
+                <path d={arrowPath} fill="none" stroke={INK} strokeWidth={isSelected ? 6.5 : 5} strokeLinecap="round" pointerEvents="none" />
+                <path d={arrowPath} fill="none" stroke={PAPER} strokeWidth={isSelected ? 3.5 : 2.5} strokeLinecap="round" pointerEvents="none" />
+                {(!compact || isSelected) && (
+                  <Label x={left + 5} y={top - 8}>
+                    {displayName(profile, ref)}
+                  </Label>
+                )}
+              </g>
+            );
+          })}
+
           {lines.map((element) => {
             const ref = refOf(element);
             const line = element.value;
@@ -393,17 +464,16 @@ function Handles({
 }) {
   const ref = refOf(element);
   const points = pointsOf(profile, ref);
+  const corners = cornerCount(profile, ref); // the first points are corners; any after them are the ends of a stop line
+  const outline = points.slice(0, corners);
   const name = displayName(profile, ref);
-  const isLine = element.kind === "line";
   const addable = canAddCorner(profile, ref);
-  const removable = canRemoveCorner(profile, ref);
   if (size.width === 0) return null;
   return (
     <g data-testid="handles">
-      {!isLine &&
-        addable &&
-        points.map((_, index) => {
-          const [x, y] = px(edgeMiddle(points, index));
+      {addable &&
+        outline.map((_, index) => {
+          const [x, y] = px(edgeMiddle(outline, index));
           return (
             <g
               key={`middle-${index}`}
@@ -421,9 +491,11 @@ function Handles({
         })}
       {points.map((point, index) => {
         const [x, y] = px(point);
-        const label = isLine
-          ? `${name}, end ${index === 0 ? "A" : "B"}. Arrow keys move it.`
-          : `${name}, corner ${index + 1} of ${points.length}. Arrow keys move it${removable ? ", Delete removes it" : ""}.`;
+        const removable = canRemoveCorner(profile, ref, index);
+        const label =
+          index >= corners
+            ? `${name}, ${element.kind === "stop" ? "stop line " : ""}end ${(index - corners) === 0 ? "A" : "B"}. Arrow keys move it.`
+            : `${name}, corner ${index + 1} of ${corners}. Arrow keys move it${removable ? ", Delete removes it" : ""}.`;
         return (
           <g
             key={`corner-${index}`}

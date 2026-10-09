@@ -42,6 +42,24 @@ export function closestPointOnSegment(p: Point, a: Point, b: Point): Point {
 
 export const distanceToSegment = (p: Point, a: Point, b: Point): number => distance(p, closestPointOnSegment(p, a, b));
 
+/**
+ * Which side of the line `a -> b` a point is on: 1 on the right, -1 on the left, 0 on the line (the
+ * screen's way round, with y pointing down, as the counting lines and the server judge it).
+ */
+export const sideOfLine = (a: Point, b: Point, p: Point): -1 | 0 | 1 => Math.sign(cross(a, b, p)) as -1 | 0 | 1;
+
+/** The middle of an outline's corners: a fair "where is it" for a zone that is not very hollow. */
+export const centreOf = (points: readonly Point[]): Point => [
+  points.reduce((sum, p) => sum + p[0], 0) / points.length,
+  points.reduce((sum, p) => sum + p[1], 0) / points.length,
+];
+
+/** How far a point is from an outline, 0 inside it. */
+export function distanceToPolygon(p: Point, points: readonly Point[]): number {
+  if (pointInPolygon(p, points)) return 0;
+  return Math.min(...points.map((q, i) => distanceToSegment(p, q, points[(i + 1) % points.length]!)));
+}
+
 export function boundsOf(points: readonly Point[]): { x0: number; y0: number; x1: number; y1: number } {
   const xs = points.map((p) => p[0]);
   const ys = points.map((p) => p[1]);

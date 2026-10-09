@@ -285,6 +285,27 @@ def test_the_service_obeys_the_zones_and_shows_them_to_viewers(store: Store) -> 
     json.dumps(state)
 
 
+def test_the_service_shows_its_stop_signs_to_viewers_and_tells_a_reload(store: Store) -> None:
+    sign = STOP_SIGN | {"direction": -1}
+    store.set_profile({"stop_signs": [sign]})
+    service = run_service(store, frames=3)
+    state = service.live.snapshot()
+    assert state["stop_signs"] == [
+        {
+            "id": "elm",
+            "name": "Elm Street",
+            "approach": [[0.1, 0.5], [0.5, 0.5], [0.5, 0.95], [0.1, 0.95]],
+            "a": [0.5, 0.9],
+            "b": [0.5, 0.3],
+            "direction": -1,
+        }
+    ]
+    json.dumps(state)
+    # with none in the profile there are none to show
+    store.set_profile({"lines": [LINE]})
+    assert run_service(store, frames=3).live.snapshot()["stop_signs"] == []
+
+
 def test_a_car_in_an_exclusion_zone_is_not_counted_by_the_service(store: Store) -> None:
     store.set_profile({"lines": [LINE], "exclusion_zones": [zone("road", 0.3, 0.1, 0.7, 0.9)]})
     service = run_service(store)

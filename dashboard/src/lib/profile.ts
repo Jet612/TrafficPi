@@ -4,10 +4,10 @@
  * the server stays the judge of what can be saved, and `problems` only gives early, readable notice.
  */
 import { CLASS_ORDER } from "./classes";
-import { MIN_ZONE_AREA, outlineProblem, pointInPolygon, polygonArea, type Point } from "./geometry";
-import type { LineConfig, Profile, ZoneConfig } from "./types";
+import { MIN_ZONE_AREA, centreOf, distanceToPolygon, outlineProblem, pointInPolygon, polygonArea, sideOfLine, type Point } from "./geometry";
+import type { LineConfig, Profile, StopSignConfig, ZoneConfig } from "./types";
 
-export type ElementKind = "line" | "detection" | "exclusion";
+export type ElementKind = "line" | "detection" | "exclusion" | "stop";
 
 export interface ElementRef {
   kind: ElementKind;
@@ -16,7 +16,8 @@ export interface ElementRef {
 
 export type Element =
   | { kind: "line"; value: LineConfig }
-  | { kind: "detection" | "exclusion"; value: ZoneConfig };
+  | { kind: "detection" | "exclusion"; value: ZoneConfig }
+  | { kind: "stop"; value: StopSignConfig };
 
 export const SCHEMA_VERSION = 2;
 /** The server accepts this many lines, and this many zones of each kind. */
@@ -31,10 +32,27 @@ export const DEFAULT_LINE_CLASSES = ["car", "truck", "bus", "motorcycle"];
 /** The kinds of object a line can be told to count: the ones the detector reports. */
 export const COUNTABLE_CLASSES: readonly string[] = CLASS_ORDER;
 
+/** The kinds a new stop sign makes stop: the same four as a counting line counts. */
+export const DEFAULT_STOP_CLASSES = DEFAULT_LINE_CLASSES;
+/** The kinds that can be told to stop. People are not among them: they cross the road. */
+export const STOPPABLE_CLASSES: readonly string[] = ["car", "truck", "bus", "motorcycle", "bicycle"];
+
+/** What counts as a stop to begin with (plan.md D23): the server fills in the same when they are left out. */
+export const STOP_DEFAULTS = { hold_s: 1.0, still_radius: 0.08, roll_speed: 0.7, min_observed_s: 0.8 } as const;
+export type StopNumber = keyof typeof STOP_DEFAULTS;
+/** The range the server takes for each number (what the form allows), and what each is called. */
+export const STOP_NUMBERS: Record<StopNumber, { min: number; max: number; label: string }> = {
+  hold_s: { min: 0.2, max: 10, label: "how long it must stand still" },
+  still_radius: { min: 0.01, max: 0.5, label: "how little it may move meanwhile" },
+  roll_speed: { min: 0.05, max: 10, label: "the speed below which it is rolling" },
+  min_observed_s: { min: 0.1, max: 10, label: "how long it must be watched" },
+};
+
 export const KIND_LABEL: Record<ElementKind, string> = {
   line: "Counting line",
   detection: "Detection zone",
   exclusion: "Exclusion zone",
+  stop: "Stop sign",
 };
 
 export function emptyProfile(): Profile {
@@ -44,11 +62,12 @@ export function emptyProfile(): Profile {
 export const sameRef = (a: ElementRef | null | undefined, b: ElementRef | null | undefined): boolean =>
   a === b || (!!a && !!b && a.kind === b.kind && a.id === b.id);
 
-/** Every element, zones first (they sit underneath), then lines. This is also the drawing order. */
+/** Every element, zones first (they sit underneath), then stop signs, then lines. This is also the drawing order. */
 export function elements(profile: Profile): Element[] {
   return [
     ...profile.detection_zones.map((value): Element => ({ kind: "detection", value })),
     ...profile.exclusion_zones.map((value): Element => ({ kind: "exclusion", value })),
+    ...profile.stop_signs.map((value): Element => ({ kind: "stop", value })),
     ...profile.lines.map((value): Element => ({ kind: "line", value })),
   ];
 }
@@ -81,7 +100,7 @@ export function suggestName(profile: Profile, kind: ElementKind): string {
   return `${prefix}${Math.max(highest, count) + 1}`;
 }
 
-const ID_PREFIX: Record<ElementKind, string> = { line: "line", detection: "area", exclusion: "ignore" };
+const ID_PREFIX: Record<ElementKind, string> = { line: "line", detection: "area", exclusion: "ignore", stop: "stop" };
 
 function randomHex(length: number): string {
   const bytes = new Uint8Array(Math.ceil(length / 2));
@@ -143,6 +162,10 @@ export function problems(profile: Profile): Problem[] {
     }
   }
 
+  for (const sign of profile.stop_signs) {
+    found.push(...stopSignProblems(profile, sign, name("stop", sign.id)));
+  }
+
   // A line only counts what the pipeline looks at: inside a detection zone (if there are any), and
   // outside every exclusion zone.
   for (const line of profile.lines) {
@@ -165,6 +188,45 @@ export function problems(profile: Profile): Problem[] {
   }
   return found;
 }
+
+/** What is wrong with one stop sign, or worth a second look. */
+function stopSignProblems(profile: Profile, sign: StopSignConfig, label: string): Problem[] {
+  const ref: ElementRef = { kind: "stop", id: sign.id };
+  const found: Problem[] = [];
+  const error = (message: string) => found.push({ level: "error", ref, message: `${label}: ${message}` });
+  const warning = (message: string) => found.push({ level: "warning", ref, message: `${label}: ${message}` });
+
+  const flat = sign.a[0] === sign.b[0] && sign.a[1] === sign.b[1];
+  if (flat) error("the two ends of the stop line are in the same place");
+  const outline = outlineProblem(sign.approach);
+  if (outline) error(`the approach zone: ${outline}`);
+  if (sign.classes.length === 0) error("choose at least one kind of vehicle that has to stop");
+  for (const [field, limit] of Object.entries(STOP_NUMBERS) as [StopNumber, (typeof STOP_NUMBERS)[StopNumber]][]) {
+    const value = sign[field];
+    if (!Number.isFinite(value) || value < limit.min || value > limit.max) {
+      error(`${limit.label} must be between ${limit.min} and ${limit.max}`);
+    }
+  }
+  if (flat || outline) return found; // the checks below need a line and a zone
+
+  const centre = centreOf(sign.approach);
+  const middle: Point = [(sign.a[0] + sign.b[0]) / 2, (sign.a[1] + sign.b[1]) / 2];
+  if (sideOfLine(sign.a, sign.b, centre) === sign.direction) {
+    warning("the approach zone is on the far side of the stop line, the side the arrow points to, so vehicles would be judged after the line. Flip the direction, or move the zone");
+  } else if (distanceToPolygon(middle, sign.approach) > FAR_FROM_THE_ZONE) {
+    warning("the stop line is a long way from the approach zone, which should end at the line");
+  }
+  const excluding = profile.exclusion_zones.find((zone) => pointInPolygon(centre, zone.points));
+  if (excluding) {
+    warning(`the approach zone lies inside ${displayName(profile, { kind: "exclusion", id: excluding.id })}, where vehicles are ignored, so it will not judge anything`);
+  } else if (profile.detection_zones.length > 0 && !profile.detection_zones.some((zone) => pointInPolygon(centre, zone.points))) {
+    warning("the approach zone lies outside the detection zones, so it will not judge anything");
+  }
+  return found;
+}
+
+/** A stop line further than this from its approach zone (a fraction of the picture) is probably misplaced. */
+const FAR_FROM_THE_ZONE = 0.1;
 
 export const hasErrors = (list: readonly Problem[]): boolean => list.some((problem) => problem.level === "error");
 

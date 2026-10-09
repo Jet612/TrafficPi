@@ -1,6 +1,6 @@
 import { orderedClasses } from "./classes";
 import { hourLabel, hourRange } from "./format";
-import type { LiveLine, LiveZone, Profile, TrailDay, TrailPath } from "./types";
+import type { LiveLine, LiveStopSign, LiveZone, Profile, TrailDay, TrailPath } from "./types";
 
 /** A run of hours in a day, as positions in `day.hours` with both ends included. */
 export interface HourSpan {
@@ -138,8 +138,11 @@ export function evenSample<T>(items: readonly T[], max: number): T[] {
 }
 
 /** The profile's lines and zones in the shape the overlay draws them. */
-export function profileScene(profile: Profile): { lines: LiveLine[]; zones: LiveZone[] } {
+export function profileScene(profile: Profile): { lines: LiveLine[]; zones: LiveZone[]; stopSigns: LiveStopSign[] } {
   return {
+    stopSigns: profile.stop_signs.map(
+      (sign): LiveStopSign => ({ id: sign.id, name: sign.name, approach: sign.approach, a: sign.a, b: sign.b, direction: sign.direction === -1 ? -1 : 1 }),
+    ),
     lines: profile.lines.map((line) => ({ id: line.id, name: line.name, a: line.a, b: line.b })),
     zones: [
       ...profile.detection_zones.map((zone): LiveZone => ({ id: zone.id, name: zone.name, kind: "detection", points: zone.points })),

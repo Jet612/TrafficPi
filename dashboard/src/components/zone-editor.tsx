@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useMemo, useReducer, useRef, useState } from "react";
-import { Ban, Camera, ChevronRight, Download, Pentagon, Redo2, RefreshCw, Route, Undo2, Upload } from "lucide-react";
+import { Ban, Camera, ChevronRight, Download, Octagon, Pentagon, Redo2, RefreshCw, Route, Undo2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status";
@@ -10,7 +10,7 @@ import { useStats } from "@/components/stats-provider";
 import { ZoneCanvas } from "@/components/zone-canvas";
 import { ZoneInspector } from "@/components/zone-inspector";
 import { ApiError, api, referencePictureUrl, snapshotUrl } from "@/lib/api";
-import { addLine, addZone, deleteElement, type ZoneKind } from "@/lib/editor";
+import { addLine, addStop, addZone, deleteElement, type ZoneKind } from "@/lib/editor";
 import { formatDateTime } from "@/lib/format";
 import { canRedo, canUndo, editorReducer, initialEditorState } from "@/lib/editor-state";
 import {
@@ -106,7 +106,7 @@ export function ZoneEditor() {
       : snapshotUrl(stillAt);
 
   function add(kind: ElementKind) {
-    const added = kind === "line" ? addLine(draft) : addZone(draft, kind as ZoneKind);
+    const added = kind === "line" ? addLine(draft) : kind === "stop" ? addStop(draft) : addZone(draft, kind as ZoneKind);
     if (!added) {
       setOutcome({ kind: "error", text: `There can be at most ${MAX_ELEMENTS} of these.` });
       return;
@@ -260,6 +260,7 @@ export function ZoneEditor() {
                 A <strong className="font-medium text-ink">counting line</strong> counts the vehicles that cross it.{" "}
                 A <strong className="font-medium text-ink">detection zone</strong> limits where vehicles are looked for.{" "}
                 An <strong className="font-medium text-ink">exclusion zone</strong> ignores a spot, such as parked cars.
+                A <strong className="font-medium text-ink">stop sign</strong> checks whether vehicles stop before its line.
                 Add a shape, then drag it into place on the picture.
               </p>
 
@@ -282,6 +283,10 @@ export function ZoneEditor() {
                 <Button size="sm" onClick={() => add("exclusion")}>
                   <Ban className="size-4" aria-hidden="true" />
                   Add exclusion zone
+                </Button>
+                <Button size="sm" onClick={() => add("stop")}>
+                  <Octagon className="size-4" aria-hidden="true" />
+                  Add stop sign
                 </Button>
                 <span className="mx-1 hidden h-5 w-px bg-edge sm:block" aria-hidden="true" />
                 <div className="flex gap-2">

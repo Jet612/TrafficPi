@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { lineOf, profileOf, zoneOf } from "./fixtures";
+import { lineOf, profileOf, rectangle, stopOf, zoneOf } from "./fixtures";
 import {
   allDay,
   profileScene,
@@ -264,5 +264,13 @@ describe("the lines and zones of a profile", () => {
     );
     expect(scene.lines).toEqual([{ id: "n", name: "North", a: [0.1, 0.5], b: [0.9, 0.5] }]);
     expect(scene.zones.map((zone) => [zone.id, zone.kind])).toEqual([["road", "detection"], ["lot", "exclusion"]]);
+    expect(scene.stopSigns).toEqual([]);
+  });
+
+  it("carry the stop signs, with the way through", () => {
+    const scene = profileScene(profileOf({ stops: [stopOf("elm", { name: "Elm", direction: -1 })] }));
+    expect(scene.stopSigns).toEqual([
+      { id: "elm", name: "Elm", approach: rectangle(0.15, 0.45, 0.5, 0.75), a: [0.5, 0.75], b: [0.5, 0.45], direction: -1 },
+    ]);
   });
 });

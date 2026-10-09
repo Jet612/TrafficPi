@@ -14,6 +14,7 @@ const state = (over: Partial<LiveState> = {}): LiveState => ({
   profile_version: 1,
   lines: [],
   zones: [],
+  stop_signs: [],
   tracks: [],
   events: [],
   system: { throttled_now: [], throttled_since_boot: [] },

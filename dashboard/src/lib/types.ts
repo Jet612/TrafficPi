@@ -16,6 +16,7 @@ export type ReferenceSaved = Schemas["ReferenceSaved"];
 export type Profile = Schemas["Profile"];
 export type LineConfig = Schemas["CountingLineConfig"];
 export type ZoneConfig = Schemas["ZoneConfig"];
+export type StopSignConfig = Schemas["StopSignConfig"];
 export type SystemMetrics = Schemas["SystemMetrics"];
 export type VisionStatus = Schemas["VisionStatus"];
 export type TrailDay = Schemas["TrailDay"];
@@ -54,6 +55,16 @@ export interface LiveZone {
   points: [number, number][];
 }
 
+/** A stop sign: the road where a stop counts, and the line that ends it. `direction` +1 is the way through to the right of a -> b. */
+export interface LiveStopSign {
+  id: string;
+  name: string;
+  approach: [number, number][];
+  a: [number, number];
+  b: [number, number];
+  direction: 1 | -1;
+}
+
 export interface LiveEvent {
   t: number; // ms since the epoch
   line: string;
@@ -73,6 +84,7 @@ export interface LiveState {
   profile_version: number;
   lines: LiveLine[];
   zones: LiveZone[];
+  stop_signs: LiveStopSign[];
   tracks: LiveTrack[];
   events: LiveEvent[];
   system: SystemMetrics;
@@ -133,6 +145,20 @@ function parseZone(value: unknown): LiveZone | null {
   return { id: value.id, name: typeof value.name === "string" ? value.name : "", kind: value.kind, points };
 }
 
+function parseStopSign(value: unknown): LiveStopSign | null {
+  if (!isRecord(value) || typeof value.id !== "string") return null;
+  const a = pair(value.a);
+  const b = pair(value.b);
+  if (!a || !b || !Array.isArray(value.approach) || value.approach.length < 3) return null;
+  const approach: [number, number][] = [];
+  for (const raw of value.approach) {
+    const point = pair(raw);
+    if (!point) return null;
+    approach.push(point);
+  }
+  return { id: value.id, name: typeof value.name === "string" ? value.name : "", approach, a, b, direction: value.direction === -1 ? -1 : 1 };
+}
+
 function parseEvent(value: unknown): LiveEvent | null {
   if (!isRecord(value) || !isNumber(value.t) || typeof value.line !== "string") return null;
   return {
@@ -176,6 +202,7 @@ export function parseLiveMessage(text: string): LiveMessage | null {
     profile_version: isNumber(data.profile_version) ? data.profile_version : 0,
     lines: list(data.lines, parseLine),
     zones: list(data.zones, parseZone),
+    stop_signs: list(data.stop_signs, parseStopSign),
     tracks: list(data.tracks, parseTrack),
     events: list(data.events, parseEvent),
     system: {

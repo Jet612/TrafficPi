@@ -116,7 +116,7 @@ export function TrailsCard() {
 
   const profileRequest = useRequest("profile", (signal) => api.profile(signal));
   const profileOut = profileRequest.data;
-  const lineScene = useMemo(() => (profileOut ? profileScene(profileOut.profile) : { lines: [], zones: [] }), [profileOut]);
+  const lineScene = useMemo(() => (profileOut ? profileScene(profileOut.profile) : { lines: [], zones: [], stopSigns: [] }), [profileOut]);
 
   // The picture the lines were drawn on if there is one, else what the camera sees; and, if a
   // picture cannot be loaded, the next choice, and in the end none.
@@ -135,6 +135,7 @@ export function TrailsCard() {
       view: prefs.view,
       lines: lineScene.lines,
       zones: lineScene.zones,
+      stopSigns: lineScene.stopSigns,
       showLinesAndZones: prefs.lines,
     }),
     [drawn, pathsData, prefs.view, prefs.lines, lineScene],

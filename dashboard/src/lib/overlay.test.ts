@@ -13,7 +13,7 @@ import {
   updateTrails,
   type Trail,
 } from "./overlay";
-import type { LiveTrack, LiveZone } from "./types";
+import type { LiveStopSign, LiveTrack, LiveZone } from "./types";
 
 const size = { width: 640, height: 360 };
 
@@ -134,7 +134,14 @@ function recorder() {
   return { ctx, calls };
 }
 
-const colors: OverlayColors = { forClass: () => "#2a78d6", line: "#ffffff", chipEdge: "#0b0b0b", exclusionFill: "rgba(0, 0, 0, 0.4)" };
+const colors: OverlayColors = {
+  forClass: () => "#2a78d6",
+  line: "#ffffff",
+  chipEdge: "#0b0b0b",
+  exclusionFill: "rgba(0, 0, 0, 0.4)",
+  stopLine: "#d63030",
+  stopFill: "rgba(214, 48, 48, 0.16)",
+};
 const scene = {
   lines: [{ id: "l", name: "Main", a: [0.2, 0.5] as [number, number], b: [0.8, 0.5] as [number, number] }],
   zones: [],
@@ -252,5 +259,71 @@ describe("zoneLabel", () => {
     expect(zoneLabel({ kind: "detection", name: "" })).toBe("Detection zone");
     expect(zoneLabel({ kind: "exclusion", name: "" })).toBe("Ignored area");
     expect(zoneLabel({ kind: "exclusion", name: "Parking" })).toBe("Ignored: Parking");
+  });
+});
+
+describe("stop signs", () => {
+  const sign: LiveStopSign = {
+    id: "elm",
+    name: "Elm Street",
+    approach: [[0.1, 0.5], [0.5, 0.5], [0.5, 0.9], [0.1, 0.9]],
+    a: [0.5, 0.9],
+    b: [0.5, 0.5],
+    direction: 1,
+  };
+  const off = { boxes: false, labels: false, trails: false, lines: false, zones: false };
+  const draw = (signs: LiveStopSign[], options: Partial<typeof off>) => {
+    const { ctx, calls } = recorder();
+    const styles: string[] = [];
+    const fills: string[] = [];
+    (ctx.stroke as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => void styles.push(String(ctx.strokeStyle)));
+    (ctx.fill as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => void fills.push(String(ctx.fillStyle)));
+    drawOverlay(ctx, size, { lines: [], zones: [], tracks: [], stopSigns: signs }, { ...off, ...options }, new Map(), colors);
+    return { ctx, calls, styles, fills };
+  };
+
+  it("tints the road before the line when zones are shown, and draws the line when lines are shown", () => {
+    const zones = draw([sign], { zones: true });
+    expect(zones.fills).toEqual(["rgba(214, 48, 48, 0.16)"]);
+    expect(zones.styles).not.toContain("#d63030"); // no stop line: lines are off
+    const lines = draw([sign], { lines: true });
+    expect(lines.fills).toEqual([]);
+    expect(lines.styles).toContain("#d63030"); // the red stop line
+    expect(draw([sign], {}).calls).toEqual(["clearRect"]);
+  });
+
+  it("draws the arrow on the way through: the right of a to b for +1, the left for -1", () => {
+    const tips = (direction: 1 | -1) => {
+      const { ctx } = draw([{ ...sign, direction }], { lines: true });
+      const moves = (ctx.moveTo as unknown as ReturnType<typeof vi.fn>).mock.calls as [number, number][];
+      // after the line's own move comes the arrow: from the middle of the line
+      return moves.find((m, i) => i > 0 && Math.abs(m[0] - 0.5 * size.width) < 1)!;
+    };
+    expect(tips(1)).toBeDefined();
+    const lineLineTo = (direction: 1 | -1) => {
+      const { ctx } = draw([{ ...sign, direction }], { lines: true });
+      const to = (ctx.lineTo as unknown as ReturnType<typeof vi.fn>).mock.calls as [number, number][];
+      return to.find((p) => Math.abs(p[1] - 0.7 * size.height) < 1)!; // the tip of the arrow, level with the line's middle
+    };
+    expect(lineLineTo(1)[0]).toBeGreaterThan(0.5 * size.width); // the right of a line that points up the screen
+    expect(lineLineTo(-1)[0]).toBeLessThan(0.5 * size.width);
+  });
+
+  it("names the sign by its own name, or says what it is, and leaves the name off a small picture", () => {
+    const texts = (signs: LiveStopSign[], at = size) => {
+      const { ctx } = recorder();
+      drawOverlay(ctx, at, { lines: [], zones: [], tracks: [], stopSigns: signs }, { ...off, lines: true, labels: true }, new Map(), colors);
+      return (ctx.fillText as unknown as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0] as string);
+    };
+    expect(texts([sign])).toEqual(["Elm Street"]);
+    expect(texts([{ ...sign, name: "" }])).toEqual(["Stop sign"]);
+    expect(texts([sign], { width: 400, height: 225 })).toEqual([]);
+  });
+
+  it("is not drawn when there are none, or by a caller that does not know of them", () => {
+    const { ctx, calls } = recorder();
+    drawOverlay(ctx, size, { lines: [], zones: [], tracks: [] }, { ...off, lines: true, zones: true }, new Map(), colors);
+    expect(calls).toEqual(["clearRect"]);
+    expect(ctx).toBeDefined();
   });
 });

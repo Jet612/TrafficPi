@@ -15,6 +15,9 @@ const state = {
     { id: "road", name: "The road", kind: "detection", points: [[0.1, 0.4], [0.9, 0.4], [0.9, 0.9], [0.1, 0.9]] },
     { id: "lot", name: "Parking", kind: "exclusion", points: [[0.1, 0.5], [0.3, 0.5], [0.3, 0.8]] },
   ],
+  stop_signs: [
+    { id: "elm", name: "Elm Street", approach: [[0.1, 0.5], [0.5, 0.5], [0.5, 0.9], [0.1, 0.9]], a: [0.5, 0.9], b: [0.5, 0.5], direction: -1 },
+  ],
   tracks: [
     { id: 4, label: "car", score: 0.91, box: [0.1, 0.2, 0.3, 0.4], velocity: [0, 0.01], confirmed: true },
   ],
@@ -32,6 +35,37 @@ describe("parseLiveMessage", () => {
     expect(message.zones.map((z) => [z.id, z.kind, z.points.length])).toEqual([["road", "detection", 4], ["lot", "exclusion", 3]]);
     expect(message.events[0]).toMatchObject({ direction: 1, class: "car" });
     expect(message.system.throttled_since_boot).toEqual(["throttling occurred"]);
+  });
+
+  it("reads the stop signs, and drops one that is half there", () => {
+    const message = parseLiveMessage(JSON.stringify(state));
+    if (message?.type !== "state") throw new Error("expected a state");
+    expect(message.stop_signs).toEqual([
+      { id: "elm", name: "Elm Street", approach: [[0.1, 0.5], [0.5, 0.5], [0.5, 0.9], [0.1, 0.9]], a: [0.5, 0.9], b: [0.5, 0.5], direction: -1 },
+    ]);
+    const damaged = {
+      ...state,
+      stop_signs: [
+        state.stop_signs[0],
+        { id: "no-line", approach: [[0, 0], [1, 0], [1, 1]], a: [0.5], b: [0.5, 0.5] },
+        { id: "no-zone", approach: [[0, 0], [1, 0]], a: [0.5, 0.9], b: [0.5, 0.5] },
+        { id: "bad-corner", approach: [[0, 0], [1, 0], ["x", 1]], a: [0.5, 0.9], b: [0.5, 0.5] },
+        { id: "plain", approach: [[0, 0], [1, 0], [1, 1]], a: [0.5, 0.9], b: [0.5, 0.5] },
+        7,
+      ],
+    };
+    const again = parseLiveMessage(JSON.stringify(damaged));
+    if (again?.type !== "state") throw new Error("expected a state");
+    expect(again.stop_signs.map((s) => s.id)).toEqual(["elm", "plain"]);
+    expect(again.stop_signs[1]).toMatchObject({ name: "", direction: 1 }); // what is missing is the usual
+  });
+
+  it("has no stop signs when an older vision service does not send any", () => {
+    const { stop_signs: _unused, ...older } = state;
+    void _unused;
+    const message = parseLiveMessage(JSON.stringify(older));
+    if (message?.type !== "state") throw new Error("expected a state");
+    expect(message.stop_signs).toEqual([]);
   });
 
   it("reads the offline notice", () => {

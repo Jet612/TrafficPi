@@ -1,5 +1,5 @@
 import { classColor } from "./classes";
-import type { LiveLine, LiveTrack, LiveZone } from "./types";
+import type { LiveLine, LiveStopSign, LiveTrack, LiveZone } from "./types";
 
 export interface Size {
   width: number;
@@ -104,6 +104,9 @@ export interface OverlayColors {
   chipEdge: string;
   /** The shading over an exclusion zone, which says "nothing here is looked at". */
   exclusionFill: string;
+  /** A stop line, and the tint of the road before it where a stop counts. */
+  stopLine: string;
+  stopFill: string;
 }
 
 /** The drawing calls the overlay uses, so tests can record them. */
@@ -176,6 +179,76 @@ export interface OverlayScene {
   lines: readonly LiveLine[];
   zones: readonly LiveZone[];
   tracks: readonly LiveTrack[];
+  stopSigns?: readonly LiveStopSign[];
+}
+
+/**
+ * Stop signs: the road before the line tinted red (with the zones), and the line itself in red
+ * with an arrow to the way through (with the lines).
+ */
+function drawStopSigns(
+  ctx: Canvas2D,
+  size: Size,
+  signs: readonly LiveStopSign[],
+  options: OverlayOptions,
+  colors: OverlayColors,
+  compact: boolean,
+): void {
+  for (const sign of signs) {
+    if (options.zones && sign.approach.length >= 3) {
+      const corners = sign.approach.map((p): Point => [p[0] * size.width, p[1] * size.height]);
+      const outline = () => {
+        ctx.beginPath();
+        corners.forEach(([x, y], index) => (index === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
+        ctx.closePath();
+      };
+      ctx.save();
+      ctx.fillStyle = colors.stopFill;
+      outline();
+      ctx.fill();
+      ctx.setLineDash([7, 5]);
+      for (const [style, width] of [[colors.chipEdge, 4], [colors.line, 2]] as const) {
+        ctx.strokeStyle = style;
+        ctx.lineWidth = width;
+        outline();
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+    if (!options.lines) continue;
+    const ax = sign.a[0] * size.width;
+    const ay = sign.a[1] * size.height;
+    const bx = sign.b[0] * size.width;
+    const by = sign.b[1] * size.height;
+    // The way through is the right of a -> b for +1, and its left for -1.
+    const through = sign.direction === 1 ? { a: sign.a, b: sign.b } : { a: sign.b, b: sign.a };
+    const arrow = directionArrow(through, size);
+    ctx.save();
+    ctx.lineCap = "butt";
+    for (const [style, width] of [[colors.chipEdge, 8], [colors.stopLine, 5]] as const) {
+      ctx.strokeStyle = style;
+      ctx.lineWidth = width;
+      ctx.beginPath();
+      ctx.moveTo(ax, ay);
+      ctx.lineTo(bx, by);
+      ctx.stroke();
+    }
+    ctx.lineCap = "round";
+    for (const [style, width] of [[colors.chipEdge, 5], [colors.line, 2.5]] as const) {
+      ctx.strokeStyle = style;
+      ctx.lineWidth = width;
+      ctx.beginPath();
+      ctx.moveTo(arrow.from[0], arrow.from[1]);
+      ctx.lineTo(arrow.to[0], arrow.to[1]);
+      for (const wing of arrowHead(arrow.from, arrow.to)) {
+        ctx.moveTo(arrow.to[0], arrow.to[1]);
+        ctx.lineTo(wing[0], wing[1]);
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
+    if (options.labels && !compact) drawChip(ctx, sign.name || "Stop sign", Math.min(ax, bx) + 2, Math.max(16, Math.min(ay, by) - 4), colors.stopLine, compact);
+  }
 }
 
 export function drawOverlay(
@@ -206,6 +279,7 @@ export function paintOverlay(
   // A zone's name is long ("Ignored: Parked cars") and, on a phone's small picture, runs into the
   // lines and the vehicles' labels; the outline says where it is, and the Setup page has the names.
   if (options.zones) drawZones(ctx, size, scene.zones, options.labels && !compact, colors, compact);
+  drawStopSigns(ctx, size, scene.stopSigns ?? [], options, colors, compact);
 
   if (options.trails) {
     for (const [, trail] of trails) {
@@ -302,5 +376,7 @@ export function readOverlayColors(root: HTMLElement = document.documentElement):
     line: "#ffffff",
     chipEdge: "#0b0b0b",
     exclusionFill: "rgba(11, 11, 11, 0.42)",
+    stopLine: "#d63030",
+    stopFill: "rgba(214, 48, 48, 0.16)",
   };
 }

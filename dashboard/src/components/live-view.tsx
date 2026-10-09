@@ -90,7 +90,12 @@ export function LiveView() {
       const current = overlayIsCurrent(snapshot);
       if (!current) drawn.clear();
       const state = snapshot.state;
-      const scene = { lines: state?.lines ?? [], zones: state?.zones ?? [], tracks: current && state ? state.tracks : [] };
+      const scene = {
+        lines: state?.lines ?? [],
+        zones: state?.zones ?? [],
+        stopSigns: state?.stop_signs ?? [],
+        tracks: current && state ? state.tracks : [],
+      };
       drawOverlay(ctx, size, scene, prefs, drawn, colors);
     };
     const schedule = () => {

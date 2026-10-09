@@ -1,15 +1,29 @@
 "use client";
 
 import { useId } from "react";
-import { Ban, CircleAlert, FlipHorizontal2, Pentagon, Plus, Route, Trash2, TriangleAlert } from "lucide-react";
+import { Ban, CircleAlert, FlipHorizontal2, Octagon, Pentagon, Plus, RotateCcw, Route, Trash2, TriangleAlert } from "lucide-react";
+import { NumberField } from "@/components/number-field";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { classColor, classLabel } from "@/lib/classes";
-import { canAddCorner, deleteElement, flipLine, renameElement, splitLongestEdge, toggleLineClass } from "@/lib/editor";
+import {
+  canAddCorner,
+  deleteElement,
+  flipLine,
+  flipStop,
+  renameElement,
+  resetStopNumbers,
+  setStopNumber,
+  splitLongestEdge,
+  toggleLineClass,
+  toggleStopClass,
+} from "@/lib/editor";
 import {
   COUNTABLE_CLASSES,
   KIND_LABEL,
   MAX_NAME_LENGTH,
+  STOPPABLE_CLASSES,
+  STOP_NUMBERS,
   areaPercent,
   displayName,
   elements,
@@ -23,7 +37,7 @@ import {
 import { cn } from "@/lib/cn";
 import type { Profile } from "@/lib/types";
 
-const KIND_ICON = { line: Route, detection: Pentagon, exclusion: Ban } as const;
+const KIND_ICON = { line: Route, detection: Pentagon, exclusion: Ban, stop: Octagon } as const;
 
 export interface ZoneInspectorProps {
   profile: Profile;
@@ -39,6 +53,10 @@ export interface ZoneInspectorProps {
 
 /** What an element is, in a few words: what a line counts, or how big a zone is. */
 function summary(element: Element): string {
+  if (element.kind === "stop") {
+    const classes = element.value.classes;
+    return classes.length === 0 ? "no kind has to stop yet" : `${classes.map((c) => classLabel(c).toLowerCase()).join(", ")} must stop`;
+  }
   if (element.kind === "line") {
     const classes = element.value.classes;
     return classes === null ? "counts every kind" : classes.length === 0 ? "counts nothing yet" : `counts ${classes.map((c) => classLabel(c).toLowerCase()).join(", ")}`;
@@ -55,7 +73,7 @@ export function ZoneInspector({ profile, selection, problems, onSelect, onLive, 
     <div className="flex min-w-0 flex-col gap-4">
       {all.length === 0 ? (
         <p className="rounded-lg border border-dashed border-baseline p-3 text-sm text-ink-2">
-          Nothing is drawn yet. Add a counting line across the road to start counting vehicles.
+          Nothing is drawn yet. Add a counting line across the road to start counting vehicles, or a stop sign to see whether they stop.
         </p>
       ) : (
         <ul aria-label="Lines and zones" className="flex flex-col gap-1.5">
@@ -153,7 +171,9 @@ function Selected({
         onBlur={onSettle}
       />
 
-      {element.kind === "line" ? (
+      {element.kind === "stop" ? (
+        <StopSignProperties profile={profile} element={element} onLive={onLive} onSettle={onSettle} onChange={onChange} />
+      ) : element.kind === "line" ? (
         <>
           <fieldset className="mt-3">
             <legend className="mb-1.5 text-sm font-medium text-ink">Counts</legend>
@@ -219,5 +239,117 @@ function Selected({
         </Button>
       </div>
     </section>
+  );
+}
+
+/** The "what must stop, which way, and what counts as a stop" part of a stop sign's panel. */
+function StopSignProperties({
+  profile,
+  element,
+  onLive,
+  onSettle,
+  onChange,
+}: {
+  profile: Profile;
+  element: Extract<Element, { kind: "stop" }>;
+  onLive: (profile: Profile) => void;
+  onSettle: () => void;
+  onChange: (profile: Profile) => void;
+}) {
+  const sign = element.value;
+  const ref = refOf(element);
+  const split = splitLongestEdge(profile, ref);
+  return (
+    <>
+      <fieldset className="mt-3">
+        <legend className="mb-1.5 text-sm font-medium text-ink">Must stop</legend>
+        <div className="flex flex-wrap gap-x-4 gap-y-1">
+          {STOPPABLE_CLASSES.map((name) => (
+            <label key={name} className="inline-flex min-h-8 cursor-pointer items-center gap-2 text-sm text-ink">
+              <input
+                type="checkbox"
+                checked={sign.classes.includes(name)}
+                onChange={() => onChange(toggleStopClass(profile, sign.id, name))}
+                className="size-4 accent-[var(--accent)]"
+              />
+              <span aria-hidden="true" className="size-2.5 rounded-full" style={{ background: classColor(name) }} />
+              {classLabel(name)}
+            </label>
+          ))}
+        </div>
+      </fieldset>
+      <p className="mt-3 text-sm text-ink-2">
+        The <strong className="font-medium text-ink">red stripe</strong> is the stop line, and its arrow points the way through the sign. A vehicle is judged
+        as it crosses the line: did it stand still for a moment anywhere in the <strong className="font-medium text-ink">red area</strong> before it?
+        Drag a corner of the area to reshape it, or an end of the line to move it.
+      </p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <Button size="sm" onClick={() => onChange(flipStop(profile, sign.id))}>
+          <FlipHorizontal2 className="size-4" aria-hidden="true" />
+          Flip direction
+        </Button>
+        <Button size="sm" disabled={split === null || !canAddCorner(profile, ref)} onClick={() => split && onChange(split.profile)}>
+          <Plus className="size-4" aria-hidden="true" />
+          Add a corner
+        </Button>
+      </div>
+
+      <details className="mt-3 rounded-lg border border-edge bg-surface px-3 py-2">
+        <summary className="cursor-pointer text-sm font-medium text-ink">What counts as a stop</summary>
+        <div className="mt-3 grid gap-3">
+          <NumberField
+            label="Standing still for at least"
+            unit="seconds"
+            hint="Longer is stricter."
+            value={sign.hold_s}
+            min={STOP_NUMBERS.hold_s.min}
+            max={STOP_NUMBERS.hold_s.max}
+            step={0.1}
+            onChange={(value) => onLive(setStopNumber(profile, sign.id, "hold_s", value))}
+            onCommit={onSettle}
+          />
+          <NumberField
+            label="Moving less than"
+            unit="% of its own size"
+            hint="While still: smaller is stricter."
+            value={sign.still_radius}
+            scale={100}
+            min={STOP_NUMBERS.still_radius.min}
+            max={STOP_NUMBERS.still_radius.max}
+            step={1}
+            onChange={(value) => onLive(setStopNumber(profile, sign.id, "still_radius", value))}
+            onCommit={onSettle}
+          />
+          <NumberField
+            label="Rolling when slower than"
+            unit="sizes a second"
+            hint="Below this, but never still, is a roll; a car is about 4.5 m, so 0.7 is about 7 mph."
+            value={sign.roll_speed}
+            min={STOP_NUMBERS.roll_speed.min}
+            max={STOP_NUMBERS.roll_speed.max}
+            step={0.1}
+            onChange={(value) => onLive(setStopNumber(profile, sign.id, "roll_speed", value))}
+            onCommit={onSettle}
+          />
+          <NumberField
+            label="Watched for at least"
+            unit="seconds"
+            hint="Seen for less than this before the line, a vehicle cannot be judged."
+            value={sign.min_observed_s}
+            min={STOP_NUMBERS.min_observed_s.min}
+            max={STOP_NUMBERS.min_observed_s.max}
+            step={0.1}
+            onChange={(value) => onLive(setStopNumber(profile, sign.id, "min_observed_s", value))}
+            onCommit={onSettle}
+          />
+          <div>
+            <Button size="sm" onClick={() => onChange(resetStopNumbers(profile, sign.id))}>
+              <RotateCcw className="size-4" aria-hidden="true" />
+              Back to the usual
+            </Button>
+          </div>
+        </div>
+      </details>
+    </>
   );
 }

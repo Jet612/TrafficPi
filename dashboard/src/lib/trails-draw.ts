@@ -1,6 +1,6 @@
 import { paintOverlay, type Canvas2D, type OverlayColors, type Size } from "./overlay";
 import type { TrailView } from "./trails";
-import type { LiveLine, LiveZone, TrailPath } from "./types";
+import type { LiveLine, LiveStopSign, LiveZone, TrailPath } from "./types";
 
 /** What drawing the Trails picture needs of a canvas: the overlay's calls, and a picture to scale up. */
 export type TrailCanvas = Canvas2D & Pick<CanvasRenderingContext2D, "drawImage" | "imageSmoothingEnabled" | "imageSmoothingQuality">;
@@ -19,6 +19,7 @@ export interface TrailScene {
   view: TrailView;
   lines: readonly LiveLine[];
   zones: readonly LiveZone[];
+  stopSigns: readonly LiveStopSign[];
   showLinesAndZones: boolean;
 }
 
@@ -29,7 +30,7 @@ export function drawTrailScene(ctx: TrailCanvas, size: Size, scene: TrailScene, 
   else drawPaths(ctx, size, scene.paths, scene.scale, colors);
   if (scene.showLinesAndZones) {
     const options = { boxes: false, labels: true, trails: false, lines: true, zones: true };
-    paintOverlay(ctx, size, { lines: scene.lines, zones: scene.zones, tracks: [] }, options, new Map(), colors);
+    paintOverlay(ctx, size, { lines: scene.lines, zones: scene.zones, stopSigns: scene.stopSigns, tracks: [] }, options, new Map(), colors);
   }
 }
 

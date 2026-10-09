@@ -81,6 +81,7 @@ class LiveState:
         self._events: deque[dict[str, Any]] = deque(maxlen=recent_events)
         self._lines: list[dict[str, Any]] = []
         self._zones: list[dict[str, Any]] = []
+        self._stop_signs: list[dict[str, Any]] = []
         self._profile_error: str | None = None
         self._system: dict[str, Any] = {}
         self._camera_ok = False
@@ -136,6 +137,17 @@ class LiveState:
                 for kind, group in zones
                 for z in group
             ]
+            self._stop_signs = [
+                {
+                    "id": s.id,
+                    "name": s.name,
+                    "approach": [list(p) for p in s.approach],
+                    "a": list(s.a),
+                    "b": list(s.b),
+                    "direction": s.direction,
+                }
+                for s in profile.stop_signs
+            ]
             self._profile_version = version
             self._profile_error = None
 
@@ -189,6 +201,7 @@ class LiveState:
                 "profile_error": self._profile_error,
                 "lines": list(self._lines),
                 "zones": list(self._zones),
+                "stop_signs": list(self._stop_signs),
                 "tracks": list(self._tracks),
                 "events": list(self._events),
                 "system": dict(self._system),

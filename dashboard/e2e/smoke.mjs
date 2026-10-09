@@ -461,6 +461,118 @@ try {
     });
   }
 
+  if (demo) {
+    // The made-up street's near lane (the lower one) drives left to right at 0.8 of the picture's
+    // height, the far lane right to left at 0.65. A stop sign across both, going left to right,
+    // judges the near lane's vehicles and leaves the far lane's alone.
+    await step("a stop sign is added, reshaped, set up and saved", async () => {
+      await openEditor();
+      await page.getByRole("button", { name: "Add stop sign" }).click();
+      await edgeDots().first().waitFor();
+      assert.equal(await corners().count(), 6, "the four corners of the zone and the two ends of the line");
+      assert.equal(await edgeDots().count(), 4, "a dot on each edge of the zone, and none on the line");
+      await page.getByRole("button", { name: /^Stop sign 1/ }).first().waitFor();
+      assert.equal(await saveButton().isEnabled(), true, "a new stop sign is something to save");
+
+      const zone = [[0.15, 0.55], [0.5, 0.55], [0.5, 0.9], [0.15, 0.9]];
+      for (const [index, [fx, fy]] of zone.entries()) await dragCorner(index, fx, fy);
+      await dragCorner(4, 0.5, 0.94); // the ends of the stop line reach past the zone
+      await dragCorner(5, 0.5, 0.5);
+      await page.getByLabel("Name", { exact: true }).fill("Elm Street");
+      await saveButton().click();
+      await page.getByText(/Saved as version \d+/).waitFor();
+
+      const profile = await stored();
+      assert.equal(profile.stop_signs.length, 1);
+      const [sign] = profile.stop_signs;
+      assert.equal(sign.name, "Elm Street");
+      assert.equal(sign.direction, 1);
+      assert.deepEqual(sign.classes, ["car", "truck", "bus", "motorcycle"], "bicycles and people are not asked to stop");
+      assert.deepEqual([sign.hold_s, sign.still_radius, sign.roll_speed, sign.min_observed_s], [1, 0.08, 0.7, 0.8]);
+      sign.approach.forEach((corner, index) => {
+        near(corner[0], zone[index][0], 0.01, `corner ${index}, x`);
+        near(corner[1], zone[index][1], 0.01, `corner ${index}, y`);
+      });
+      near(sign.a[1], 0.94, 0.01, "the line's end A");
+      near(sign.b[1], 0.5, 0.01, "the line's end B");
+      near(sign.a[0], 0.5, 0.01, "the line's x");
+      await shot("stop-sign-editor");
+    });
+
+    await step("the live view draws the stop sign in red, and the made-up traffic is judged at it", async () => {
+      await goTo("Live");
+      const redAtTheLine = () =>
+        page.evaluate(() => {
+          const canvas = document.querySelector("canvas");
+          if (!canvas) return false;
+          // Along the stop line, but away from its middle, where the arrow is, and from the counting line beside it.
+          const row = Math.round(canvas.height * 0.6);
+          const { data } = canvas.getContext("2d").getImageData(Math.round(canvas.width * 0.5) - 2, row, 5, 1);
+          for (let i = 0; i < data.length; i += 4) if (data[i] > 180 && data[i + 1] < 90 && data[i + 2] < 90 && data[i + 3] > 200) return true;
+          return false;
+        });
+      await eventually(async () => assert.equal(await redAtTheLine(), true), "a red stop line is drawn", 15_000);
+      const lines = page.getByRole("switch", { name: "Lines" });
+      await lines.click();
+      await eventually(async () => assert.equal(await redAtTheLine(), false), "and goes with the Lines switch");
+      await lines.click();
+      await eventually(async () => assert.equal(await redAtTheLine(), true));
+
+      const sign = (await stored()).stop_signs[0];
+      // (an earlier run of this test, on the same database, may have left events of signs that are gone)
+      const stops = () => page.evaluate(async (id) => (await (await fetch("/api/events?type=stop&limit=200")).json()).filter((row) => row.line === id), sign.id);
+      await eventually(async () => assert.ok((await stops()).length >= 2, "a vehicle has been judged"), "vehicles are judged at the stop sign", 90_000);
+      const rows = await stops();
+      assert.ok(rows.every((row) => row.type === "stop" && row.direction === null), "each event is a stop, which has no direction of its own");
+      assert.ok(rows.every((row) => ["car", "truck", "bus", "motorcycle"].includes(row.label)), `only the kinds that must stop: ${[...new Set(rows.map((r) => r.label))]}`);
+      await shot("stop-sign-live");
+    });
+
+    await step("a stop sign warns when its zone is on the wrong side, and its numbers can be set and reset", async () => {
+      await openEditor();
+      await page.getByRole("button", { name: /Elm Street/ }).first().click();
+      const panel = page.getByRole("region", { name: "Elm Street: properties" });
+      await panel.waitFor();
+      assert.equal(await page.getByText(/Check: the approach zone is on the far side/).count(), 0, "as drawn, nothing to warn about");
+
+      await panel.getByRole("button", { name: "Flip direction" }).click();
+      await page.getByText(/Check: the approach zone is on the far side of the stop line/).waitFor();
+      assert.equal(await saveButton().isEnabled(), true, "a warning is not an error: it can still be saved");
+      await panel.getByRole("button", { name: "Flip direction" }).click();
+      await page.getByText(/Check: the approach zone is on the far side/).waitFor({ state: "detached" });
+
+      await panel.getByText("What counts as a stop").click();
+      const hold = panel.getByLabel("Standing still for at least");
+      await hold.fill("2.5");
+      await panel.getByLabel("Moving less than").fill("12");
+      await hold.focus(); // leaving the other box is one undo step
+      assert.equal(await saveButton().isEnabled(), true);
+      await hold.fill("50"); // more than the server takes: said so, and not applied
+      await panel.getByText("From 0.2 to 10.").waitFor();
+      await hold.blur();
+      assert.equal(await hold.inputValue(), "2.5", "the box goes back to the number in use");
+      await saveButton().click();
+      await page.getByText(/Saved as version \d+/).waitFor();
+      const tuned = (await stored()).stop_signs[0];
+      assert.deepEqual([tuned.hold_s, tuned.still_radius], [2.5, 0.12]);
+
+      await panel.getByRole("button", { name: "Back to the usual" }).click();
+      assert.equal(await hold.inputValue(), "1");
+      await saveButton().click();
+      await page.getByText(/Saved as version \d+/).waitFor();
+      const usual = (await stored()).stop_signs[0];
+      assert.deepEqual([usual.hold_s, usual.still_radius, usual.roll_speed, usual.min_observed_s], [1, 0.08, 0.7, 0.8]);
+
+      // the kinds that must stop: bicycles ticked, then cars unticked, and none left cannot be saved
+      await panel.getByRole("checkbox", { name: "Bicycles" }).check();
+      for (const kind of ["Cars", "Trucks", "Buses", "Motorcycles", "Bicycles"]) await panel.getByRole("checkbox", { name: kind }).uncheck();
+      await page.getByText(/choose at least one kind of vehicle that has to stop/).first().waitFor();
+      assert.equal(await saveButton().isEnabled(), false, "a stop sign that no kind must stop is refused");
+      await page.getByRole("button", { name: "Discard changes" }).click();
+      await page.getByText(/choose at least one kind/).first().waitFor({ state: "detached" });
+    });
+  }
+
   await step("the picture can be kept, and the profile exported and imported", async () => {
     await openEditor();
     await page.getByRole("button", { name: /Keep this picture|Replace the saved picture/ }).click();

@@ -36,6 +36,8 @@ const colors: OverlayColors = {
   line: "#ffffff",
   chipEdge: "#0b0b0b",
   exclusionFill: "rgba(0, 0, 0, 0.4)",
+  stopLine: "#d63030",
+  stopFill: "rgba(214, 48, 48, 0.16)",
 };
 
 let nextId = 1;
@@ -352,6 +354,7 @@ describe("the whole picture", () => {
     view: "paths",
     lines: [{ id: "n", name: "North", a: [0.2, 0.5], b: [0.8, 0.5] }],
     zones: [],
+    stopSigns: [],
     showLinesAndZones: true,
     ...over,
   });
@@ -374,6 +377,17 @@ describe("the whole picture", () => {
     drawTrailScene(ctx, size, scene({ view: "heat" }), colors, paint);
     expect(ops.some((op) => op.name === "drawImage")).toBe(true);
     expect(ops.filter((op) => op.style === "#2a78d6")).toHaveLength(0);
+  });
+
+  it("draws a stop sign over the paths with the lines and zones, and not when they are off", () => {
+    const sign = { id: "elm", name: "Elm", approach: [[0.1, 0.5], [0.5, 0.5], [0.5, 0.9], [0.1, 0.9]] as [number, number][], a: [0.5, 0.9] as [number, number], b: [0.5, 0.5] as [number, number], direction: 1 as const };
+    const withSign = recorder();
+    drawTrailScene(withSign.ctx, size, scene({ lines: [], stopSigns: [sign] }), colors, paint);
+    expect(withSign.ops.filter((op) => op.name === "stroke").at(-1)?.style).toBe("#ffffff"); // the arrow, over the red line, over the paths
+    expect(withSign.ops.some((op) => op.style === "#d63030")).toBe(true);
+    const without = recorder();
+    drawTrailScene(without.ctx, size, scene({ lines: [], stopSigns: [sign], showLinesAndZones: false }), colors, paint);
+    expect(without.ops.some((op) => op.style === "#d63030")).toBe(false);
   });
 
   it("leaves the lines and zones out when they are switched off", () => {
