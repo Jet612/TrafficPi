@@ -106,6 +106,42 @@ class Settings(BaseModel):
     trails_keep_days: int = Field(strict=True, ge=1, le=MAX_KEEP_DAYS)  # older ones are deleted
 
 
+class TrailHour(BaseModel):
+    t: int  # ms since the epoch: when the hour began
+    hour: int  # on the local clock, 0 to 23 (twice, for the hour that repeats when clocks go back)
+    count: int  # trails that began in it
+    by_kind: dict[str, int]
+
+
+class TrailDay(BaseModel):
+    """A local day by the hour: how many vehicles' trails began when, to pick an hour to look at."""
+
+    day: str  # YYYY-MM-DD, in the configured time zone
+    timezone: str
+    total: int
+    first_day: str | None  # the days that have any trails run from this one ...
+    last_day: str | None  # ... to this one; both None when there are none yet
+    hours: list[TrailHour]  # 24 of them, or 23 or 25 across a clock change
+
+
+class TrailPath(BaseModel):
+    id: int
+    started_at: int  # ms since the epoch
+    ended_at: int
+    label: str  # car, truck, ...
+    x: list[int]  # the path, as whole numbers from 0 to `scale` across the picture
+    y: list[int]  # ... and down it
+
+
+class TrailPaths(BaseModel):
+    from_ms: int
+    to_ms: int
+    total: int  # how many trails matched
+    returned: int  # how many are in `trails`: an even sample if more than the limit matched
+    scale: int  # divide x and y by this to get a fraction of the picture
+    trails: list[TrailPath]
+
+
 class DiskStatus(BaseModel):
     free_gb: float
     total_gb: float

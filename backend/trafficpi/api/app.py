@@ -8,6 +8,7 @@ import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from datetime import date, datetime
 from typing import Annotated, Any, Literal
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -18,7 +19,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from trafficpi.api import stats
+from trafficpi.api import stats, trail_views
 from trafficpi.api.auth import (
     COOKIE_NAME,
     LoginThrottle,
@@ -44,6 +45,8 @@ from trafficpi.api.schemas import (
     Settings,
     StatusResponse,
     TodaySummary,
+    TrailDay,
+    TrailPaths,
     VisionStatus,
 )
 from trafficpi.api.settings import ApiSettings, normalize_origin
@@ -58,6 +61,7 @@ from trafficpi.core.profile import (
 )
 from trafficpi.core.trail_settings import TrailSettings
 from trafficpi.db.store import Store, open_store
+from trafficpi.vision.trails import trail_classes
 
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 WHERE_FROM = {"body", "query", "path", "header", "cookie"}  # the first part of a FastAPI error path
@@ -111,6 +115,22 @@ def _same_origin(origin: str | None, host: str | None, allowed: tuple[str, ...] 
 def _error_path(location: tuple[str | int, ...]) -> tuple[str | int, ...]:
     """Where a request went wrong, without the part of the request: lines[0].a, not body.lines..."""
     return tuple(location[1:]) if location and location[0] in WHERE_FROM else tuple(location)
+
+
+def _trail_kinds(kinds: str | None) -> list[str] | None:
+    """The kinds asked for in ``?kinds=car,truck`` (None: every kind), or a refusal and why."""
+    if kinds is None:
+        return None
+    names = [name.strip() for name in kinds.split(",")]
+    known = sorted(trail_classes(people=True))
+    if not kinds.strip() or any(not name for name in names):
+        raise HTTPException(status_code=422, detail=f"name at least one kind: {', '.join(known)}")
+    for name in names:
+        if name not in known:
+            raise HTTPException(
+                status_code=422, detail=f"unknown kind {name!r}; use {', '.join(known)}"
+            )
+    return list(dict.fromkeys(names))
 
 
 def _timezone(store: Store) -> ZoneInfo:
@@ -178,6 +198,12 @@ def create_app(
         # picture ..." says what to fix, and the dashboard shows it as it is.
         errors = [{**error, "loc": _error_path(error["loc"])} for error in exc.errors()]
         return JSONResponse({"detail": describe_errors(errors)}, status_code=422)
+
+    @app.exception_handler(trail_views.BadTrailQuery)
+    async def unanswerable_trail_query(
+        _request: Request, exc: trail_views.BadTrailQuery
+    ) -> JSONResponse:
+        return JSONResponse({"detail": str(exc)}, status_code=422)
 
     # --- cross-cutting -------------------------------------------------------------------------
 
@@ -338,6 +364,33 @@ def create_app(
             return int(settings.reference_path.stat().st_mtime * 1000)
         except OSError:
             return None
+
+    # --- trails (plan.md M4b) --------------------------------------------------------------
+
+    @app.get("/api/trails/day", response_model=TrailDay)
+    def trails_day(user: User, day: Annotated[date | None, Query()] = None) -> TrailDay:
+        """A local day (today if none is given) by the hour: when the trails began, by kind."""
+        tz = _timezone(ctx.store)
+        chosen = day or datetime.fromtimestamp(ctx.clock.now_ms() / 1000, tz).date()
+        return TrailDay(**trail_views.day_by_the_hour(ctx.store, tz, chosen))
+
+    @app.get("/api/trails", response_model=TrailPaths)
+    def trails(
+        request: Request,
+        user: User,
+        from_ms: int,
+        to_ms: int,
+        kinds: str | None = None,
+        limit: int = trail_views.DEFAULT_LIMIT,
+    ) -> Response:
+        """The paths of the trails that began in a range, compressed if the browser accepts that."""
+        payload = trail_views.paths(
+            ctx.store, from_ms, to_ms, kinds=_trail_kinds(kinds), limit=limit
+        )
+        body, headers = trail_views.encode_json(
+            payload, "gzip" in request.headers.get("accept-encoding", "")
+        )
+        return Response(body, media_type="application/json", headers=headers)
 
     @app.get("/api/profile", response_model=ProfileOut)
     def get_profile(user: User) -> ProfileOut:

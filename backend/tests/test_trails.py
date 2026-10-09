@@ -12,9 +12,11 @@ from trafficpi.vision.engine import TrafficEngine
 from trafficpi.vision.tracker import TrackUpdate
 from trafficpi.vision.trails import (
     FORMAT_VERSION,
+    FULL_SCALE,
     TrailConfig,
     TrailRecorder,
     decode_path,
+    decode_path_raw,
     encode_path,
     trail_classes,
 )
@@ -86,6 +88,20 @@ def test_a_vehicle_crossing_the_picture_takes_a_few_hundred_bytes_at_most() -> N
     assert len(encode_path(long_offsets, long_xs, long_ys)) < 12_000
 
 
+def test_the_raw_path_is_the_stored_whole_numbers_for_a_browser_to_scale() -> None:
+    blob = encode_path([0, 200, 450], [0.0, 0.5, 1.0], [0.25, 0.25, 0.75])
+    offsets, x, y = decode_path_raw(blob)
+    assert offsets.tolist() == [0, 200, 450]
+    assert x.tolist() == [0, round(0.5 * FULL_SCALE), FULL_SCALE]
+    assert y.tolist() == [
+        round(0.25 * FULL_SCALE),
+        round(0.25 * FULL_SCALE),
+        round(0.75 * FULL_SCALE),
+    ]
+    scaled = decode_path(blob)
+    assert scaled.x.tolist() == (x / FULL_SCALE).tolist()
+
+
 def test_coordinates_outside_the_picture_are_clipped_not_wrapped() -> None:
     back = decode_path(encode_path([0, 100], [-0.2, 1.3], [0.5, 2.0]))
     assert back.x.tolist() == [0.0, 1.0]
@@ -116,6 +132,8 @@ def test_mismatched_columns_are_refused() -> None:
 def test_something_that_is_not_a_stored_path_is_refused_with_a_reason(blob: bytes) -> None:
     with pytest.raises(ValueError):
         decode_path(blob)
+    with pytest.raises(ValueError):
+        decode_path_raw(blob)
 
 
 # --- what is kept ---------------------------------------------------------------------------------

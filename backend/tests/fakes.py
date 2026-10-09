@@ -7,6 +7,7 @@ import numpy as np
 from trafficpi.core.types import Detection
 from trafficpi.vision.detector import DetectTimings
 from trafficpi.vision.sources import EndOfStream, Frame
+from trafficpi.vision.trails import FinishedTrail, encode_path
 
 PERIOD_NS = 33_333_333
 
@@ -121,3 +122,27 @@ def car_crossing(
         ]
         for i in range(frames)
     ]
+
+
+def finished_trail(
+    at_ms: int,
+    *,
+    label: str = "car",
+    seconds: float = 5.0,
+    x0: float = 0.2,
+    y: float = 0.6,
+    track_id: int = 1,
+) -> FinishedTrail:
+    """A vehicle that drove left to right for ``seconds``, starting at ``at_ms``."""
+    n = int(seconds * 5) + 1
+    offsets = [round(i * 1000 / 5) for i in range(n)]
+    xs = [x0 + 0.6 * i / (n - 1) for i in range(n)]
+    return FinishedTrail(
+        track_id=track_id,
+        started_at=at_ms,
+        ended_at=at_ms + offsets[-1],
+        label=label,
+        points=n,
+        extent=0.6,
+        path=encode_path(offsets, xs, [y] * n),
+    )

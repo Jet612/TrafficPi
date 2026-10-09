@@ -230,31 +230,84 @@ class Store:
         *,
         labels: Collection[str] | None = None,
         limit: int = 20_000,
+        every: int = 1,
     ) -> list[TrailRow]:
-        """Trails that began in ``[start_ms, end_ms)``, oldest first, at most ``limit`` of them."""
-        query = select(Trail).where(
+        """Trails that began in ``[start_ms, end_ms)``, oldest first, at most ``limit`` of them.
+
+        ``every`` thins them out: 3 keeps every third one of those that match (the 3rd, the 6th,
+        and so on), spread over the whole range, which is fairer than keeping the first ``limit``.
+        """
+        wanted = [
             Trail.camera_id == self.camera_id,
             Trail.started_at >= start_ms,
             Trail.started_at < end_ms,
-        )
+        ]
         if labels is not None:
-            query = query.where(Trail.class_label.in_(list(labels)))
+            wanted.append(Trail.class_label.in_(list(labels)))
+        if every > 1:
+            # Numbered by id only, so that the paths are read for the chosen ones alone.
+            numbered = (
+                select(
+                    Trail.id.label("id"),
+                    func.row_number().over(order_by=(Trail.started_at, Trail.id)).label("n"),
+                )
+                .where(*wanted)
+                .subquery()
+            )
+            query = (
+                select(Trail)
+                .join(numbered, numbered.c.id == Trail.id)
+                .where(numbered.c.n % every == 0)
+                .order_by(numbered.c.n)
+            )
+        else:
+            query = select(Trail).where(*wanted).order_by(Trail.started_at, Trail.id)
         with self._session() as s:
-            rows = s.execute(query.order_by(Trail.started_at, Trail.id).limit(limit)).scalars()
+            rows = s.execute(query.limit(limit)).scalars()
             return [
                 TrailRow(r.id, r.started_at, r.ended_at, r.class_label, r.points, r.extent, r.path)
                 for r in rows
             ]
 
-    def trail_count(self, start_ms: int | None = None, end_ms: int | None = None) -> int:
+    def trail_count(
+        self,
+        start_ms: int | None = None,
+        end_ms: int | None = None,
+        *,
+        labels: Collection[str] | None = None,
+    ) -> int:
         """How many trails began in ``[start_ms, end_ms)`` (open ended when a bound is None)."""
         query = select(func.count(Trail.id)).where(Trail.camera_id == self.camera_id)
         if start_ms is not None:
             query = query.where(Trail.started_at >= start_ms)
         if end_ms is not None:
             query = query.where(Trail.started_at < end_ms)
+        if labels is not None:
+            query = query.where(Trail.class_label.in_(list(labels)))
         with self._session() as s:
             return s.execute(query).scalar_one()
+
+    def trail_times(self, start_ms: int, end_ms: int) -> list[tuple[int, str]]:
+        """When each trail in ``[start_ms, end_ms)`` began, and of what kind (no paths: cheap)."""
+        with self._session() as s:
+            rows = s.execute(
+                select(Trail.started_at, Trail.class_label).where(
+                    Trail.camera_id == self.camera_id,
+                    Trail.started_at >= start_ms,
+                    Trail.started_at < end_ms,
+                )
+            ).all()
+            return [(started, label) for started, label in rows]
+
+    def trail_extent(self) -> tuple[int, int] | None:
+        """When the first and the last stored trail began; None if there are none."""
+        with self._session() as s:
+            first, last = s.execute(
+                select(func.min(Trail.started_at), func.max(Trail.started_at)).where(
+                    Trail.camera_id == self.camera_id
+                )
+            ).one()
+            return None if first is None else (first, last)
 
     def delete_trails_before(self, cutoff_ms: int, *, limit: int = 2_000) -> int:
         """Delete up to ``limit`` trails that ended before ``cutoff_ms``; returns how many went.
@@ -263,10 +316,16 @@ class Store:
         same file, is never made to wait for a big clean-up: call it again while it returns
         ``limit``.
         """
+        # A trail cannot end before it began, so those that ended before the cutoff began before
+        # it too: saying so lets the index on the start find them without reading the whole table.
         oldest = (
             select(Trail.id)
-            .where(Trail.camera_id == self.camera_id, Trail.ended_at < cutoff_ms)
-            .order_by(Trail.ended_at)
+            .where(
+                Trail.camera_id == self.camera_id,
+                Trail.started_at < cutoff_ms,
+                Trail.ended_at < cutoff_ms,
+            )
+            .order_by(Trail.started_at)
             .limit(limit)
         )
         with self._session() as s:

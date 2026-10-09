@@ -284,6 +284,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/trails": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Trails
+         * @description The paths of the trails that began in a range, compressed if the browser accepts that.
+         */
+        get: operations["trails_api_trails_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/trails/day": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Trails Day
+         * @description A local day (today if none is given) by the hour: when the trails began, by kind.
+         */
+        get: operations["trails_day_api_trails_day_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -542,6 +582,67 @@ export interface components {
             timezone: string;
             /** Total */
             total: number;
+        };
+        /**
+         * TrailDay
+         * @description A local day by the hour: how many vehicles' trails began when, to pick an hour to look at.
+         */
+        TrailDay: {
+            /** Day */
+            day: string;
+            /** First Day */
+            first_day: string | null;
+            /** Hours */
+            hours: components["schemas"]["TrailHour"][];
+            /** Last Day */
+            last_day: string | null;
+            /** Timezone */
+            timezone: string;
+            /** Total */
+            total: number;
+        };
+        /** TrailHour */
+        TrailHour: {
+            /** By Kind */
+            by_kind: {
+                [key: string]: number;
+            };
+            /** Count */
+            count: number;
+            /** Hour */
+            hour: number;
+            /** T */
+            t: number;
+        };
+        /** TrailPath */
+        TrailPath: {
+            /** Ended At */
+            ended_at: number;
+            /** Id */
+            id: number;
+            /** Label */
+            label: string;
+            /** Started At */
+            started_at: number;
+            /** X */
+            x: number[];
+            /** Y */
+            y: number[];
+        };
+        /** TrailPaths */
+        TrailPaths: {
+            /** From Ms */
+            from_ms: number;
+            /** Returned */
+            returned: number;
+            /** Scale */
+            scale: number;
+            /** To Ms */
+            to_ms: number;
+            /** Total */
+            total: number;
+            /** Trails */
+            trails: components["schemas"]["TrailPath"][];
         };
         /** ValidationError */
         ValidationError: {
@@ -1037,6 +1138,71 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StatusResponse"];
+                };
+            };
+        };
+    };
+    trails_api_trails_get: {
+        parameters: {
+            query: {
+                from_ms: number;
+                to_ms: number;
+                kinds?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrailPaths"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    trails_day_api_trails_day_get: {
+        parameters: {
+            query?: {
+                day?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrailDay"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

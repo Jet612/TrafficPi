@@ -713,6 +713,178 @@
         "title": "TodaySummary",
         "type": "object"
       },
+      "TrailDay": {
+        "description": "A local day by the hour: how many vehicles' trails began when, to pick an hour to look at.",
+        "properties": {
+          "day": {
+            "title": "Day",
+            "type": "string"
+          },
+          "first_day": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Day"
+          },
+          "hours": {
+            "items": {
+              "$ref": "#/components/schemas/TrailHour"
+            },
+            "title": "Hours",
+            "type": "array"
+          },
+          "last_day": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Day"
+          },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "day",
+          "timezone",
+          "total",
+          "first_day",
+          "last_day",
+          "hours"
+        ],
+        "title": "TrailDay",
+        "type": "object"
+      },
+      "TrailHour": {
+        "properties": {
+          "by_kind": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "By Kind",
+            "type": "object"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "hour": {
+            "title": "Hour",
+            "type": "integer"
+          },
+          "t": {
+            "title": "T",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "t",
+          "hour",
+          "count",
+          "by_kind"
+        ],
+        "title": "TrailHour",
+        "type": "object"
+      },
+      "TrailPath": {
+        "properties": {
+          "ended_at": {
+            "title": "Ended At",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "started_at": {
+            "title": "Started At",
+            "type": "integer"
+          },
+          "x": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "X",
+            "type": "array"
+          },
+          "y": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Y",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "started_at",
+          "ended_at",
+          "label",
+          "x",
+          "y"
+        ],
+        "title": "TrailPath",
+        "type": "object"
+      },
+      "TrailPaths": {
+        "properties": {
+          "from_ms": {
+            "title": "From Ms",
+            "type": "integer"
+          },
+          "returned": {
+            "title": "Returned",
+            "type": "integer"
+          },
+          "scale": {
+            "title": "Scale",
+            "type": "integer"
+          },
+          "to_ms": {
+            "title": "To Ms",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "trails": {
+            "items": {
+              "$ref": "#/components/schemas/TrailPath"
+            },
+            "title": "Trails",
+            "type": "array"
+          }
+        },
+        "required": [
+          "from_ms",
+          "to_ms",
+          "total",
+          "returned",
+          "scale",
+          "trails"
+        ],
+        "title": "TrailPaths",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -1378,6 +1550,129 @@
           }
         },
         "summary": "Status"
+      }
+    },
+    "/api/trails": {
+      "get": {
+        "description": "The paths of the trails that began in a range, compressed if the browser accepts that.",
+        "operationId": "trails_api_trails_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from_ms",
+            "required": true,
+            "schema": {
+              "title": "From Ms",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to_ms",
+            "required": true,
+            "schema": {
+              "title": "To Ms",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kinds",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kinds"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 5000,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrailPaths"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Trails"
+      }
+    },
+    "/api/trails/day": {
+      "get": {
+        "description": "A local day (today if none is given) by the hour: when the trails began, by kind.",
+        "operationId": "trails_day_api_trails_day_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "day",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Day"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrailDay"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Trails Day"
       }
     }
   }

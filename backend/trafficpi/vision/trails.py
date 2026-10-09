@@ -39,7 +39,7 @@ MIN_EXTENT = 0.05  # a trail must spread over at least this much of the picture 
 MIN_POINTS = 3
 MAX_POINTS = 1500  # five minutes at five a second; a longer track is saved in pieces
 VEHICLES = ("car", "truck", "bus", "motorcycle", "bicycle")
-_FULL_SCALE = 65535  # a coordinate is stored as a 16-bit fraction of the picture
+FULL_SCALE = 65535  # a coordinate is stored as a 16-bit fraction of the picture
 
 
 def trail_classes(*, people: bool = False) -> frozenset[str]:
@@ -63,7 +63,7 @@ class TrailPoints:
 
 
 def _quantize(values: Sequence[float]) -> np.ndarray:
-    return np.rint(np.clip(np.asarray(values, dtype=np.float64), 0.0, 1.0) * _FULL_SCALE).astype(
+    return np.rint(np.clip(np.asarray(values, dtype=np.float64), 0.0, 1.0) * FULL_SCALE).astype(
         np.int64
     )
 
@@ -78,8 +78,12 @@ def encode_path(offsets_ms: Sequence[int], xs: Sequence[float], ys: Sequence[flo
     return zlib.compress(struct.pack("<BI", FORMAT_VERSION, len(offsets_ms)) + body, 6)
 
 
-def decode_path(blob: bytes) -> TrailPoints:
-    """The inverse of :func:`encode_path`; ``ValueError`` for anything that is not a path."""
+def decode_path_raw(blob: bytes) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """The path as it is stored: times (ms) and x, y as whole numbers from 0 to ``FULL_SCALE``.
+
+    ``ValueError`` for anything that is not a path. Sending these to a browser as they are saves
+    converting to fractions and back.
+    """
     try:
         raw = zlib.decompress(blob)
         version, n = struct.unpack_from("<BI", raw)
@@ -95,7 +99,13 @@ def decode_path(blob: bytes) -> TrailPoints:
         np.cumsum(np.frombuffer(raw, dtype="<i4", count=n, offset=5 + 4 * n * i).astype(np.int64))
         for i in range(3)
     ]
-    return TrailPoints(columns[0], columns[1] / _FULL_SCALE, columns[2] / _FULL_SCALE)
+    return columns[0], columns[1], columns[2]
+
+
+def decode_path(blob: bytes) -> TrailPoints:
+    """The inverse of :func:`encode_path`; ``ValueError`` for anything that is not a path."""
+    offsets, x, y = decode_path_raw(blob)
+    return TrailPoints(offsets, x / FULL_SCALE, y / FULL_SCALE)
 
 
 # --- the recorder ---------------------------------------------------------------------------------
