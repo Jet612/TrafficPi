@@ -201,6 +201,10 @@ pnpm build                            # writes dashboard/out; trafficpi-api serv
 - **TypeScript stays at 5.9**, because typescript-eslint does not support 7 yet. pnpm 12 does not run install scripts unless `pnpm-workspace.yaml` allows them.
 - If a build crashes in an odd way, look at the memory first (see Troubleshooting) and delete `.next` before trying again; also check that no orphaned `next` worker is still using the CPU (`ps -eo pid,pcpu,args | grep next`).
 
+## Rehearsing CI
+
+`scripts/rehearse_ci.sh` clones what is committed to a temporary directory and runs CI's four jobs there (backend: lint, types, tests in a virtualenv without the Pi's system packages; dashboard: install from the lockfile, lint, types before any build, tests, build; the check that the generated API types are current; the browser test against the made-up street on ports 18000 and 18001, beside the services). It takes about eight minutes and ends with the number of failed jobs as its exit status. Run it after committing and before pushing: this Pi has things a runner does not (Picamera2, HailoRT, build output, files that `.gitignore` hides), and the first push failed twice for that reason. `--skip-e2e` leaves out the browser test.
+
 ## Troubleshooting
 
 - **`hailortcli` can't find a device.** Check `lsmod | grep hailo`, `dkms status` and `sudo dmesg | grep -i hailo`. After a kernel update the driver must be rebuilt for the new kernel: `sudo dkms autoinstall` (kernel headers must be installed).
