@@ -156,20 +156,11 @@ jobs:
         run: command -v ffmpeg || (sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg)
 
       # No camera or accelerator here: `run --demo` plays a drawn street through the real tracker,
-      # counting lines and database, and the API serves the built dashboard. --history-days gives
-      # it three earlier days of made-up trails, so that the History page has days to move between.
+      # counting lines and database, and the API serves the built dashboard. The script waits until
+      # both services answer; scripts/rehearse_ci.sh starts them with the same script, so that a
+      # rehearsal cannot start them differently from here.
       - name: Start the services
-        working-directory: backend
-        run: |
-          data="$RUNNER_TEMP/trafficpi"
-          printf '%s\n' "$E2E_PASSWORD" | uv run trafficpi-admin --data-dir "$data" set-password --password-stdin
-          nohup uv run trafficpi-vision run --demo --history-days 3 --data-dir "$data" > "$RUNNER_TEMP/vision.log" 2>&1 &
-          nohup uv run trafficpi-api --data-dir "$data" --host 127.0.0.1 > "$RUNNER_TEMP/api.log" 2>&1 &
-          for _ in $(seq 1 60); do
-            curl -fsS http://127.0.0.1:8000/api/health && break
-            sleep 1
-          done
-          curl -fsS http://127.0.0.1:8001/health
+        run: scripts/start_demo.sh "$RUNNER_TEMP/trafficpi" "$RUNNER_TEMP"
 
       # GitHub's Ubuntu runners come with Google Chrome; playwright-core drives it.
       - name: Run the browser test

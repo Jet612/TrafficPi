@@ -6,9 +6,11 @@
 #
 # Why: this Pi has things a runner does not (Picamera2 and HailoRT, build output, files that
 # .gitignore hides), so a test that passes here can fail there. The first push failed twice that
-# way. Only committed files are tested, so commit first. The browser test starts the made-up street
-# on ports 18000 and 18001, so it can run beside the services; it needs chromium-headless-shell
-# (or CHROMIUM=/path/to/chrome). The exit status is the number of failed jobs.
+# way, and the third time the rehearsal had its own copy of how CI starts the services and waited
+# for more than CI did (they share scripts/start_demo.sh now). Only committed files are tested, so
+# commit first. The browser test starts the made-up street on ports 18000 and 18001, so it can run
+# beside the services; it needs chromium-headless-shell (or CHROMIUM=/path/to/chrome: CI uses
+# Google Chrome, and a full Chromium is nearer to it). The exit status is the number of failed jobs.
 set -uo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -66,23 +68,11 @@ api_types() {
     && git diff --exit-code -- dashboard/src/lib/openapi.json dashboard/src/lib/api-types.ts
 }
 
-browser_test() {
-  local data="$work/data"
-  (cd backend && printf '%s\n' "$password" \
-    | uv run trafficpi-admin --data-dir "$data" set-password --password-stdin) || return 1
-  (cd backend && nohup uv run trafficpi-vision run --demo --history-days 3 --data-dir "$data" --port 18001 \
-    > "$work/vision.log" 2>&1 < /dev/null &)
-  (cd backend && nohup uv run trafficpi-api --data-dir "$data" --host 127.0.0.1 --port 18000 \
-    --vision-url http://127.0.0.1:18001 > "$work/api.log" 2>&1 < /dev/null &)
-  for _ in $(seq 1 60); do
-    curl -fsS http://127.0.0.1:18000/api/health > /dev/null 2>&1 \
-      && curl -fsS http://127.0.0.1:18001/health > /dev/null 2>&1 && break
-    sleep 1
-  done
-  curl -fsS http://127.0.0.1:18001/health > /dev/null || { cat "$work/vision.log" "$work/api.log"; return 1; }
+browser_test() { # the services are started by the script that CI runs, on other ports
+  E2E_PASSWORD="$password" scripts/start_demo.sh "$work/data" "$work" 18000 18001 || return 1
   local status=0
   (cd dashboard && E2E_BASE_URL=http://127.0.0.1:18000 E2E_PASSWORD="$password" E2E_DEMO=1 \
-    E2E_EXPECT_LIVE=1 CHROMIUM="${CHROMIUM:-/usr/bin/chromium-headless-shell}" \
+    E2E_EXPECT_LIVE=1 E2E_SHOTS="$work/shots" CHROMIUM="${CHROMIUM:-/usr/bin/chromium-headless-shell}" \
     node e2e/smoke.mjs) || status=1
   stop_demo
   return $status
