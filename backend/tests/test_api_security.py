@@ -357,9 +357,9 @@ def test_a_rebuilt_page_gets_a_new_policy_without_restarting_the_server(
 
 def test_a_page_that_is_revalidated_keeps_its_own_policy(site_client: TestClient) -> None:
     """A reload asks the server whether the page has changed, and the answer is a 304 with no body.
-    A browser merges the headers of that answer into the page it has kept, so a 304 that carried the
-    default policy (which allows no inline script) made the reloaded page blank. A browser found this
-    on the first reload; a test that only ever fetches each page once could not."""
+    A browser merges the headers of that answer into the page it has kept, so a 304 that carried
+    the default policy (which allows no inline script) made the reloaded page blank. A browser
+    found this on the first reload; a test that only ever fetches each page once could not."""
     first = site_client.get("/history/")
     assert first.status_code == 200
     expected = policy_of(first)["script-src"]
