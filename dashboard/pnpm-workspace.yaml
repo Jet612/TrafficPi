@@ -1,0 +1,4 @@
+# Install scripts are off unless listed here. unrs-resolver (used by the linter) ships its binary
+# as a separate package, so its script is not needed.
+allowBuilds:
+  unrs-resolver: false

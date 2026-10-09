@@ -1,0 +1,156 @@
+@import "tailwindcss";
+
+/*
+ * Design tokens. Neutral surfaces, ink and chart furniture, the categorical series colours and the
+ * status colours come from the data-viz palette (validated with its six-check script, light and
+ * dark). Two changes from that palette: muted text is darker (#6a6963 / #a3a299), because the
+ * reference grey is only 3.4:1 on the light surface; and the interface accent is a blue step that
+ * keeps 4.5:1 for text. src/lib/tokens.test.ts checks every text pair below against WCAG AA.
+ *
+ * Dark values are declared twice, as the palette prescribes: for the operating system's setting,
+ * and for a [data-theme="dark"] stamp (a theme toggle can be added later without touching tokens).
+ */
+:root {
+  color-scheme: light;
+  --page: #f9f9f7;
+  --surface: #fcfcfb;
+  --sunken: #f2f2ef;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --ink-3: #6a6963;
+  --grid: #e1e0d9;
+  --baseline: #c3c2b7;
+  --edge: rgb(11 11 11 / 0.1);
+  --accent: #256abf;
+  --accent-ink: #ffffff;
+  --accent-wash: #cde2fb;
+
+  /* Vehicle classes take the categorical slots in a fixed order: colour follows the class. */
+  --series-1: #2a78d6; /* car */
+  --series-2: #eb6834; /* truck */
+  --series-3: #1baf7a; /* bus */
+  --series-4: #eda100; /* motorcycle */
+  --series-5: #e87ba4; /* bicycle */
+  --series-6: #008300; /* person */
+  --series-other: #898781;
+
+  /* Status colours are fixed: never themed, never a series; always shown with an icon and a label. */
+  --good: #0ca30c;
+  --good-ink: #006300;
+  --warning: #fab219;
+  --serious: #ec835a;
+  --critical: #d03b3b;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --sunken: #242423;
+    --ink: #ffffff;
+    --ink-2: #c3c2b7;
+    --ink-3: #a3a299;
+    --grid: #2c2c2a;
+    --baseline: #383835;
+    --edge: rgb(255 255 255 / 0.1);
+    --accent: #3987e5;
+    --accent-ink: #0b0b0b;
+    --accent-wash: #0d366b;
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --series-5: #d55181;
+    --series-6: #008300;
+    --good-ink: #0ca30c;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d;
+  --surface: #1a1a19;
+  --sunken: #242423;
+  --ink: #ffffff;
+  --ink-2: #c3c2b7;
+  --ink-3: #a3a299;
+  --grid: #2c2c2a;
+  --baseline: #383835;
+  --edge: rgb(255 255 255 / 0.1);
+  --accent: #3987e5;
+  --accent-ink: #0b0b0b;
+  --accent-wash: #0d366b;
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+  --series-6: #008300;
+  --good-ink: #0ca30c;
+}
+
+@theme inline {
+  --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --color-page: var(--page);
+  --color-surface: var(--surface);
+  --color-sunken: var(--sunken);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-grid: var(--grid);
+  --color-baseline: var(--baseline);
+  --color-edge: var(--edge);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-wash: var(--accent-wash);
+  --color-good: var(--good);
+  --color-good-ink: var(--good-ink);
+  --color-warning: var(--warning);
+  --color-serious: var(--serious);
+  --color-critical: var(--critical);
+}
+
+@layer base {
+  html {
+    background: var(--page);
+    color: var(--ink);
+  }
+  body {
+    margin: 0;
+    font-family: var(--font-sans);
+    font-size: 15px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  button,
+  [role="switch"] {
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: not-allowed;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media (forced-colors: active) {
+  /* Colours are replaced; keep shapes and boundaries visible. */
+  [role="meter"],
+  [role="switch"] {
+    border: 1px solid CanvasText;
+  }
+}
