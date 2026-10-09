@@ -20,6 +20,8 @@ from typing import Any
 import numpy as np
 
 from trafficpi.core.clock import WallClock, resolve_timezone
+from trafficpi.core.coco import PERSON_CLASS_ID
+from trafficpi.core.detection_settings import DETECT_PEOPLE_KEY, people_wanted
 from trafficpi.core.evidence_settings import EvidenceSettings
 from trafficpi.core.paths import evidence_dir, reference_file
 from trafficpi.core.profile import Profile, ProfileError, empty_profile, parse_profile
@@ -30,6 +32,7 @@ from trafficpi.vision.detector import Detector
 from trafficpi.vision.drift import DriftMonitor, shape_points
 from trafficpi.vision.engine import EngineResult, TrafficEngine
 from trafficpi.vision.evidence import EvidenceFiles, EvidenceJob, EvidenceRecorder
+from trafficpi.vision.health import HealthRecorder, HealthRow
 from trafficpi.vision.metrics import SystemSample, SystemSampler, decode_throttled
 from trafficpi.vision.profile import DEFAULT_ASPECT, compile_profile
 from trafficpi.vision.rules import CountEvent, CountingRule, Rule, StopEvent, StopSign, StopSignRule
@@ -43,6 +46,9 @@ log = logging.getLogger("trafficpi.vision")
 MAX_PENDING_WRITES = 1000
 MAX_PENDING_TRAILS = 2000
 TRAIL_RETRY_S = 5.0  # after a failed write, wait this long before trying again
+MAX_PENDING_HEALTH = 2_000  # minutes of health kept in memory while the database is away
+HEALTH_RETRY_S = 5.0
+HEALTH_KEEP_DAYS = 30  # how long a minute of health is kept
 TRAIL_CLEANUP_CHUNK = 2000  # trails deleted in one transaction
 TRAIL_CLEANUP_CHUNKS_PER_PASS = 5  # so that a big backlog never holds up the camera loop
 
@@ -211,6 +217,12 @@ class LiveState:
 
     # --- read by the web server -------------------------------------------------------------
 
+    def camera_and_fps(self) -> tuple[bool, float]:
+        """Whether the camera works now (a stuck wait for frames is not working), and how fast."""
+        with self._condition:
+            ok = self._camera_ok and time.monotonic() - self._last_frame_at <= self._stale_after_s
+            return ok, (self._fps if ok else 0.0)
+
     def snapshot(self) -> dict[str, Any]:
         with self._condition:
             camera_ok, camera_error, fps = self._camera_ok, self._camera_error, self._fps
@@ -298,6 +310,7 @@ class VisionService:
         self._engine = TrafficEngine(ByteTracker(tracker_config))
         self._tracker_config = tracker_config
         self._reload = threading.Event()
+        self._detect_people = True  # read from the settings at start and on every reload
         self._pending: deque[tuple[CountEvent | StopEvent, int]] = deque(maxlen=MAX_PENDING_WRITES)
         self.profile_version = 0
         self._active_profile: Profile | None = None  # what the engine is running on right now
@@ -323,6 +336,11 @@ class VisionService:
         self._drift = drift  # None until the service runs, and always without a data directory
         self._last_beat = time.monotonic()  # when the loop last moved (see beat and alive)
         self._inference_ms: deque[float] = deque(maxlen=300)  # the last ten seconds at 30 fps
+        self._health = HealthRecorder()
+        self._pending_health: deque[HealthRow] = deque(maxlen=MAX_PENDING_HEALTH)
+        self._health_retry_at = 0.0  # time.monotonic(): do not store health before this
+        self._sampler: SystemSampler | None = None  # made when the service runs
+        self._next_metrics = 0.0  # time.monotonic(): take the next reading when this has passed
 
     # --- is it moving? (plan.md D27) --------------------------------------------------------
 
@@ -423,11 +441,15 @@ class VisionService:
         state and started again every ``camera_retry_s`` seconds; the loop never gives up.
         """
         self.beat()
+        self._sampler = SystemSampler()
+        self._next_metrics = time.monotonic()
         self.load_profile()
         self._load_trail_settings()
         self._load_evidence_settings()
+        self._load_detection_settings()
         self._start_drift()
         if not self._open_source(stop):
+            self._finish_health()
             self._finish_drift()
             return
         try:
@@ -435,21 +457,51 @@ class VisionService:
         finally:
             self._close_source()
             self._finish_trails()
+            self._finish_health()
             self._finish_evidence()
             self._finish_drift()
 
+    def _tick(self) -> None:
+        """Take a reading of the machine every few seconds: for the live view, and for the record
+        of how it has been, a row of health a minute. It is called from the loop and from the wait
+        for a camera that will not start, so that an outage is recorded as one and not as a service
+        that was not running."""
+        if self._sampler is None or time.monotonic() < self._next_metrics:
+            return
+        self._next_metrics = time.monotonic() + self.config.metrics_every_s
+        sample = self._sampler.sample()
+        self.live.set_system(sample)
+        if self._inference_ms:
+            recent = sorted(self._inference_ms)
+            self.live.update_accelerator(
+                inference_ms=sum(recent) / len(recent),
+                inference_p95_ms=recent[min(len(recent) - 1, int(0.95 * len(recent)))],
+            )
+        camera_ok, fps = self.live.camera_and_fps()
+        self._pending_health.extend(
+            self._health.add(
+                self._clock.now_ms(),
+                temp_c=sample.soc_temp_c,
+                cpu_percent=sample.total_percent,
+                fps=fps,
+                camera_ok=camera_ok,
+                throttled=sample.throttled,
+            )
+        )
+        self._write_health()
+
     def _loop(self, stop: StopRequest, max_frames: int | None) -> None:
-        sampler = SystemSampler()
-        next_metrics = time.monotonic()
         interval = 0.0  # smoothed time between frames; the frame rate is its inverse
         last = self._perf_counter()
         while not stop.requested and (max_frames is None or self.frames < max_frames):
             self.beat()
+            self._tick()
             if self._reload.is_set():
                 self._reload.clear()
                 self.load_profile()
                 self._load_trail_settings()
                 self._load_evidence_settings()
+                self._load_detection_settings()
             try:
                 frame = self.source.read()
             except EndOfStream:
@@ -468,6 +520,8 @@ class VisionService:
             if self._drift is not None:
                 self._drift.offer(frame.image)  # returns at once unless a check is due
             detections = self.detector.detect(frame.image)
+            if not self._detect_people:  # the model still sees them; nothing after it is told
+                detections = [d for d in detections if d.class_id != PERSON_CLASS_ID]
             timings = getattr(self.detector, "timings", None)  # a stand-in may not time itself
             if timings is not None and timings.infer_ms > 0:  # the made-up street times nothing
                 self._inference_ms.append(timings.infer_ms)
@@ -494,15 +548,6 @@ class VisionService:
             self.live.publish_frame(frame, result.tracks, now_ms, 1 / max(interval, 1e-6))
             self.frames += 1
 
-            if time.monotonic() >= next_metrics:
-                self.live.set_system(sampler.sample())
-                if self._inference_ms:
-                    recent = sorted(self._inference_ms)
-                    self.live.update_accelerator(
-                        inference_ms=sum(recent) / len(recent),
-                        inference_p95_ms=recent[min(len(recent) - 1, int(0.95 * len(recent)))],
-                    )
-                next_metrics = time.monotonic() + self.config.metrics_every_s
             if time.monotonic() >= self._next_trail_cleanup:
                 self._clean_up_trails()
             if self._data_dir is not None and time.monotonic() >= self._next_evidence_cleanup:
@@ -514,6 +559,7 @@ class VisionService:
         """Start the source, trying again until it works. False if a stop came first."""
         while not stop.requested:
             self.beat()  # a wait for a camera that is not there is the service's own business
+            self._tick()
             try:
                 self.source.start()
             except Exception as exc:
@@ -709,6 +755,17 @@ class VisionService:
 
     # --- trails (plan.md D21) ---------------------------------------------------------------
 
+    def _load_detection_settings(self) -> None:
+        """Read whether people are looked for (the owner may have changed it)."""
+        try:
+            wanted = people_wanted(self.store.get_setting(DETECT_PEOPLE_KEY, True))
+        except Exception:
+            log.exception("could not read the detection settings; keeping the ones in use")
+            return
+        if wanted != self._detect_people:
+            log.info("people are looked for" if wanted else "people are not looked for")
+        self._detect_people = wanted
+
     def _load_trail_settings(self) -> None:
         """Read which trails are saved and for how long (the owner may have changed it)."""
         try:
@@ -763,9 +820,44 @@ class VisionService:
         except Exception:
             log.exception("could not store the trails in progress")
 
+    # --- machine health (plan.md M8 step 4) ---------------------------------------------------
+
+    def _write_health(self) -> None:
+        """Store finished minutes of health; if the database is away keep them for another try,
+        not sooner than a few seconds on (the same care as for trails, and as bounded)."""
+        if not self._pending_health or time.monotonic() < self._health_retry_at:
+            return
+        batch = list(self._pending_health)
+        try:
+            self.store.add_health(batch)
+        except Exception:
+            self._health_retry_at = time.monotonic() + HEALTH_RETRY_S
+            log.exception("could not store %d minute(s) of health; will retry", len(batch))
+            return
+        for _ in batch:
+            self._pending_health.popleft()
+
+    def _finish_health(self) -> None:
+        """The service is stopping: the minute in progress is stored as it stands."""
+        try:
+            self._pending_health.extend(self._health.flush())
+            self._health_retry_at = 0.0
+            self._write_health()
+        except Exception:
+            log.exception("could not store the minute of health in progress")
+
+    def _clean_up_health(self) -> None:
+        cutoff_s = self._clock.now_ms() // 1000 - HEALTH_KEEP_DAYS * 86_400
+        try:
+            while self.store.delete_health_before(cutoff_s, limit=2_000) == 2_000:
+                pass
+        except Exception:
+            log.exception("could not delete old health records")
+
     def _clean_up_trails(self) -> None:
         """Delete trails older than the owner wants kept, a few chunks at a time."""
         self._next_trail_cleanup = time.monotonic() + self.config.trail_cleanup_every_s
+        self._clean_up_health()
         cutoff = self._clock.now_ms() - self._keep_days * 86_400_000
         removed = 0
         try:

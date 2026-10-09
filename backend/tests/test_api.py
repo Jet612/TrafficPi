@@ -650,6 +650,7 @@ def settings(**over: object) -> dict[str, object]:
         "evidence_rolling_clip_hours": 3,
         "evidence_did_not_stop_clip_hours": 48,
         "remote_live_video": False,
+        "detect_people": True,
         **over,
     }
 

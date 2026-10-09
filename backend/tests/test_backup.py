@@ -15,6 +15,7 @@ import pytest
 from tests.fakes import finished_trail
 from trafficpi.api import backup
 from trafficpi.db.models import Base
+from trafficpi.db.session import head_revision
 from trafficpi.db.store import Store, open_store
 from trafficpi.vision.rules import CountEvent, StopEvent
 
@@ -122,7 +123,7 @@ def test_a_backup_holds_the_database_and_the_files_beside_it(tmp_path: Path, dat
         ]
         manifest = json.load(tar.extractfile("manifest.json"))  # type: ignore[arg-type]
     assert manifest["format"] == 1 and manifest["created"] == "2026-10-09T18:30:05Z"
-    assert manifest["schema"] == "0003" and manifest["config_only"] is False
+    assert manifest["schema"] == head_revision() and manifest["config_only"] is False
     assert manifest["with_evidence"] is False
     assert manifest["rows"]["events"] == 31 and manifest["rows"]["trails"] == 20
     unpacked = unpack(archive, tmp_path / "look")
@@ -255,7 +256,8 @@ def test_a_restore_brings_back_everything_that_was_backed_up(tmp_path: Path, dat
     archive = backup.create_backup(data, tmp_path / "out", with_evidence=True, now=NOW)
     fresh = tmp_path / "new-card" / "data"
     report = backup.restore_backup(archive, fresh, now=NOW)
-    assert report.schema == "0003" and report.rows["events"] == 31 and report.set_aside is None
+    assert report.schema == head_revision() and report.rows["events"] == 31
+    assert report.set_aside is None
     restored = open_store(fresh)
     assert restored.user_count() == 1
     assert restored.get_setting("timezone") == "America/New_York"
@@ -387,7 +389,9 @@ def test_an_older_schema_is_restored_and_brought_up_to_date(tmp_path: Path) -> N
     assert report.schema == "0002"
     connection = sqlite3.connect(target / "trafficpi.db")
     try:
-        assert connection.execute("select version_num from alembic_version").fetchone() == ("0003",)
+        assert connection.execute("select version_num from alembic_version").fetchone() == (
+            head_revision(),
+        )
         assert connection.execute("select count(*) from users").fetchone() == (1,)
     finally:
         connection.close()

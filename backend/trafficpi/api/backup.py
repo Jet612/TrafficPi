@@ -40,7 +40,7 @@ SUFFIX = ".tar.gz"
 # Every table is one or the other, on purpose: `--config-only` drops the first and keeps the
 # second, and a test fails when a table is added that is in neither. (What a person made of a stop
 # event, confirmed or false alarm, lives in `events` and so goes with the history.)
-HISTORY_TABLES = ("events", "minute_counts", "trails")
+HISTORY_TABLES = ("events", "minute_counts", "trails", "health_samples")
 CONFIG_TABLES = ("cameras", "users", "settings", "profiles")
 
 _PERMITTED_FILES = {MANIFEST, DATABASE, SECRET, REFERENCE}

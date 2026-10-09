@@ -23,6 +23,7 @@ export interface SettingsDraft {
   rollingClipHours: string;
   didNotStopClipHours: string;
   remoteLiveVideo: boolean;
+  detectPeople: boolean;
 }
 
 export function toDraft(settings: Settings): SettingsDraft {
@@ -38,6 +39,7 @@ export function toDraft(settings: Settings): SettingsDraft {
     rollingClipHours: String(settings.evidence_rolling_clip_hours),
     didNotStopClipHours: String(settings.evidence_did_not_stop_clip_hours),
     remoteLiveVideo: settings.remote_live_video,
+    detectPeople: settings.detect_people,
   };
 }
 
@@ -97,6 +99,7 @@ export function fromDraft(draft: SettingsDraft): DraftResult {
       evidence_rolling_clip_hours: rollingHours,
       evidence_did_not_stop_clip_hours: didNotStopHours,
       remote_live_video: draft.remoteLiveVideo,
+      detect_people: draft.detectPeople,
     },
   };
 }

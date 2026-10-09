@@ -383,6 +383,176 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "HealthEpisode": {
+        "description": "Something that went on for a while and is worth a sentence.",
+        "properties": {
+          "from_s": {
+            "title": "From S",
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "slowed",
+              "under-voltage",
+              "camera-offline",
+              "no-data"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "ongoing": {
+            "title": "Ongoing",
+            "type": "boolean"
+          },
+          "peak_temp_c": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peak Temp C"
+          },
+          "to_s": {
+            "title": "To S",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kind",
+          "from_s",
+          "to_s",
+          "ongoing"
+        ],
+        "title": "HealthEpisode",
+        "type": "object"
+      },
+      "HealthPoint": {
+        "description": "The machine over one stretch of the history chart (a minute to four hours long).",
+        "properties": {
+          "camera_up_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Camera Up Percent"
+          },
+          "cpu_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpu Percent"
+          },
+          "fps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fps"
+          },
+          "fps_min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fps Min"
+          },
+          "minutes": {
+            "title": "Minutes",
+            "type": "integer"
+          },
+          "t": {
+            "title": "T",
+            "type": "integer"
+          },
+          "temp_c": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temp C"
+          },
+          "throttled": {
+            "title": "Throttled",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "t",
+          "minutes",
+          "throttled"
+        ],
+        "title": "HealthPoint",
+        "type": "object"
+      },
+      "HealthSummary": {
+        "properties": {
+          "camera_up_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Camera Up Percent"
+          },
+          "minutes": {
+            "title": "Minutes",
+            "type": "integer"
+          },
+          "slowed_minutes": {
+            "title": "Slowed Minutes",
+            "type": "integer"
+          },
+          "temp_c_max": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temp C Max"
+          },
+          "under_voltage_minutes": {
+            "title": "Under Voltage Minutes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "minutes",
+          "slowed_minutes",
+          "under_voltage_minutes"
+        ],
+        "title": "HealthSummary",
+        "type": "object"
+      },
       "HourCount": {
         "properties": {
           "count": {
@@ -851,6 +1021,10 @@
       "Settings": {
         "description": "Everything the Setup page can change. A PUT replaces all of it, so every member is given.",
         "properties": {
+          "detect_people": {
+            "title": "Detect People",
+            "type": "boolean"
+          },
           "evidence_did_not_stop_clip_hours": {
             "maximum": 87600.0,
             "minimum": 1.0,
@@ -921,7 +1095,8 @@
           "evidence_max_mb",
           "evidence_rolling_clip_hours",
           "evidence_did_not_stop_clip_hours",
-          "remote_live_video"
+          "remote_live_video",
+          "detect_people"
         ],
         "title": "Settings",
         "type": "object"
@@ -1497,6 +1672,54 @@
           "unreviewed"
         ],
         "title": "StopTotals",
+        "type": "object"
+      },
+      "SystemHistory": {
+        "properties": {
+          "bucket_s": {
+            "title": "Bucket S",
+            "type": "integer"
+          },
+          "episodes": {
+            "items": {
+              "$ref": "#/components/schemas/HealthEpisode"
+            },
+            "title": "Episodes",
+            "type": "array"
+          },
+          "from_s": {
+            "title": "From S",
+            "type": "integer"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/HealthPoint"
+            },
+            "title": "Points",
+            "type": "array"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/HealthSummary"
+          },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          },
+          "to_s": {
+            "title": "To S",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "from_s",
+          "to_s",
+          "bucket_s",
+          "timezone",
+          "points",
+          "episodes",
+          "summary"
+        ],
+        "title": "SystemHistory",
         "type": "object"
       },
       "SystemMetrics": {
@@ -3072,6 +3295,48 @@
           }
         },
         "summary": "Stop Snapshot"
+      }
+    },
+    "/api/system/history": {
+      "get": {
+        "operationId": "system_history_view_api_system_history_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "hours",
+            "required": false,
+            "schema": {
+              "default": 24,
+              "maximum": 720,
+              "minimum": 1,
+              "title": "Hours",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemHistory"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "System History View"
       }
     },
     "/api/trails": {

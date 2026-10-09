@@ -80,6 +80,25 @@ class Trail(Base):
     path: Mapped[bytes] = mapped_column(LargeBinary)  # ``encode_path`` in vision/trails.py
 
 
+class HealthSample(Base):
+    """How the machine was in one minute: temperature, load, frame rate, throttle flags and
+    whether the camera worked (see ``vision/health.py``); kept for 30 days."""
+
+    __tablename__ = "health_samples"
+
+    camera_id: Mapped[str] = mapped_column(ForeignKey("cameras.id"), primary_key=True)
+    minute_start: Mapped[int] = mapped_column(Integer, primary_key=True)  # s, on a minute
+    temp_c_max: Mapped[float | None] = mapped_column(Float)
+    cpu_percent: Mapped[float | None] = mapped_column(Float)
+    fps_mean: Mapped[float | None] = mapped_column(Float)
+    fps_min: Mapped[float | None] = mapped_column(Float)
+    throttled: Mapped[int] = mapped_column(
+        Integer
+    )  # bits 0 to 3 of get_throttled seen in the minute
+    samples: Mapped[int] = mapped_column(Integer)
+    camera_ok_samples: Mapped[int] = mapped_column(Integer)
+
+
 class User(Base):
     __tablename__ = "users"
 

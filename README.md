@@ -4,7 +4,7 @@
 
 TrafficPi is an open-source traffic monitoring system that uses computer vision and edge AI to detect, track, and analyze vehicles in real time.
 
-**Project Status:** Early development. TrafficPi is not usable yet; the features described below are the intended design. See [plan.md](plan.md) for the roadmap and [todo.md](todo.md) for current tasks.
+**Project Status:** In development, and running on one Raspberry Pi 5 with a Hailo-8L and a Camera Module 3. It counts vehicles at counting lines, watches stop signs (a picture and a short clip of every pass that needs a look), keeps the paths vehicles took, and shows all of it in a password-protected dashboard that also reports on the machine's health. Speed estimation, the daily e-mail report and a release are not done. [docs/install.md](docs/install.md) takes a blank Raspberry Pi OS Lite card to a working system, but has not yet been tried on a clean image. See [plan.md](plan.md) for the roadmap and [todo.md](todo.md) for current tasks.
 
 ---
 
@@ -253,13 +253,9 @@ The vision service runs locally on the Raspberry Pi. The dashboard can be access
 
 ## Remote Access
 
-TrafficPi is intended to support remote dashboard access without requiring viewers to connect to a VPN.
+On the local network the dashboard is at `http://<the Pi>.local:8000`; everything needs the login. For access from outside, [docs/remote-access.md](docs/remote-access.md) describes two ways: a VPN such as Tailscale (nothing is exposed), or a Cloudflare Tunnel with Cloudflare Access in front (viewers need no VPN). Cloudflare's terms let it limit video on its network, so viewers who come through it get a still picture renewed every few seconds instead of the live video unless the owner switches that on in Settings. The Cloudflare route is written from its documentation and has not been tried with a real account yet.
 
-The recommended deployment method will use Cloudflare Tunnel to securely route browser traffic to the locally hosted dashboard, with Cloudflare Access for authentication and access control.
-
-Public access to camera footage, configuration endpoints, and event recordings will not be enabled by default.
-
-Cloudflare will be an optional deployment choice rather than a requirement for using TrafficPi locally.
+Nothing is public by default, and Cloudflare is an option, not a requirement. What is and is not protected is in [docs/security.md](docs/security.md).
 
 ---
 
@@ -269,7 +265,7 @@ TrafficPi is intended for traffic research, educational use, and general traffic
 
 The project will prioritize local processing and configurable data retention. Aggregate statistics can be retained separately from identifiable footage, and video recording can be disabled.
 
-TrafficPi does not read license plates and does not recognize faces or identify individual people or vehicles. It classifies road users by kind (car, truck, bus, motorcycle, bicycle, person) so that it can count them.
+TrafficPi does not read license plates and does not recognize faces or identify individual people or vehicles. It classifies road users by kind (car, truck, bus, motorcycle, bicycle, person) so that it can count them. Looking for people at all can be switched off in the dashboard's Settings, and then they get no box, no path and no count.
 
 TrafficPi is not intended to function as a certified speed enforcement system or automatically issue traffic citations.
 
@@ -298,7 +294,7 @@ The main goals are to:
 
 TrafficPi is intended to become an open-source project welcoming contributions, bug reports, feature ideas, and improvements.
 
-Development machine setup is documented in [docs/dev-setup.md](docs/dev-setup.md). Contributor guidelines will be added as the project progresses.
+Installing is in [docs/install.md](docs/install.md) and running it in [docs/operations.md](docs/operations.md). Development machine setup is documented in [docs/dev-setup.md](docs/dev-setup.md). Contributor guidelines will be added as the project progresses.
 
 ---
 

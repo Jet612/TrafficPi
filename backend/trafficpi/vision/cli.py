@@ -30,7 +30,7 @@ from trafficpi.db.store import Store, open_store
 from trafficpi.vision import pipeline
 from trafficpi.vision.annotate import annotate_clip
 from trafficpi.vision.compare import compare_logs, format_comparison
-from trafficpi.vision.demo import DemoStreet, demo_history
+from trafficpi.vision.demo import DemoStreet, demo_health, demo_history
 from trafficpi.vision.detector import (
     DEFAULT_MODEL,
     DEFAULT_SCORE_THRESHOLD,
@@ -446,14 +446,16 @@ def _configure_logging() -> None:
 
 
 def _seed_demo_history(store: Store, days: int, log: logging.Logger) -> None:
-    """Give a demo database that has no trails yet some made-up ones for the days before today."""
+    """Give a demo database that has no trails yet some made-up ones for the days before today,
+    and one that has no health record a few days of that."""
+    now_ms = time.time_ns() // 1_000_000
+    if store.health_count() == 0:
+        hours = min(days, 3) * 24
+        store.add_health(demo_health(hours, now_ms=now_ms))
+        log.warning("DEMO: wrote %d hours of made-up machine health", hours)
     if store.trail_count() > 0:
         return
-    trails = demo_history(
-        days,
-        now_ms=time.time_ns() // 1_000_000,
-        tz=resolve_timezone(store.get_setting("timezone")),
-    )
+    trails = demo_history(days, now_ms=now_ms, tz=resolve_timezone(store.get_setting("timezone")))
     for start in range(0, len(trails), 2_000):
         store.add_trails(trails[start : start + 2_000])
     log.warning("DEMO: wrote %d made-up trails for the %d days before today", len(trails), days)

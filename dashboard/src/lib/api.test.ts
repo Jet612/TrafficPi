@@ -79,6 +79,7 @@ describe("api", () => {
       evidence_rolling_clip_hours: 3,
       evidence_did_not_stop_clip_hours: 48,
       remote_live_video: false,
+      detect_people: true,
     };
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(respond(200, settings)));
     vi.stubGlobal("fetch", fetchMock);

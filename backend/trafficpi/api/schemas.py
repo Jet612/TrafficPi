@@ -269,6 +269,9 @@ class Settings(BaseModel):
     # May viewers who come through Cloudflare open the continuous live stream? Off: Cloudflare's
     # terms let it limit video on its CDN and do not say whether a Tunnel counts (plan.md D28).
     remote_live_video: bool = Field(strict=True)
+    # Does the camera look for people at all? Off: no box, no track, no trail and no count for them
+    # (plan.md D34). Vehicles are unaffected.
+    detect_people: bool = Field(strict=True)
 
 
 class TrailHour(BaseModel):
@@ -369,6 +372,47 @@ class MemoryTest(BaseModel):
     at_ms: int
     mb: int
     ok: bool
+
+
+class HealthPoint(BaseModel):
+    """The machine over one stretch of the history chart (a minute to four hours long)."""
+
+    t: int  # seconds since the epoch, where the stretch begins
+    minutes: int  # how many minutes of readings it rests on; 0: nothing was recorded then
+    temp_c: float | None = None  # the hottest minute
+    cpu_percent: float | None = None
+    fps: float | None = None  # while the camera worked
+    fps_min: float | None = None  # the slowest minute
+    camera_up_percent: float | None = None
+    throttled: int  # the Pi's flags (bits 0 to 3 of ``get_throttled``) seen at any time in it
+
+
+class HealthEpisode(BaseModel):
+    """Something that went on for a while and is worth a sentence."""
+
+    kind: Literal["slowed", "under-voltage", "camera-offline", "no-data"]
+    from_s: int
+    to_s: int
+    ongoing: bool  # it reaches the latest minute that was recorded (or, for no-data, now)
+    peak_temp_c: float | None = None  # for "slowed": the hottest it got
+
+
+class HealthSummary(BaseModel):
+    minutes: int
+    temp_c_max: float | None = None
+    camera_up_percent: float | None = None
+    slowed_minutes: int
+    under_voltage_minutes: int
+
+
+class SystemHistory(BaseModel):
+    from_s: int
+    to_s: int
+    bucket_s: int  # how long one point is
+    timezone: str  # for the clock times on the chart
+    points: list[HealthPoint]
+    episodes: list[HealthEpisode]  # newest first, at most 50
+    summary: HealthSummary
 
 
 class StatusResponse(BaseModel):

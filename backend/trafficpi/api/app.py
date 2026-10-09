@@ -23,7 +23,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from starlette.concurrency import run_in_threadpool
 
-from trafficpi.api import analytics, machine, stats, trail_views
+from trafficpi.api import analytics, machine, stats, system_history, trail_views
 from trafficpi.api.auth import (
     COOKIE_NAME,
     Busy,
@@ -60,6 +60,7 @@ from trafficpi.api.schemas import (
     StopStats,
     StopSummary,
     StopTotals,
+    SystemHistory,
     TodaySummary,
     TrafficStats,
     TrailDay,
@@ -70,6 +71,7 @@ from trafficpi.api.settings import ApiSettings, normalize_origin
 from trafficpi.api.static import DashboardFiles, content_security_policy
 from trafficpi.api.vision_client import VisionClient, VisionUnavailable
 from trafficpi.core.clock import WallClock, resolve_timezone
+from trafficpi.core.detection_settings import DETECT_PEOPLE_KEY, people_wanted
 from trafficpi.core.evidence_settings import EvidenceSettings
 from trafficpi.core.paths import ensure_private_dir, evidence_dir
 from trafficpi.core.profile import (
@@ -488,6 +490,18 @@ def create_app(
             timezone=str(_timezone(ctx.store)),
         )
 
+    @app.get("/api/system/history", response_model=SystemHistory)
+    def system_history_view(
+        user: User, hours: Annotated[int, Query(ge=1, le=720)] = 24
+    ) -> dict[str, Any]:
+        now_s = ctx.clock.now_ms() // 1000
+        from_s, to_s, _ = system_history.window(hours, now_s)
+        rows = ctx.store.health_between(from_s, to_s)
+        return {
+            **system_history.build(rows, hours=hours, now_s=now_s),
+            "timezone": str(_timezone(ctx.store)),
+        }
+
     def line_names() -> dict[str, str]:
         stored = ctx.store.get_profile()
         if stored is None:
@@ -755,6 +769,7 @@ def create_app(
             evidence_rolling_clip_hours=evidence.rolling_clip_hours,
             evidence_did_not_stop_clip_hours=evidence.did_not_stop_clip_hours,
             remote_live_video=remote_video_allowed(),
+            detect_people=people_wanted(ctx.store.get_setting(DETECT_PEOPLE_KEY, True)),
         )
 
     @app.put("/api/settings", response_model=Settings)
@@ -768,6 +783,7 @@ def create_app(
         ctx.store.set_setting("timezone", body.timezone)
         ctx.store.set_setting("units", body.units)
         ctx.store.set_setting("remote_live_video", body.remote_live_video)
+        ctx.store.set_setting(DETECT_PEOPLE_KEY, body.detect_people)
         ctx.store.set_trail_settings(
             TrailSettings(
                 enabled=body.trails_enabled,

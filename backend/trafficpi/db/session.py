@@ -80,6 +80,13 @@ def known_schema(revision: str) -> bool:
     return revision in {known.revision for known in script.walk_revisions()}
 
 
+def head_revision() -> str:
+    """The newest schema revision: what a database made, or brought up to date, now has."""
+    head = ScriptDirectory.from_config(_alembic_config()).get_current_head()
+    assert head is not None  # there is at least one migration
+    return head
+
+
 def upgrade_to_head(engine: Engine) -> None:
     """Apply any migrations the database has not seen yet."""
     with _migration_lock(engine), engine.begin() as connection:

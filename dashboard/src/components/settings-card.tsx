@@ -184,12 +184,22 @@ export function SettingsCard() {
               </div>
 
               <fieldset className="grid content-start gap-3">
+                <legend className="mb-1 text-sm font-medium text-ink">What the camera looks for</legend>
+                <p className="text-sm text-ink-2">
+                  Vehicles are always looked for. With people switched off, nobody who walks past gets a box in the picture, a path or a count, and a counting line that counts people stays
+                  silent. The change applies at once.
+                </p>
+                <Switch label="Look for people" checked={draft.detectPeople} onChange={(detectPeople) => change({ detectPeople })} />
+              </fieldset>
+
+              <fieldset className="grid content-start gap-3">
                 <legend className="mb-1 text-sm font-medium text-ink">Trails</legend>
                 <p className="text-sm text-ink-2">
                   A trail is the path a vehicle took across the picture, saved when it leaves it: no picture of the vehicle, no number plate, no face.
                 </p>
                 <Switch label="Save the path of each vehicle" checked={draft.trailsEnabled} onChange={(trailsEnabled) => change({ trailsEnabled })} />
-                <Switch label="Include people" checked={draft.trailsPeople} onChange={(trailsPeople) => change({ trailsPeople })} />
+                <Switch label="Include people" checked={draft.trailsPeople} disabled={!draft.detectPeople} onChange={(trailsPeople) => change({ trailsPeople })} />
+                {!draft.detectPeople && <p className="text-sm text-ink-2">People are not being looked for, so there are no paths of people to save.</p>}
                 <div>
                   <Label htmlFor={daysId}>Keep trails for (days)</Label>
                   <Input

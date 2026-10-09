@@ -14,6 +14,7 @@ import type {
   StopOut,
   StopStats,
   StopSummary,
+  SystemHistory,
   TodaySummary,
   TrafficStats,
   TrailDay,
@@ -120,6 +121,9 @@ export const api = {
     request<void>("POST", "/api/auth/login", { username, password }),
   logout: () => request<void>("POST", "/api/auth/logout"),
   status: (signal?: AbortSignal) => request<StatusResponse>("GET", "/api/status", undefined, signal),
+  /** How the machine has been over the last `hours` hours (1 to 720): points to chart, and what is worth telling. */
+  systemHistory: (hours: number, signal?: AbortSignal) =>
+    request<SystemHistory>("GET", `/api/system/history?hours=${hours}`, undefined, signal),
   today: (signal?: AbortSignal) => request<TodaySummary>("GET", "/api/stats/today", undefined, signal),
   series: (fromMs: number, toMs: number, bucket: Bucket, signal?: AbortSignal) =>
     request<SeriesPoint[]>(

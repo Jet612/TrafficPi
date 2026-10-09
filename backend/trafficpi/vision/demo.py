@@ -22,6 +22,7 @@ import numpy as np
 
 from trafficpi.core.types import Detection
 from trafficpi.vision.detector import DetectTimings
+from trafficpi.vision.health import HealthRow
 from trafficpi.vision.sources import Frame
 from trafficpi.vision.trails import FinishedTrail, encode_path
 
@@ -277,6 +278,53 @@ def demo_history(days: int, *, now_ms: int, tz: tzinfo, seed: int = 11) -> list[
                 _made_up_trail(rng, start, len(trails) + i) for i, start in enumerate(starts)
             )
     return trails
+
+
+# Where the made-up health has something to tell, in minutes before the minute in progress.
+HOT_AGO = range(300, 312)  # twelve minutes at the temperature where the board slows itself down
+UNDER_VOLTAGE_AGO = 120  # a single minute of a weak supply
+CAMERA_AWAY_AGO = range(593, 601)  # eight minutes without a camera
+OFF_AGO = range(995, 1001)  # six minutes with no record at all: the Pi was off
+
+
+def demo_health(hours: int, *, now_ms: int, seed: int = 5) -> list[HealthRow]:
+    """Made-up minutes of machine health for the ``hours`` hours before the minute in progress,
+    oldest first: a board at 60 to 70 degrees doing 30 frames a second, a quarter of an hour when
+    it got hot enough to slow itself down, a minute of under-voltage, a camera that went away for
+    a while and a hole where the Pi was off. For trying the System page and the browser tests;
+    nothing in them was measured. What is told lies at fixed distances from ``now_ms`` (see the
+    ``*_AGO`` ranges), so a short period has only some of it."""
+    rng = random.Random(seed)
+    end_s = now_ms // 60_000 * 60
+    rows: list[HealthRow] = []
+    for ago in range(hours * 60, 0, -1):
+        if ago in OFF_AGO:
+            continue
+        start = end_s - ago * 60
+        wave = math.sin(2 * math.pi * (start % 86_400) / 86_400)
+        temp, cpu, fps = 65.0 + 4.0 * wave, 27.0 + 6.0 * wave, 30.0
+        camera_ok, flags = 12, 0
+        if ago in HOT_AGO:
+            heat = math.sin(math.pi * (ago - HOT_AGO.start + 0.5) / len(HOT_AGO))
+            temp, fps = 78.0 + 6.4 * heat, 30.0 - 6.0 * heat
+            flags = 0b1000 if heat < 0.6 else 0b1100  # the soft limit, then throttled as well
+        if ago == UNDER_VOLTAGE_AGO:
+            flags = 0b0001
+        if ago in CAMERA_AWAY_AGO:
+            camera_ok, cpu = 0, 6.0
+        rows.append(
+            HealthRow(
+                minute_start=start,
+                temp_c_max=round(temp + rng.uniform(-0.6, 0.6), 1),
+                cpu_percent=round(cpu + rng.uniform(-2.0, 2.0), 1),
+                fps_mean=round(fps + rng.uniform(-0.3, 0.1), 1) if camera_ok else None,
+                fps_min=round(fps - rng.uniform(0.5, 2.0), 1) if camera_ok else None,
+                throttled=flags,
+                samples=12,
+                camera_ok_samples=camera_ok,
+            )
+        )
+    return rows
 
 
 def _made_up_trail(rng: random.Random, started_at: int, track_id: int) -> FinishedTrail:

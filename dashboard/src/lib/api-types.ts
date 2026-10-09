@@ -426,6 +426,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/system/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** System History View */
+        get: operations["system_history_view_api_system_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/trails": {
         parameters: {
             query?: never;
@@ -599,6 +616,60 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /**
+         * HealthEpisode
+         * @description Something that went on for a while and is worth a sentence.
+         */
+        HealthEpisode: {
+            /** From S */
+            from_s: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "slowed" | "under-voltage" | "camera-offline" | "no-data";
+            /** Ongoing */
+            ongoing: boolean;
+            /** Peak Temp C */
+            peak_temp_c?: number | null;
+            /** To S */
+            to_s: number;
+        };
+        /**
+         * HealthPoint
+         * @description The machine over one stretch of the history chart (a minute to four hours long).
+         */
+        HealthPoint: {
+            /** Camera Up Percent */
+            camera_up_percent?: number | null;
+            /** Cpu Percent */
+            cpu_percent?: number | null;
+            /** Fps */
+            fps?: number | null;
+            /** Fps Min */
+            fps_min?: number | null;
+            /** Minutes */
+            minutes: number;
+            /** T */
+            t: number;
+            /** Temp C */
+            temp_c?: number | null;
+            /** Throttled */
+            throttled: number;
+        };
+        /** HealthSummary */
+        HealthSummary: {
+            /** Camera Up Percent */
+            camera_up_percent?: number | null;
+            /** Minutes */
+            minutes: number;
+            /** Slowed Minutes */
+            slowed_minutes: number;
+            /** Temp C Max */
+            temp_c_max?: number | null;
+            /** Under Voltage Minutes */
+            under_voltage_minutes: number;
         };
         /** HourCount */
         HourCount: {
@@ -788,6 +859,8 @@ export interface components {
          * @description Everything the Setup page can change. A PUT replaces all of it, so every member is given.
          */
         Settings: {
+            /** Detect People */
+            detect_people: boolean;
             /** Evidence Did Not Stop Clip Hours */
             evidence_did_not_stop_clip_hours: number;
             /** Evidence Enabled */
@@ -1009,6 +1082,22 @@ export interface components {
             total: number;
             /** Unreviewed */
             unreviewed: number;
+        };
+        /** SystemHistory */
+        SystemHistory: {
+            /** Bucket S */
+            bucket_s: number;
+            /** Episodes */
+            episodes: components["schemas"]["HealthEpisode"][];
+            /** From S */
+            from_s: number;
+            /** Points */
+            points: components["schemas"]["HealthPoint"][];
+            summary: components["schemas"]["HealthSummary"];
+            /** Timezone */
+            timezone: string;
+            /** To S */
+            to_s: number;
         };
         /**
          * SystemMetrics
@@ -1908,6 +1997,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_history_view_api_system_history_get: {
+        parameters: {
+            query?: {
+                hours?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemHistory"];
                 };
             };
             /** @description Validation Error */

@@ -14,6 +14,7 @@ const saved: Settings = {
   evidence_rolling_clip_hours: 3,
   evidence_did_not_stop_clip_hours: 48,
   remote_live_video: false,
+  detect_people: true,
 };
 
 describe("the settings form", () => {
@@ -31,6 +32,7 @@ describe("the settings form", () => {
       rollingClipHours: "3",
       didNotStopClipHours: "48",
       remoteLiveVideo: false,
+      detectPeople: true,
     });
     expect(fromDraft(draft)).toEqual({ ok: true, settings: saved });
   });
@@ -83,6 +85,7 @@ describe("the settings form", () => {
       rollingClipHours: " 6",
       didNotStopClipHours: "72 ",
       remoteLiveVideo: true,
+      detectPeople: false,
     });
     expect(result).toEqual({
       ok: true,
@@ -98,6 +101,7 @@ describe("the settings form", () => {
         evidence_rolling_clip_hours: 6,
         evidence_did_not_stop_clip_hours: 72,
         remote_live_video: true,
+        detect_people: false,
       },
     });
   });
@@ -121,9 +125,12 @@ describe("the settings form", () => {
     expect(isChanged({ ...toDraft(saved), evidenceMb: "2049" }, saved)).toBe(true);
     expect(isChanged({ ...toDraft(saved), evidenceMb: " 2048" }, saved)).toBe(false);
     expect(isChanged({ ...toDraft(saved), remoteLiveVideo: true }, saved)).toBe(true);
+    expect(isChanged({ ...toDraft(saved), detectPeople: false }, saved)).toBe(true);
   });
 
   it("keeps live video off for viewers who come through Cloudflare unless it is switched on", () => {
+    expect(toDraft(saved).detectPeople).toBe(true);
+    expect(toDraft({ ...saved, detect_people: false }).detectPeople).toBe(false);
     expect(toDraft(saved).remoteLiveVideo).toBe(false);
     expect(toDraft({ ...saved, remote_live_video: true }).remoteLiveVideo).toBe(true);
   });

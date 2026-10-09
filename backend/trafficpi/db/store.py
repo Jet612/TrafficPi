@@ -24,8 +24,18 @@ from trafficpi.core.trail_settings import (
     PEOPLE_KEY,
     TrailSettings,
 )
-from trafficpi.db.models import Camera, Event, MinuteCount, Profile, Setting, Trail, User
+from trafficpi.db.models import (
+    Camera,
+    Event,
+    HealthSample,
+    MinuteCount,
+    Profile,
+    Setting,
+    Trail,
+    User,
+)
 from trafficpi.db.session import create_db_engine, upgrade_to_head
+from trafficpi.vision.health import HealthRow
 from trafficpi.vision.rules import CountEvent, StopEvent
 from trafficpi.vision.trails import FinishedTrail
 
@@ -555,6 +565,93 @@ class Store:
                 )
             ).one()
             return None if first is None else (first, last)
+
+    # --- machine health, a row a minute (plan.md M8 step 4) -------------------------------------
+
+    def add_health(self, rows: Sequence[HealthRow]) -> None:
+        """Store minutes of health; a minute that is already there is replaced."""
+        if not rows:
+            return
+        values = [
+            {
+                "camera_id": self.camera_id,
+                "minute_start": r.minute_start,
+                "temp_c_max": r.temp_c_max,
+                "cpu_percent": r.cpu_percent,
+                "fps_mean": r.fps_mean,
+                "fps_min": r.fps_min,
+                "throttled": r.throttled,
+                "samples": r.samples,
+                "camera_ok_samples": r.camera_ok_samples,
+            }
+            for r in rows
+        ]
+        statement = insert(HealthSample).values(values)
+        replaced = {
+            c.name: statement.excluded[c.name]
+            for c in HealthSample.__table__.columns
+            if not c.primary_key
+        }
+        with self._session() as s:
+            s.execute(
+                statement.on_conflict_do_update(
+                    index_elements=["camera_id", "minute_start"], set_=replaced
+                )
+            )
+
+    def health_count(self) -> int:
+        with self._session() as s:
+            return s.execute(
+                select(func.count())
+                .select_from(HealthSample)
+                .where(HealthSample.camera_id == self.camera_id)
+            ).scalar_one()
+
+    def health_between(self, from_s: int, to_s: int) -> list[HealthRow]:
+        """The minutes that began from ``from_s`` up to ``to_s`` (not included), oldest first."""
+        with self._session() as s:
+            found = s.execute(
+                select(HealthSample)
+                .where(
+                    HealthSample.camera_id == self.camera_id,
+                    HealthSample.minute_start >= from_s,
+                    HealthSample.minute_start < to_s,
+                )
+                .order_by(HealthSample.minute_start)
+            ).scalars()
+            return [
+                HealthRow(
+                    minute_start=h.minute_start,
+                    temp_c_max=h.temp_c_max,
+                    cpu_percent=h.cpu_percent,
+                    fps_mean=h.fps_mean,
+                    fps_min=h.fps_min,
+                    throttled=h.throttled,
+                    samples=h.samples,
+                    camera_ok_samples=h.camera_ok_samples,
+                )
+                for h in found
+            ]
+
+    def delete_health_before(self, cutoff_s: int, *, limit: int = 2_000) -> int:
+        """Delete up to ``limit`` minutes older than ``cutoff_s``; returns how many went."""
+        oldest = (
+            select(HealthSample.minute_start)
+            .where(HealthSample.camera_id == self.camera_id, HealthSample.minute_start < cutoff_s)
+            .order_by(HealthSample.minute_start)
+            .limit(limit)
+        )
+        with self._session() as s:
+            result = cast(
+                "CursorResult[Any]",
+                s.execute(
+                    delete(HealthSample).where(
+                        HealthSample.camera_id == self.camera_id,
+                        HealthSample.minute_start.in_(oldest),
+                    )
+                ),
+            )
+            return result.rowcount
 
     def delete_trails_before(self, cutoff_ms: int, *, limit: int = 2_000) -> int:
         """Delete up to ``limit`` trails that ended before ``cutoff_ms``; returns how many went.

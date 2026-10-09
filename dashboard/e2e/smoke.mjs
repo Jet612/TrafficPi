@@ -1532,6 +1532,7 @@ try {
         evidence_rolling_clip_hours: 6,
         evidence_did_not_stop_clip_hours: 72,
         remote_live_video: original.remote_live_video,
+        detect_people: original.detect_people,
       });
       assert.equal(await save.isDisabled(), true, "saved, so nothing left to save");
       await page.reload();
@@ -1546,6 +1547,22 @@ try {
       assert.equal(await evidenceMb.inputValue(), "1500");
       assert.equal(await rollingHours.inputValue(), "6");
       assert.equal(await didNotStopHours.inputValue(), "72");
+
+      // people can be left out altogether, which makes keeping their paths moot
+      const lookForPeople = page.getByRole("switch", { name: "Look for people" });
+      assert.equal(await lookForPeople.getAttribute("aria-checked"), String(original.detect_people), "the form shows whether people are looked for");
+      if ((await lookForPeople.getAttribute("aria-checked")) !== "false") await lookForPeople.click();
+      assert.equal(await people.isDisabled(), true, "with people not looked for, their paths are not an option");
+      await page.getByText("People are not being looked for, so there are no paths of people to save.").waitFor();
+      await save.click();
+      await page.getByRole("status").filter({ hasText: "Saved." }).waitFor();
+      assert.equal((await readSettings()).detect_people, false, "the server has it");
+      await page.reload();
+      await page.getByRole("form", { name: "Settings" }).waitFor();
+      assert.equal(await lookForPeople.getAttribute("aria-checked"), "false", "and it is still off after a reload");
+      assert.equal(await people.isDisabled(), true);
+      await lookForPeople.click();
+      assert.equal(await people.isDisabled(), false, "switched on again, the option is back");
       await shot("settings");
     } finally {
       // the next steps (and the next run) expect the settings that were there
@@ -1657,6 +1674,46 @@ try {
     assert.match(await tile("Memory test").innerText(), /not run/);
     assert.match(await tile("Uptime").innerText(), /dashboard server/);
     await shot("system-machine");
+  });
+
+  await step("the System page tells how the machine has been: numbers, charts, what happened, and the same as a table", async () => {
+    await goTo("System");
+    const card = page.getByTestId("system-history");
+    await card.waitFor();
+    const tile = (label) => card.locator("dt", { hasText: label }).locator("xpath=..");
+    // the demo made up three days (a slowdown, a weak supply, a camera that went away, a hole in the record) and a day shows all of them
+    await tile("Hottest").waitFor();
+    assert.match(await tile("Hottest").innerText(), /\d+\.\d °C/);
+    assert.match(await tile("Hottest").innerText(), /past 80 °C/, "the hot afternoon is told in words, not only by colour");
+    assert.match(await tile("Slowed down").innerText(), /\d+ min/);
+    assert.match(await tile("Camera working").innerText(), /\d+\.\d%/);
+    const episodes = card.getByTestId("system-history-episodes");
+    for (const title of ["Slowed itself down", "Power supply too weak", "Camera not working", "Nothing recorded"]) {
+      await episodes.getByText(title).first().waitFor();
+    }
+    assert.match(await episodes.innerText(), /Up to 8\d\.\d °C/, "the slowdown says how hot it got");
+    assert.equal(await card.locator(".recharts-wrapper").count(), 2, "a chart of the temperature and one of the frame rate");
+    assert.ok((await card.locator(".recharts-line-curve").count()) >= 2, "lines are drawn");
+    await shot("system-history");
+
+    // the same numbers as a table, newest first
+    await card.getByRole("button", { name: "Table", exact: true }).click();
+    const table = card.getByRole("table");
+    await table.waitFor();
+    assert.ok((await table.locator("tbody tr").count()) > 100, "a row for each stretch that was recorded");
+    assert.match(await table.locator("thead").innerText(), /The Pi says/);
+    assert.match(await table.locator("tbody").innerText(), /the CPU is being slowed down/, "the Pi's flags are in words");
+    await card.getByRole("button", { name: "Chart", exact: true }).click();
+
+    // a shorter period has less to tell, and the choice is kept
+    await card.getByRole("button", { name: "1 hour", exact: true }).click();
+    await episodes.getByText("Nothing to report").waitFor();
+    assert.equal(await card.getByRole("button", { name: "1 hour", exact: true }).getAttribute("aria-pressed"), "true");
+    await page.reload();
+    await card.waitFor();
+    assert.equal(await card.getByRole("button", { name: "1 hour", exact: true }).getAttribute("aria-pressed"), "true", "the period survives a reload");
+    await card.getByRole("button", { name: "24 hours", exact: true }).click(); // as the next runs expect
+    await episodes.getByText("Slowed itself down").first().waitFor();
   });
 
   await step("the pages are real addresses: links, deep links, a missing slash, reload and back all work", async () => {

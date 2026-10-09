@@ -17,8 +17,9 @@ COCO_NAMES: tuple[str, ...] = (
 
 # Classes that matter for traffic monitoring. Everything else the model can detect is noise here.
 # Vehicles: bicycle (1), car (2), motorcycle (3), bus (5), truck (7). Traffic adds person (0).
+PERSON_CLASS_ID = 0
 VEHICLE_CLASS_IDS: frozenset[int] = frozenset({1, 2, 3, 5, 7})
-TRAFFIC_CLASS_IDS: frozenset[int] = VEHICLE_CLASS_IDS | {0}
+TRAFFIC_CLASS_IDS: frozenset[int] = VEHICLE_CLASS_IDS | {PERSON_CLASS_ID}
 
 
 def class_name(class_id: int) -> str:

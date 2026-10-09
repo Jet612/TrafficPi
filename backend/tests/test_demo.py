@@ -7,17 +7,23 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from trafficpi.api import system_history
 from trafficpi.db import create_db_engine, upgrade_to_head
 from trafficpi.db.store import Store
 from trafficpi.vision import cli
 from trafficpi.vision.demo import (
+    CAMERA_AWAY_AGO,
     FPS,
     FRAME_SIZE,
+    HOT_AGO,
     HOURLY_RATE,
     KINDS,
     LANES,
+    OFF_AGO,
     PERIOD_NS,
+    UNDER_VOLTAGE_AGO,
     DemoStreet,
+    demo_health,
     demo_history,
 )
 from trafficpi.vision.service import VisionService
@@ -244,3 +250,72 @@ def test_the_demo_is_given_a_past_once_and_only_if_it_has_none(
     other.add_trails(demo_history(1, now_ms=THURSDAY_NOON, tz=NEW_YORK)[:1])
     cli._seed_demo_history(other, 2, log)
     assert other.trail_count() == 1
+
+
+def test_the_demo_history_also_gives_the_system_page_a_few_days_of_health_once() -> None:
+    def a_store() -> Store:
+        engine = create_db_engine(":memory:")
+        upgrade_to_head(engine)
+        store = Store(engine)
+        store.ensure_camera()
+        # a trail is there already, so that only the health is made up (trails take a while)
+        store.add_trails(demo_history(1, now_ms=THURSDAY_NOON, tz=NEW_YORK)[:1])
+        return store
+
+    log = logging.getLogger("trafficpi.vision")
+    store = a_store()
+    cli._seed_demo_history(store, 2, log)
+    assert store.health_count() == 2 * 24 * 60 - len(OFF_AGO)
+    cli._seed_demo_history(store, 2, log)  # a second start of the same demo
+    assert store.health_count() == 2 * 24 * 60 - len(OFF_AGO)
+    long_ago = a_store()
+    cli._seed_demo_history(long_ago, 30, log)
+    assert long_ago.health_count() == 3 * 24 * 60 - len(OFF_AGO)  # three days is plenty
+
+
+# --- a made-up record of the machine's health ---------------------------------------------------
+
+
+def test_the_made_up_health_is_a_row_a_minute_up_to_the_minute_in_progress() -> None:
+    now_ms = THURSDAY_NOON + 17_000  # 17 s into the minute
+    rows = demo_health(3, now_ms=now_ms)
+    assert all(r.minute_start % 60 == 0 for r in rows)
+    starts = [r.minute_start for r in rows]
+    assert starts == sorted(set(starts))
+    assert starts[-1] == now_ms // 60_000 * 60 - 60  # the last finished minute
+    assert len(rows) == 3 * 60  # the hole where the Pi was off is further back than three hours
+    assert demo_health(0, now_ms=now_ms) == []
+
+
+def test_the_made_up_health_tells_what_the_system_page_exists_to_tell() -> None:
+    now_ms = THURSDAY_NOON + 5_000
+    rows = demo_health(72, now_ms=now_ms)
+    history = system_history.build(rows, hours=72, now_s=now_ms // 1000)
+    told = {e["kind"]: e for e in history["episodes"]}
+    assert set(told) == {"slowed", "under-voltage", "camera-offline", "no-data"}
+    assert told["slowed"]["to_s"] - told["slowed"]["from_s"] == len(HOT_AGO) * 60
+    assert 82 < told["slowed"]["peak_temp_c"] < 86  # hot enough to matter, not past the hard limit
+    assert told["under-voltage"]["to_s"] - told["under-voltage"]["from_s"] == 60
+    assert told["camera-offline"]["to_s"] - told["camera-offline"]["from_s"] == (
+        len(CAMERA_AWAY_AGO) * 60
+    )
+    assert told["no-data"]["to_s"] - told["no-data"]["from_s"] == len(OFF_AGO) * 60
+    assert not any(e["ongoing"] for e in history["episodes"])
+    assert history["summary"]["temp_c_max"] < 86
+    assert history["summary"]["camera_up_percent"] > 99
+
+
+def test_a_short_made_up_health_has_only_what_lies_within_it() -> None:
+    now_ms = THURSDAY_NOON
+    history = system_history.build(demo_health(3, now_ms=now_ms), hours=3, now_s=now_ms // 1000)
+    assert [e["kind"] for e in history["episodes"]] == ["under-voltage"]
+    assert UNDER_VOLTAGE_AGO < 3 * 60 < HOT_AGO.start
+
+
+def test_the_made_up_health_is_the_same_for_the_same_seed() -> None:
+    assert demo_health(6, now_ms=THURSDAY_NOON, seed=1) == demo_health(
+        6, now_ms=THURSDAY_NOON, seed=1
+    )
+    assert demo_health(6, now_ms=THURSDAY_NOON, seed=1) != demo_health(
+        6, now_ms=THURSDAY_NOON, seed=2
+    )
