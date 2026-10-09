@@ -260,7 +260,7 @@ try {
       await saveButton().click();
       await page.getByText(/Saved as version \d+/).waitFor();
     }
-    assert.deepEqual(await stored(), { schema_version: 1, lines: [], detection_zones: [], exclusion_zones: [] });
+    assert.deepEqual(await stored(), { schema_version: 2, lines: [], detection_zones: [], exclusion_zones: [], stop_signs: [] });
   });
 
   // The demo's vehicles drive sideways, so its line is an upright one across both lanes.
@@ -471,7 +471,7 @@ try {
     const file = await download;
     assert.equal(file.suggestedFilename(), "trafficpi-profile.json");
     const exported = JSON.parse(readFileSync(await file.path(), "utf8"));
-    assert.equal(exported.schema_version, 1);
+    assert.equal(exported.schema_version, 2);
     assert.equal(exported.lines.length, 1);
     assert.equal(exported.detection_zones.length, 1);
     assert.equal(exported.exclusion_zones.length, 1);

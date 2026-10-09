@@ -1,8 +1,8 @@
 """From a validated camera profile to the objects the vision pipeline runs on.
 
 The shape of the profile, and its validation, live in :mod:`trafficpi.core.profile`; this module
-only turns it into counting lines and a detection filter. Used by the vision service when it
-loads or reloads the profile, and by the replay tools (``--profile``).
+only turns it into counting lines, stop signs and a detection filter. Used by the vision service
+when it loads or reloads the profile, and by the replay tools (``--profile``).
 """
 
 from __future__ import annotations
@@ -13,15 +13,24 @@ from typing import Any
 
 from trafficpi.core.coco import COCO_NAMES
 from trafficpi.core.geometry import Line
-from trafficpi.core.profile import CountingLineConfig, Profile, load_profile_file, parse_profile
-from trafficpi.vision.rules import CountingLine
+from trafficpi.core.profile import (
+    CountingLineConfig,
+    Profile,
+    StopSignConfig,
+    load_profile_file,
+    parse_profile,
+)
+from trafficpi.vision.rules import CountingLine, StopSign
 from trafficpi.vision.zones import DetectionFilter
+
+DEFAULT_ASPECT = 16 / 9  # the width over the height of the picture, when it is not known
 
 
 @dataclass(frozen=True, slots=True)
 class CompiledProfile:
     counting_lines: list[CountingLine]
     detection_filter: DetectionFilter | None  # None: no zones, every detection is looked at
+    stop_signs: list[StopSign]
 
 
 def counting_line(config: CountingLineConfig) -> CountingLine:
@@ -38,19 +47,38 @@ def counting_line(config: CountingLineConfig) -> CountingLine:
     )
 
 
-def compile_profile(profile: Profile) -> CompiledProfile:
+def stop_sign(config: StopSignConfig, aspect: float = DEFAULT_ASPECT) -> StopSign:
+    """The stop-sign rule's sign for a configured one. ``aspect`` is the picture's width over its
+    height: a distance needs both of the picture's sides in one unit."""
+    return StopSign(
+        id=config.id,
+        approach=config.polygon(),
+        line=Line(config.a, config.b),
+        name=config.name,
+        direction=config.direction,
+        aspect=aspect,
+        classes=frozenset(COCO_NAMES.index(name) for name in config.classes),
+        hold_s=config.hold_s,
+        still_radius=config.still_radius,
+        roll_speed=config.roll_speed,
+        min_observed_s=config.min_observed_s,
+    )
+
+
+def compile_profile(profile: Profile, aspect: float = DEFAULT_ASPECT) -> CompiledProfile:
     include = tuple(zone.polygon() for zone in profile.detection_zones)
     exclude = tuple(zone.polygon() for zone in profile.exclusion_zones)
     return CompiledProfile(
         counting_lines=[counting_line(line) for line in profile.lines],
         detection_filter=DetectionFilter(include, exclude) if include or exclude else None,
+        stop_signs=[stop_sign(sign, aspect) for sign in profile.stop_signs],
     )
 
 
-def parse_compiled_profile(document: Any) -> CompiledProfile:
+def parse_compiled_profile(document: Any, aspect: float = DEFAULT_ASPECT) -> CompiledProfile:
     """Validate a JSON document and compile it (raises ``ProfileError`` if it is not usable)."""
-    return compile_profile(parse_profile(document))
+    return compile_profile(parse_profile(document), aspect)
 
 
-def load_compiled_profile(path: Path) -> CompiledProfile:
-    return compile_profile(load_profile_file(path))
+def load_compiled_profile(path: Path, aspect: float = DEFAULT_ASPECT) -> CompiledProfile:
+    return compile_profile(load_profile_file(path), aspect)

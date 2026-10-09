@@ -1,6 +1,7 @@
 """Stand-ins for the camera and the accelerator, so pipeline logic can be tested anywhere."""
 
 import time
+from collections.abc import Iterator, Sequence
 
 import numpy as np
 
@@ -146,3 +147,55 @@ def finished_trail(
         extent=0.6,
         path=encode_path(offsets, xs, [y] * n),
     )
+
+
+# --- a vehicle at a stop sign ---------------------------------------------------------------------
+
+# The stop sign of the tests: the road to the left of x = 0.5 is where a stop counts, and a vehicle
+# driving from the left of the picture to its right goes through the sign.
+STOP_SIGN = {
+    "id": "elm",
+    "name": "Elm Street",
+    "approach": [[0.1, 0.5], [0.5, 0.5], [0.5, 0.95], [0.1, 0.95]],
+    "a": [0.5, 0.9],
+    "b": [0.5, 0.3],
+}
+# A drive is a list of (seconds, speed at the start, speed at the end) in picture widths a second.
+FULL_STOP = [
+    (1.5, 0.15, 0.15),
+    (0.8, 0.15, 0.0),
+    (2.0, 0.0, 0.0),
+    (1.0, 0.0, 0.15),
+    (2.0, 0.15, 0.15),
+]
+ROLLING_STOP = [
+    (1.5, 0.15, 0.15),
+    (1.0, 0.15, 0.04),
+    (1.0, 0.04, 0.04),
+    (1.0, 0.04, 0.15),
+    (2.0, 0.15, 0.15),
+]
+STRAIGHT_THROUGH = [(5.0, 0.15, 0.15)]
+
+
+def drive(segments: Sequence[tuple[float, float, float]], x0: float = 0.12) -> Iterator[float]:
+    """Where a vehicle driving left to right is at each frame of a 30 fps camera."""
+    x = x0
+    yield x
+    for seconds, v0, v1 in segments:
+        frames = round(seconds * 30)
+        for i in range(frames):
+            x += (v0 + (v1 - v0) * (i + 0.5) / frames) / 30
+            yield x
+
+
+def car_driving(
+    segments: Sequence[tuple[float, float, float]], *, x0: float = 0.12, y: float = 0.8
+) -> list[list[Detection]]:
+    """Per-frame detections of one car on such a drive, its ground point at (x, y)."""
+    from trafficpi.core.coco import class_name
+
+    return [
+        [Detection(2, class_name(2), 0.9, x - 0.06, y - 0.14, x + 0.06, y)]
+        for x in drive(segments, x0)
+    ]

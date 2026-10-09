@@ -31,9 +31,10 @@ export function profileOf(
   parts: { lines?: LineConfig[]; detection?: ZoneConfig[]; exclusion?: ZoneConfig[] } = {},
 ): Profile {
   return {
-    schema_version: 1,
+    schema_version: 2,
     lines: parts.lines ?? [],
     detection_zones: parts.detection ?? [],
     exclusion_zones: parts.exclusion ?? [],
+    stop_signs: [],
   };
 }

@@ -330,7 +330,20 @@ def cmd_redetect(args: argparse.Namespace) -> int:
 
 def _load_profile(path: Path | None) -> CompiledProfile:
     """The profile in a JSON file (see ``trafficpi.core.profile``), or an empty one."""
-    return load_compiled_profile(path) if path else CompiledProfile([], None)
+    return load_compiled_profile(path) if path else CompiledProfile([], None, [])
+
+
+def _print_stops(replayed) -> None:  # type: ignore[no-untyped-def]
+    """What each vehicle did at each stop sign: the outcome and the numbers behind it."""
+    t0 = replayed.timestamps_ns[0] if replayed.timestamps_ns else 0
+    print("stop signs (time since the first frame; still = the longest wait, slow = the slowest,")
+    print("in the vehicle's own sizes a second, watched = how long it was followed in the zone):")
+    for e in replayed.stops:
+        seconds = (e.timestamp_ns - t0) / 1e9
+        print(
+            f"  {seconds:8.2f} s  {e.sign_id:16} {e.outcome:13} {e.label:10} track {e.track_id}"
+            f"  still {e.hold_s:4.1f} s  slow {e.min_speed:5.2f}  watched {e.observed_s:4.1f} s"
+        )
 
 
 def _print_replay(path: Path, replayed, lines) -> None:  # type: ignore[no-untyped-def]
@@ -341,6 +354,7 @@ def _print_replay(path: Path, replayed, lines) -> None:  # type: ignore[no-untyp
     )
     if not lines:
         print("no counting lines given (use --profile)")
+        _print_stops(replayed)
         return
     print("counts (+1 is left to right of a -> b on screen, -1 the other way):")
     for cfg in lines:
@@ -361,13 +375,16 @@ def _print_replay(path: Path, replayed, lines) -> None:  # type: ignore[no-untyp
         print(
             f"  {seconds:8.2f} s  {e.line_id:16} {e.direction:+d}  {e.label:10} track {e.track_id}"
         )
+    _print_stops(replayed)
 
 
 def cmd_replay(args: argparse.Namespace) -> int:
     """Run the tracker, zones and counting lines over a recorded detection log."""
     profile = _load_profile(args.profile)
     lines = profile.counting_lines
-    replayed = replay_log(args.log, lines, detection_filter=profile.detection_filter)
+    replayed = replay_log(
+        args.log, lines, detection_filter=profile.detection_filter, stop_signs=profile.stop_signs
+    )
     _print_replay(args.log, replayed, lines)
     if args.events_json:
         t0 = replayed.timestamps_ns[0] if replayed.timestamps_ns else 0
@@ -403,8 +420,12 @@ def cmd_annotate(args: argparse.Namespace) -> int:
         detection_filter=profile.detection_filter,
         video_out=args.video or folder / "annotated.mp4",
         stills_dir=args.stills or folder / "event-stills",
+        stop_signs=profile.stop_signs,
     )
-    print(f"{report.frames_written} frames written, {len(report.events)} count events")
+    print(
+        f"{report.frames_written} frames written, {len(report.events)} count events, "
+        f"{len(report.stops)} stop events"
+    )
     for still in report.stills:
         print(f"  {still}")
     return 0

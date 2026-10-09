@@ -24,8 +24,8 @@ from trafficpi.db.store import Store
 from trafficpi.vision.detector import Detector
 from trafficpi.vision.engine import EngineResult, TrafficEngine
 from trafficpi.vision.metrics import SystemSample, SystemSampler, decode_throttled
-from trafficpi.vision.profile import compile_profile
-from trafficpi.vision.rules import CountEvent, CountingRule, Rule
+from trafficpi.vision.profile import DEFAULT_ASPECT, compile_profile
+from trafficpi.vision.rules import CountEvent, CountingRule, Rule, StopEvent, StopSignRule
 from trafficpi.vision.shutdown import StopRequest
 from trafficpi.vision.sources import EndOfStream, Frame, FrameSource
 from trafficpi.vision.tracker import ByteTracker, TrackerConfig, TrackUpdate
@@ -247,7 +247,7 @@ class VisionService:
         self._engine = TrafficEngine(ByteTracker(tracker_config))
         self._tracker_config = tracker_config
         self._reload = threading.Event()
-        self._pending: deque[tuple[CountEvent, int]] = deque(maxlen=MAX_PENDING_WRITES)
+        self._pending: deque[tuple[CountEvent | StopEvent, int]] = deque(maxlen=MAX_PENDING_WRITES)
         self.profile_version = 0
         self._active_profile: Profile | None = None  # what the engine is running on right now
         self.frames = 0
@@ -289,19 +289,31 @@ class VisionService:
         self._apply(profile, version)
         return version
 
+    def _aspect(self) -> float:
+        """The picture's width over its height: a stop sign measures distances in both."""
+        try:
+            width, height = self.source.frame_size
+        except Exception:  # a source that cannot say yet: the usual shape
+            return DEFAULT_ASPECT
+        return width / height if width > 0 and height > 0 else DEFAULT_ASPECT
+
     def _apply(self, profile: Profile, version: int) -> None:
-        compiled = compile_profile(profile)
+        compiled = compile_profile(profile, self._aspect())
         lines = compiled.counting_lines
         rules: list[Rule] = [CountingRule(lines)] if lines else []
+        if compiled.stop_signs:
+            rules.append(StopSignRule(compiled.stop_signs))
         self._engine.rules = rules
         self._engine.detection_filter = compiled.detection_filter
         self._active_profile = profile
         self.profile_version = version
         self.live.set_profile(profile, version)
         log.info(
-            "profile v%s loaded: %d counting line(s), %d detection zone(s), %d exclusion zone(s)",
+            "profile v%s loaded: %d counting line(s), %d stop sign(s), %d detection zone(s), "
+            "%d exclusion zone(s)",
             version,
             len(lines),
+            len(compiled.stop_signs),
             len(profile.detection_zones),
             len(profile.exclusion_zones),
         )
@@ -358,7 +370,7 @@ class VisionService:
 
             now_ms = self._timestamp_ms(frame)
             for event in result.events:
-                if isinstance(event, CountEvent):
+                if isinstance(event, CountEvent | StopEvent):
                     self._record(event, now_ms)
             self._follow_trails(result, now_ms)
 
@@ -419,21 +431,35 @@ class VisionService:
             log.error("%s (failure %d in a row)", message, self._camera_failures)
         self.live.set_camera_error(message)
 
-    def _record(self, event: CountEvent, occurred_at_ms: int) -> None:
-        """Store a count; if the database is unavailable, keep it for the next attempt."""
+    def _record(self, event: CountEvent | StopEvent, occurred_at_ms: int) -> None:
+        """Store a count or a stop; if the database is unavailable, keep it for the next attempt."""
         self._pending.append((event, occurred_at_ms))
-        self.live.add_event(event, occurred_at_ms)
+        if isinstance(event, CountEvent):
+            self.live.add_event(event, occurred_at_ms)
         while self._pending:
             queued, at_ms = self._pending[0]
             try:
-                self.store.record_count(queued, at_ms)
+                if isinstance(queued, CountEvent):
+                    self.store.record_count(queued, at_ms)
+                else:
+                    self.store.record_stop(queued, at_ms)
             except Exception:
                 log.exception(
-                    "could not store a count; will retry (%d waiting)", len(self._pending)
+                    "could not store an event; will retry (%d waiting)", len(self._pending)
                 )
                 return
             self._pending.popleft()
             self.events_recorded += 1
+            if isinstance(queued, StopEvent):
+                log.info(
+                    "%s at %s: %s (still %.1f s, slowest %.2f, watched %.1f s)",
+                    queued.label,
+                    queued.sign_id,
+                    queued.outcome,
+                    queued.hold_s,
+                    queued.min_speed,
+                    queued.observed_s,
+                )
 
     # --- trails (plan.md D21) ---------------------------------------------------------------
 

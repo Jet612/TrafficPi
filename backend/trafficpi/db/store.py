@@ -23,7 +23,7 @@ from trafficpi.core.trail_settings import (
 )
 from trafficpi.db.models import Camera, Event, MinuteCount, Profile, Setting, Trail, User
 from trafficpi.db.session import create_db_engine, upgrade_to_head
-from trafficpi.vision.rules import CountEvent
+from trafficpi.vision.rules import CountEvent, StopEvent
 from trafficpi.vision.trails import FinishedTrail
 
 DEFAULT_CAMERA = "default"
@@ -144,6 +144,35 @@ class Store:
                     set_={"count": MinuteCount.count + 1},
                 )
             )
+            s.flush()
+            return row.id
+
+    def record_stop(
+        self, event: StopEvent, occurred_at_ms: int, *, evidence_path: str | None = None
+    ) -> int:
+        """Store what a vehicle did at a stop sign (plan.md D23); returns the event id.
+
+        The sign's id is kept where a count keeps its line's, and the outcome and the numbers
+        behind it are the event's details. A stop is not a count, so no totals change.
+        """
+        with self._session() as s:
+            row = Event(
+                camera_id=self.camera_id,
+                occurred_at=occurred_at_ms,
+                type="stop",
+                track_id=event.track_id,
+                class_label=event.label,
+                line_id=event.sign_id,
+                direction=None,
+                details={
+                    "outcome": event.outcome,
+                    "hold_s": event.hold_s,
+                    "min_speed": event.min_speed,
+                    "observed_s": event.observed_s,
+                },
+                evidence_path=evidence_path,
+            )
+            s.add(row)
             s.flush()
             return row.id
 

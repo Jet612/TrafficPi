@@ -461,6 +461,8 @@ export interface components {
             lines: components["schemas"]["CountingLineConfig"][];
             /** Schema Version */
             schema_version: number;
+            /** Stop Signs */
+            stop_signs: components["schemas"]["StopSignConfig"][];
         };
         /**
          * ProfileCheck
@@ -541,6 +543,54 @@ export interface components {
             /** Timezone */
             timezone: string;
             vision: components["schemas"]["VisionStatus"];
+        };
+        /**
+         * StopSignConfig
+         * @description A stop line, and the stretch of road before it where a vehicle has to stop (plan.md D23).
+         *
+         *     ``approach`` is that stretch, as corners in order: a stop counts anywhere in it, so a vehicle
+         *     that waited in a queue has stopped as much as one that waited at the line. ``a`` and ``b`` are
+         *     the ends of the stop line. ``direction`` is the way across it that goes through the sign:
+         *     1 from the left of the line's own direction (``a`` to ``b``, as on screen with y pointing
+         *     down) to its right, -1 the other way; a vehicle crossing the other way came out of the
+         *     intersection and is not judged. ``classes`` are the kinds that must stop. A vehicle has
+         *     stopped if it is still for ``hold_s`` seconds, moving less than ``still_radius`` of its own
+         *     size meanwhile; it is rolling if it slowed below ``roll_speed`` of its own sizes a second but
+         *     never held still; it cannot be judged if it was watched for less than ``min_observed_s`` seconds
+         *     before the line.
+         */
+        StopSignConfig: {
+            /** A */
+            a: [
+                number,
+                number
+            ];
+            /** Approach */
+            approach: [
+                number,
+                number
+            ][];
+            /** B */
+            b: [
+                number,
+                number
+            ];
+            /** Classes */
+            classes: string[];
+            /** Direction */
+            direction: number;
+            /** Hold S */
+            hold_s: number;
+            /** Id */
+            id: string;
+            /** Min Observed S */
+            min_observed_s: number;
+            /** Name */
+            name: string;
+            /** Roll Speed */
+            roll_speed: number;
+            /** Still Radius */
+            still_radius: number;
         };
         /**
          * SystemMetrics

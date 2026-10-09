@@ -3,13 +3,21 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
 from trafficpi.vision.engine import CountTotals, EngineResult, TrafficEngine
 from trafficpi.vision.recorder import read_detection_log
-from trafficpi.vision.rules import CountEvent, CountingLine, CountingRule
+from trafficpi.vision.rules import (
+    CountEvent,
+    CountingLine,
+    CountingRule,
+    Rule,
+    StopEvent,
+    StopSign,
+    StopSignRule,
+)
 from trafficpi.vision.tracker import ByteTracker, TrackerConfig
 from trafficpi.vision.zones import DetectionFilter
 
@@ -20,6 +28,7 @@ class ReplayResult:
     timestamps_ns: list[int]  # one per logged frame
     results: list[EngineResult]  # one per logged frame
     events: list[CountEvent] = field(default_factory=list)
+    stops: list[StopEvent] = field(default_factory=list)
     totals: CountTotals = field(default_factory=CountTotals)
     confirmed_tracks: set[int] = field(default_factory=set)
 
@@ -35,12 +44,20 @@ def replay_log(
     lines: Sequence[CountingLine] = (),
     tracker_config: TrackerConfig | None = None,
     detection_filter: DetectionFilter | None = None,
+    stop_signs: Sequence[StopSign] = (),
 ) -> ReplayResult:
-    """Feed a detection log (see ``trafficpi.vision.recorder``) through the engine."""
+    """Feed a detection log (see ``trafficpi.vision.recorder``) through the engine.
+
+    Stop signs measure distances by the picture's shape, which the log's header says (when it
+    does not, they keep the aspect they were given).
+    """
     header, frames = read_detection_log(path)
-    engine = TrafficEngine(
-        ByteTracker(tracker_config), [CountingRule(lines)] if lines else [], detection_filter
-    )
+    rules: list[Rule] = [CountingRule(lines)] if lines else []
+    if stop_signs:
+        width, height = header.get("frame_size") or (0, 0)
+        aspect = width / height if width > 0 and height > 0 else None
+        rules.append(StopSignRule([replace(s, aspect=aspect) if aspect else s for s in stop_signs]))
+    engine = TrafficEngine(ByteTracker(tracker_config), rules, detection_filter)
     out = ReplayResult(header, [], [])
     for frame in frames:
         result = engine.update(frame.timestamp_ns, frame.detections)
@@ -51,4 +68,6 @@ def replay_log(
             if isinstance(event, CountEvent):
                 out.events.append(event)
                 out.totals.add(event)
+            elif isinstance(event, StopEvent):
+                out.stops.append(event)
     return out

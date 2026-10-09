@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { lineOf, profileOf, zoneOf } from "./fixtures";
 import {
   allDay,
   profileScene,
@@ -254,12 +255,13 @@ describe("saved pictures", () => {
 
 describe("the lines and zones of a profile", () => {
   it("become what the overlay draws, the two kinds of zone told apart", () => {
-    const scene = profileScene({
-      schema_version: 1,
-      lines: [{ id: "n", name: "North", a: [0.1, 0.5], b: [0.9, 0.5], classes: null }],
-      detection_zones: [{ id: "road", name: "Road", points: [[0, 0], [1, 0], [1, 1]] }],
-      exclusion_zones: [{ id: "lot", name: "Parking", points: [[0, 0], [0.2, 0], [0.2, 0.2]] }],
-    } as Parameters<typeof profileScene>[0]);
+    const scene = profileScene(
+      profileOf({
+        lines: [lineOf("n", { name: "North", a: [0.1, 0.5], b: [0.9, 0.5] })],
+        detection: [zoneOf("road", [[0, 0], [1, 0], [1, 1]], "Road")],
+        exclusion: [zoneOf("lot", [[0, 0], [0.2, 0], [0.2, 0.2]], "Parking")],
+      }),
+    );
     expect(scene.lines).toEqual([{ id: "n", name: "North", a: [0.1, 0.5], b: [0.9, 0.5] }]);
     expect(scene.zones.map((zone) => [zone.id, zone.kind])).toEqual([["road", "detection"], ["lot", "exclusion"]]);
   });

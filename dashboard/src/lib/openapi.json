@@ -369,13 +369,22 @@
           "schema_version": {
             "title": "Schema Version",
             "type": "integer"
+          },
+          "stop_signs": {
+            "items": {
+              "$ref": "#/components/schemas/StopSignConfig"
+            },
+            "maxItems": 32,
+            "title": "Stop Signs",
+            "type": "array"
           }
         },
         "required": [
           "schema_version",
           "lines",
           "detection_zones",
-          "exclusion_zones"
+          "exclusion_zones",
+          "stop_signs"
         ],
         "title": "Profile",
         "type": "object"
@@ -597,6 +606,120 @@
           "timezone"
         ],
         "title": "StatusResponse",
+        "type": "object"
+      },
+      "StopSignConfig": {
+        "additionalProperties": false,
+        "description": "A stop line, and the stretch of road before it where a vehicle has to stop (plan.md D23).\n\n``approach`` is that stretch, as corners in order: a stop counts anywhere in it, so a vehicle\nthat waited in a queue has stopped as much as one that waited at the line. ``a`` and ``b`` are\nthe ends of the stop line. ``direction`` is the way across it that goes through the sign:\n1 from the left of the line's own direction (``a`` to ``b``, as on screen with y pointing\ndown) to its right, -1 the other way; a vehicle crossing the other way came out of the\nintersection and is not judged. ``classes`` are the kinds that must stop. A vehicle has\nstopped if it is still for ``hold_s`` seconds, moving less than ``still_radius`` of its own\nsize meanwhile; it is rolling if it slowed below ``roll_speed`` of its own sizes a second but\nnever held still; it cannot be judged if it was watched for less than ``min_observed_s`` seconds\nbefore the line.",
+        "properties": {
+          "a": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "A",
+            "type": "array"
+          },
+          "approach": {
+            "items": {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            "maxItems": 32,
+            "minItems": 3,
+            "title": "Approach",
+            "type": "array"
+          },
+          "b": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "B",
+            "type": "array"
+          },
+          "classes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Classes",
+            "type": "array"
+          },
+          "direction": {
+            "title": "Direction",
+            "type": "integer"
+          },
+          "hold_s": {
+            "maximum": 10.0,
+            "minimum": 0.2,
+            "title": "Hold S",
+            "type": "number"
+          },
+          "id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "min_observed_s": {
+            "maximum": 10.0,
+            "minimum": 0.1,
+            "title": "Min Observed S",
+            "type": "number"
+          },
+          "name": {
+            "maxLength": 80,
+            "title": "Name",
+            "type": "string"
+          },
+          "roll_speed": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 10.0,
+            "title": "Roll Speed",
+            "type": "number"
+          },
+          "still_radius": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 0.5,
+            "title": "Still Radius",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "approach",
+          "a",
+          "b",
+          "direction",
+          "classes",
+          "hold_s",
+          "still_radius",
+          "roll_speed",
+          "min_observed_s"
+        ],
+        "title": "StopSignConfig",
         "type": "object"
       },
       "SystemMetrics": {

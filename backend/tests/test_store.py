@@ -7,7 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from trafficpi.core.clock import WallClock
 from trafficpi.db import create_db_engine, upgrade_to_head
 from trafficpi.db.store import Store
-from trafficpi.vision.rules import CountEvent
+from trafficpi.vision.rules import CountEvent, StopEvent
 
 
 def minute(n: int) -> int:
@@ -41,6 +41,30 @@ def test_recording_a_count_stores_an_event_and_a_minute_total(store: Store) -> N
     assert event.occurred_at == minute(0) + 5_000 and event.details == {"speed": None}
     (row,) = store.minute_counts(0, 2**40)
     assert row.bucket_start == minute(0) // 1000 and row.count == 1
+
+
+def test_a_stop_is_an_event_with_its_outcome_and_changes_no_count(store: Store) -> None:
+    stop = StopEvent(0, 7, 2, "car", "elm", "rolling", hold_s=0.4, min_speed=0.31, observed_s=4.2)
+    event_id = store.record_stop(stop, minute(0) + 3_000, evidence_path="evidence/a.jpg")
+    (event,) = store.recent_events()
+    assert event.id == event_id and event.type == "stop"
+    assert (event.line_id, event.direction, event.class_label, event.track_id) == (
+        "elm",
+        None,
+        "car",
+        7,
+    )
+    assert event.details == {
+        "outcome": "rolling",
+        "hold_s": 0.4,
+        "min_speed": 0.31,
+        "observed_s": 4.2,
+    }
+    assert event.evidence_path == "evidence/a.jpg" and event.occurred_at == minute(0) + 3_000
+    assert store.minute_counts(0, 2**40) == []
+    store.record_count(count(), minute(0) + 4_000)
+    assert [e.type for e in store.recent_events()] == ["count", "stop"]
+    assert [e.type for e in store.recent_events(type="stop")] == ["stop"]
 
 
 def test_counts_in_the_same_minute_add_up_and_others_stay_separate(store: Store) -> None:

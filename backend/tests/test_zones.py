@@ -3,7 +3,13 @@ from pathlib import Path
 
 import pytest
 
-from tests.fakes import ScriptedDetector, ScriptedSource, car_crossing, write_crossing_log
+from tests.fakes import (
+    STOP_SIGN,
+    ScriptedDetector,
+    ScriptedSource,
+    car_crossing,
+    write_crossing_log,
+)
 from trafficpi.core.coco import class_name
 from trafficpi.core.geometry import Polygon
 from trafficpi.core.types import Detection
@@ -102,6 +108,30 @@ def test_a_profile_compiles_to_counting_lines_and_a_filter() -> None:
     assert plain.classes is None and plain.point == "ground" and plain.persistence == 2  # defaults
     assert compiled.detection_filter is not None
     assert len(compiled.detection_filter.include) == len(compiled.detection_filter.exclude) == 1
+
+
+def test_a_stop_sign_compiles_to_the_rules_sign_with_the_pictures_shape() -> None:
+    document = {
+        "stop_signs": [
+            STOP_SIGN
+            | {"classes": ["car", "bus"], "hold_s": 2, "roll_speed": 1.2, "direction": -1},
+            STOP_SIGN | {"id": "plain"},
+        ]
+    }
+    tuned, plain = parse_compiled_profile(document, aspect=4 / 3).stop_signs
+    assert (tuned.id, tuned.name, tuned.direction, tuned.aspect) == ("elm", "Elm Street", -1, 4 / 3)
+    assert tuned.classes == frozenset({2, 5}) and tuned.hold_s == 2 and tuned.roll_speed == 1.2
+    assert tuned.line.a == (0.5, 0.9) and tuned.line.b == (0.5, 0.3)
+    assert tuned.approach.contains((0.3, 0.7)) and not tuned.approach.contains((0.7, 0.7))
+    assert plain.classes == frozenset({2, 7, 5, 3})  # cars, trucks, buses and motorcycles
+    assert (plain.hold_s, plain.still_radius, plain.roll_speed, plain.min_observed_s) == (
+        1.0,
+        0.08,
+        0.7,
+        0.8,
+    )
+    assert plain.direction == 1 and plain.aspect == 4 / 3
+    assert parse_compiled_profile(document).stop_signs[0].aspect == 16 / 9  # shape not given
 
 
 def test_a_profile_without_zones_has_no_filter() -> None:

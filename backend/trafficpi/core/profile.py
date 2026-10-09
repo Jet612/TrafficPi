@@ -7,7 +7,10 @@ A profile is one JSON document per camera::
                 "classes": ["car", "truck", "bus"], "point": "ground",
                 "margin": null, "persistence": null}],
      "detection_zones": [{"id": "road", "name": "The road", "points": [[0, 0.4], [1, 0.4], ...]}],
-     "exclusion_zones": [{"id": "parking", "name": "Parked cars", "points": [...]}]}
+     "exclusion_zones": [{"id": "parking", "name": "Parked cars", "points": [...]}],
+     "stop_signs": [{"id": "elm", "name": "Elm Street", "approach": [[0.1, 0.5], ...],
+                     "a": [0.5, 0.9], "b": [0.5, 0.3], "direction": 1,
+                     "classes": ["car", "truck", "bus", "motorcycle"], "hold_s": 1.0, ...}]}
 
 Points are fractions of the frame (0-1) with x to the right and y *downwards*, so a profile does
 not depend on the capture or inference resolution. A vehicle is "in" a zone when the point where
@@ -17,8 +20,9 @@ These models are the single source of truth for the shape: the API's OpenAPI sch
 the dashboard's TypeScript types, are generated from them. Every member is required in the
 canonical form (the form the API returns and stores); a document with members left out, such as
 one saved before zones existed or typed by hand, is filled in by the "before" step of each model,
-so older documents keep loading. ``schema_version`` is for changes that need a migration; adding
-an optional member does not need one.
+so older documents keep loading. ``schema_version`` goes up when a new kind of element appears (a
+document of an older version is filled in and loads as the newest; a document of a newer version
+is refused, with a message to update TrafficPi): 2 added stop signs.
 """
 
 from __future__ import annotations
@@ -41,7 +45,7 @@ from pydantic import (
 from trafficpi.core.coco import COCO_NAMES
 from trafficpi.core.geometry import Polygon
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 MAX_ELEMENTS = 32  # lines, or zones of one kind
 MAX_POINTS = 32  # corners in one zone
 MIN_ZONE_AREA = 1e-4  # of the frame (about 10 x 10 pixels at 720p): smaller is a slip of the mouse
@@ -61,6 +65,10 @@ def _inside_the_picture(value: tuple[float, float]) -> tuple[float, float]:
 def _known_classes(names: list[str] | None) -> list[str] | None:
     if names is None:
         return None
+    return _known_class_names(names)
+
+
+def _known_class_names(names: list[str]) -> list[str]:
     if not names:
         raise ValueError("must name at least one kind of object (or be null for all)")
     for name in names:
@@ -77,6 +85,18 @@ Point = Annotated[tuple[Number, Number], AfterValidator(_inside_the_picture)]
 ElementId = Annotated[str, StringConstraints(min_length=1, max_length=64)]
 Label = Annotated[str, StringConstraints(max_length=80)]
 ClassList = Annotated[list[str] | None, AfterValidator(_known_classes)]
+
+
+def _one_way_or_the_other(value: int) -> int:
+    if value not in (1, -1):
+        raise ValueError("must be 1 or -1")
+    return value
+
+
+# Not Literal[1, -1]: that would take a JSON `true` for 1, as a strict whole number does not.
+Direction = Annotated[int, Field(strict=True), AfterValidator(_one_way_or_the_other)]
+# A stop sign must say which kinds have to stop: "all" would include the people crossing the road.
+StopClassList = Annotated[list[str], AfterValidator(_known_class_names)]
 
 
 class _Model(BaseModel):
@@ -137,15 +157,71 @@ class ZoneConfig(_Model):
 
     @model_validator(mode="after")
     def _has_a_proper_outline(self) -> Self:
-        polygon = self.polygon()
-        if not polygon.is_simple():
-            raise ValueError("the outline crosses itself, repeats a point or is flat")
-        if polygon.area() < MIN_ZONE_AREA:
-            raise ValueError("the zone is too small to matter")
+        _check_outline(self.polygon())
         return self
 
     def polygon(self) -> Polygon:
         return Polygon(tuple(self.points))
+
+
+def _check_outline(polygon: Polygon) -> None:
+    if not polygon.is_simple():
+        raise ValueError("the outline crosses itself, repeats a point or is flat")
+    if polygon.area() < MIN_ZONE_AREA:
+        raise ValueError("the zone is too small to matter")
+
+
+STOP_KINDS = ["car", "truck", "bus", "motorcycle"]  # who must stop, unless a sign says otherwise
+
+
+class StopSignConfig(_Model):
+    """A stop line, and the stretch of road before it where a vehicle has to stop (plan.md D23).
+
+    ``approach`` is that stretch, as corners in order: a stop counts anywhere in it, so a vehicle
+    that waited in a queue has stopped as much as one that waited at the line. ``a`` and ``b`` are
+    the ends of the stop line. ``direction`` is the way across it that goes through the sign:
+    1 from the left of the line's own direction (``a`` to ``b``, as on screen with y pointing
+    down) to its right, -1 the other way; a vehicle crossing the other way came out of the
+    intersection and is not judged. ``classes`` are the kinds that must stop. A vehicle has
+    stopped if it is still for ``hold_s`` seconds, moving less than ``still_radius`` of its own
+    size meanwhile; it is rolling if it slowed below ``roll_speed`` of its own sizes a second but
+    never held still; it cannot be judged if it was watched for less than ``min_observed_s`` seconds
+    before the line.
+    """
+
+    id: ElementId
+    name: Label
+    approach: Annotated[list[Point], Field(min_length=3, max_length=MAX_POINTS)]
+    a: Point
+    b: Point
+    direction: Direction
+    classes: StopClassList
+    hold_s: Annotated[float, Field(strict=True, ge=0.2, le=10)]
+    still_radius: Annotated[float, Field(strict=True, gt=0, le=0.5)]
+    roll_speed: Annotated[float, Field(strict=True, gt=0, le=10)]
+    min_observed_s: Annotated[float, Field(strict=True, ge=0.1, le=10)]
+
+    @classmethod
+    def defaults(cls) -> dict[str, Any]:
+        return {
+            "name": "",
+            "direction": 1,
+            "classes": list(STOP_KINDS),
+            "hold_s": 1.0,
+            "still_radius": 0.08,
+            "roll_speed": 0.7,
+            "min_observed_s": 0.8,
+        }
+
+    @model_validator(mode="after")
+    def _has_a_line_and_a_proper_approach(self) -> Self:
+        if self.a == self.b:
+            raise ValueError("the two ends of the stop line are in the same place")
+        _check_outline(self.polygon())
+        return self
+
+    def polygon(self) -> Polygon:
+        return Polygon(tuple(self.approach))
 
 
 class Profile(_Model):
@@ -159,6 +235,7 @@ class Profile(_Model):
     lines: Annotated[list[CountingLineConfig], Field(max_length=MAX_ELEMENTS)]
     detection_zones: Annotated[list[ZoneConfig], Field(max_length=MAX_ELEMENTS)]
     exclusion_zones: Annotated[list[ZoneConfig], Field(max_length=MAX_ELEMENTS)]
+    stop_signs: Annotated[list[StopSignConfig], Field(max_length=MAX_ELEMENTS)]
 
     @classmethod
     def defaults(cls) -> dict[str, Any]:
@@ -167,6 +244,7 @@ class Profile(_Model):
             "lines": [],
             "detection_zones": [],
             "exclusion_zones": [],
+            "stop_signs": [],
         }
 
     @model_validator(mode="before")
@@ -180,13 +258,24 @@ class Profile(_Model):
                     f"up to {SCHEMA_VERSION}; update TrafficPi to use it"
                 )
             if version < 1:
-                raise ValueError(f"schema_version must be {SCHEMA_VERSION}, got {version}")
+                raise ValueError(
+                    f"schema_version must be from 1 to {SCHEMA_VERSION}, got {version}"
+                )
+            if (
+                version < SCHEMA_VERSION
+            ):  # an older document: what it lacks is filled in, so it is current
+                return {**data, "schema_version": SCHEMA_VERSION}
         return data
 
     @model_validator(mode="after")
     def _ids_are_unique(self) -> Self:
         seen: set[str] = set()
-        for element in (*self.lines, *self.detection_zones, *self.exclusion_zones):
+        for element in (
+            *self.lines,
+            *self.detection_zones,
+            *self.exclusion_zones,
+            *self.stop_signs,
+        ):
             if element.id in seen:
                 raise ValueError(f"the id {element.id!r} is used twice; every id must be unique")
             seen.add(element.id)

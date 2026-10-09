@@ -14,7 +14,7 @@ import numpy as np
 from trafficpi.core.geometry import Point
 from trafficpi.vision.engine import CountTotals
 from trafficpi.vision.replay import replay_log
-from trafficpi.vision.rules import CountEvent, CountingLine
+from trafficpi.vision.rules import CountEvent, CountingLine, StopEvent, StopSign
 from trafficpi.vision.tracker import TrackUpdate
 from trafficpi.vision.zones import DetectionFilter
 
@@ -29,6 +29,14 @@ COLORS = {
 LINE_COLOR = (0, 215, 255)
 INCLUDE_COLOR = (80, 200, 80)  # detection zones
 EXCLUDE_COLOR = (60, 60, 230)  # exclusion zones
+STOP_COLOR = (255, 200, 0)  # a stop sign's approach zone
+STOP_LINE_COLOR = (0, 0, 255)  # and its stop line
+OUTCOME_COLORS = {  # a stop event's banner
+    "stopped": (0, 200, 0),
+    "rolling": (0, 165, 255),
+    "did_not_stop": (0, 0, 255),
+    "indeterminate": (200, 200, 200),
+}
 FONT = cv2.FONT_HERSHEY_SIMPLEX
 BANNER_S = 2.0  # how long a count event stays on screen
 
@@ -38,6 +46,7 @@ class AnnotateReport:
     frames_written: int = 0
     stills: list[Path] = field(default_factory=list)
     events: list[CountEvent] = field(default_factory=list)
+    stops: list[StopEvent] = field(default_factory=list)
 
 
 def _px(point: Point, size: tuple[int, int]) -> tuple[int, int]:
@@ -53,6 +62,7 @@ def draw(
     banners: Sequence[str],
     totals: CountTotals,
     zones: DetectionFilter | None = None,
+    stop_signs: Sequence[StopSign] = (),
 ) -> None:
     """Draw on a BGR image in place."""
     height, width = image.shape[:2]
@@ -62,6 +72,22 @@ def draw(
             for polygon in polygons:
                 corners = np.array([_px(p, size) for p in polygon.points], np.int32)
                 cv2.polylines(image, [corners], True, color, 2)
+    for sign in stop_signs:
+        corners = np.array([_px(p, size) for p in sign.approach.points], np.int32)
+        cv2.polylines(image, [corners], True, STOP_COLOR, 2)
+        a, b = _px(sign.line.a, size), _px(sign.line.b, size)
+        cv2.line(image, a, b, STOP_LINE_COLOR, 3)
+        # The arrow is on the side vehicles go through the sign towards: the right of a -> b for
+        # direction +1, the left for -1.
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        length = max((dx * dx + dy * dy) ** 0.5, 1.0)
+        mid = ((a[0] + b[0]) // 2, (a[1] + b[1]) // 2)
+        way = sign.direction
+        tip = (round(mid[0] - way * dy / length * 30), round(mid[1] + way * dx / length * 30))
+        cv2.arrowedLine(image, mid, tip, STOP_LINE_COLOR, 2, tipLength=0.4)
+        cv2.putText(
+            image, f"stop {sign.id}", (a[0], max(14, a[1] - 8)), FONT, 0.5, STOP_LINE_COLOR, 1
+        )
     for cfg in lines:
         a, b = _px(cfg.line.a, size), _px(cfg.line.b, size)
         cv2.line(image, a, b, LINE_COLOR, 2)
@@ -102,6 +128,7 @@ def annotate_clip(
     video_out: Path | None = None,
     stills_dir: Path | None = None,
     trail_s: float = 2.0,
+    stop_signs: Sequence[StopSign] = (),
 ) -> AnnotateReport:
     """Draw the tracks, trails, lines, zones and running counts of ``log`` onto ``clip``.
 
@@ -109,7 +136,7 @@ def annotate_clip(
     starts both together, so they agree to within a frame or two). With ``stills_dir`` a JPEG is
     saved at every count event.
     """
-    replayed = replay_log(log, lines, detection_filter=detection_filter)
+    replayed = replay_log(log, lines, detection_filter=detection_filter, stop_signs=stop_signs)
     stamps, results = replayed.timestamps_ns, replayed.results
     report = AnnotateReport()
     if not stamps:
@@ -158,6 +185,13 @@ def annotate_clip(
                         )
                         banners.append((relative[current], text))
                         new_event_frame = True
+                    elif isinstance(event, StopEvent):
+                        report.stops.append(event)
+                        text = (
+                            f"stop {event.sign_id}: {event.outcome} {event.label} #{event.track_id}"
+                        )
+                        banners.append((relative[current], text))
+                        new_event_frame = True
             while banners and now - banners[0][0] > BANNER_S:
                 banners.popleft()
             shown = [text for _, text in banners]
@@ -170,12 +204,15 @@ def annotate_clip(
                 banners=shown,
                 totals=totals,
                 zones=detection_filter,
+                stop_signs=stop_signs,
             )
             if writer is not None:
                 writer.write(image)
                 report.frames_written += 1
             if stills_dir is not None and new_event_frame:
-                path = stills_dir / f"event-{len(report.events):03d}-t{now:07.2f}s.jpg"
+                path = stills_dir / (
+                    f"event-{len(report.events) + len(report.stops):03d}-t{now:07.2f}s.jpg"
+                )
                 cv2.imwrite(str(path), image, [cv2.IMWRITE_JPEG_QUALITY, 90])
                 report.stills.append(path)
             index += 1

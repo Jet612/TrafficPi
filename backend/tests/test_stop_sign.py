@@ -3,6 +3,8 @@ from collections.abc import Iterator, Sequence
 
 import pytest
 
+from tests.fakes import FULL_STOP, ROLLING_STOP
+from tests.fakes import drive as positions
 from trafficpi.core.coco import class_name
 from trafficpi.core.geometry import Line, Polygon
 from trafficpi.vision.rules import StopEvent, StopSign, StopSignRule
@@ -33,20 +35,6 @@ def track(
     return TrackUpdate(track_id, cls, class_name(cls), 0.9, box, (0.0, 0.0), 10, 1.0, confirmed)
 
 
-def positions(segments: Sequence[tuple[float, float, float]], x0: float = 0.12) -> Iterator[float]:
-    """Where a vehicle driving left to right is at each frame. A segment is (seconds, speed at the
-    start, speed at the end), the speed in fractions of the picture's width a second, changing
-    steadily; the speeds are those of a car that crosses the picture in 6 s at 0.15."""
-    x = x0
-    yield x
-    for seconds, v0, v1 in segments:
-        frames = round(seconds * 30)
-        for i in range(frames):
-            v = v0 + (v1 - v0) * (i + 0.5) / frames
-            x += v / 30
-            yield x
-
-
 def run(
     rule: StopSignRule,
     xs: Iterator[float] | Sequence[float],
@@ -71,23 +59,6 @@ def run(
             assert isinstance(event, StopEvent)
             events.append(event)
     return events
-
-
-CRUISE = (2.0, 0.15, 0.15)
-FULL_STOP = [
-    (1.5, 0.15, 0.15),
-    (0.8, 0.15, 0.0),
-    (2.0, 0.0, 0.0),
-    (1.0, 0.0, 0.15),
-    (2.0, 0.15, 0.15),
-]
-ROLLING_STOP = [
-    (1.5, 0.15, 0.15),
-    (1.0, 0.15, 0.04),
-    (1.0, 0.04, 0.04),
-    (1.0, 0.04, 0.15),
-    (2.0, 0.15, 0.15),
-]
 
 
 def outcome(

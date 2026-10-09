@@ -18,7 +18,7 @@ export type Element =
   | { kind: "line"; value: LineConfig }
   | { kind: "detection" | "exclusion"; value: ZoneConfig };
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 /** The server accepts this many lines, and this many zones of each kind. */
 export const MAX_ELEMENTS = 32;
 export const MAX_POINTS = 32;
@@ -38,7 +38,7 @@ export const KIND_LABEL: Record<ElementKind, string> = {
 };
 
 export function emptyProfile(): Profile {
-  return { schema_version: SCHEMA_VERSION, lines: [], detection_zones: [], exclusion_zones: [] };
+  return { schema_version: SCHEMA_VERSION, lines: [], detection_zones: [], exclusion_zones: [], stop_signs: [] };
 }
 
 export const sameRef = (a: ElementRef | null | undefined, b: ElementRef | null | undefined): boolean =>

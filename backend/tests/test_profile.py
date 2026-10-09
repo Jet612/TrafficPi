@@ -28,6 +28,7 @@ def test_an_empty_document_is_an_empty_profile() -> None:
         "lines": [],
         "detection_zones": [],
         "exclusion_zones": [],
+        "stop_signs": [],
     }
 
 
@@ -148,9 +149,10 @@ def test_zone_ids_may_reuse_a_name_and_names_may_repeat() -> None:
 
 
 def test_a_profile_from_a_newer_version_is_refused_plainly() -> None:
-    with pytest.raises(ProfileError, match=r"schema version 2.*update TrafficPi"):
-        parse_profile({"schema_version": 2, "lines": [], "something_new": True})
-    with pytest.raises(ProfileError, match="schema_version must be 1"):
+    newer = SCHEMA_VERSION + 1
+    with pytest.raises(ProfileError, match=rf"schema version {newer}.*update TrafficPi"):
+        parse_profile({"schema_version": newer, "lines": [], "something_new": True})
+    with pytest.raises(ProfileError, match=rf"schema_version must be from 1 to {SCHEMA_VERSION}"):
         parse_profile({"schema_version": 0})
     with pytest.raises(ProfileError, match="schema_version"):
         parse_profile({"schema_version": "1"})
@@ -195,3 +197,100 @@ def test_loading_from_a_file(tmp_path: Path) -> None:
     path.write_text(json.dumps({"lines": [{**LINE, "a": [9, 9]}]}))
     with pytest.raises(ProfileError, match=r"lines\[0\]\.a"):
         load_profile_file(path)
+
+
+# --- stop signs (plan.md D23) -------------------------------------------------------------
+
+STOP: dict[str, Any] = {
+    "id": "elm",
+    "name": "Elm Street",
+    "approach": [[0.1, 0.5], [0.5, 0.5], [0.5, 0.95], [0.1, 0.95]],
+    "a": [0.5, 0.9],
+    "b": [0.5, 0.3],
+}
+
+
+def test_a_stop_sign_needs_only_its_shapes_and_the_rest_is_filled_in() -> None:
+    (sign,) = parse_profile({"stop_signs": [STOP]}).stop_signs
+    assert (sign.id, sign.name, sign.direction) == ("elm", "Elm Street", 1)
+    assert sign.classes == ["car", "truck", "bus", "motorcycle"]  # not bicycles, not people
+    assert (sign.hold_s, sign.still_radius, sign.roll_speed, sign.min_observed_s) == (
+        1.0,
+        0.08,
+        0.7,
+        0.8,
+    )
+    assert sign.polygon().contains((0.3, 0.7))
+
+
+def test_a_stop_sign_comes_back_whole_in_the_canonical_form() -> None:
+    dumped = parse_profile({"stop_signs": [STOP | {"hold_s": 2, "classes": ["car"]}]}).model_dump(
+        mode="json"
+    )
+    assert dumped["stop_signs"] == [
+        {
+            **STOP,
+            "direction": 1,
+            "classes": ["car"],
+            "hold_s": 2.0,
+            "still_radius": 0.08,
+            "roll_speed": 0.7,
+            "min_observed_s": 0.8,
+        }
+    ]
+    assert parse_profile(dumped).model_dump(mode="json") == dumped  # and is stable
+
+
+def test_a_profile_of_an_older_version_loads_as_the_newest() -> None:
+    old = parse_profile({"schema_version": 1, "lines": [LINE]})
+    assert old.schema_version == SCHEMA_VERSION and old.stop_signs == []
+    assert [line.id for line in old.lines] == ["north"]
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        ({"a": [0.5, 0.5], "b": [0.5, 0.5]}, r'stop_signs\[0\] \("Elm Street"\): the two ends'),
+        ({"approach": [[0, 0], [1, 1], [1, 0], [0, 1]]}, "the outline crosses itself"),
+        ({"approach": [[0.1, 0.1], [0.1001, 0.1], [0.1, 0.1001]]}, "too small"),
+        ({"approach": [[0.1, 0.1], [0.5, 0.5]]}, "at least 3"),
+        ({"approach": [[0.1, 0.1], [0.5, 0.5], [0.2, 1.5]]}, "must be inside the picture"),
+        ({"direction": 0}, "direction"),
+        ({"direction": 2}, "direction"),
+        ({"direction": True}, "direction"),
+        ({"direction": "1"}, "direction"),
+        ({"classes": None}, "classes"),
+        ({"classes": []}, "at least one kind"),
+        ({"classes": ["unicorn"]}, "unknown class"),
+        ({"hold_s": 0.05}, "hold_s"),
+        ({"hold_s": 11}, "hold_s"),
+        ({"hold_s": "1"}, "hold_s"),
+        ({"hold_s": True}, "hold_s"),
+        ({"still_radius": 0}, "still_radius"),
+        ({"still_radius": 0.9}, "still_radius"),
+        ({"roll_speed": 0}, "roll_speed"),
+        ({"roll_speed": 11}, "roll_speed"),
+        ({"min_observed_s": 0}, "min_observed_s"),
+        ({"min_observed_s": 11}, "min_observed_s"),
+        ({"surprise": 1}, "not something TrafficPi knows"),
+    ],
+)
+def test_a_stop_sign_that_makes_no_sense_is_refused_with_the_reason(
+    change: dict[str, Any], message: str
+) -> None:
+    with pytest.raises(ProfileError, match=message):
+        parse_profile({"stop_signs": [STOP | change]})
+
+
+def test_ids_are_unique_across_lines_zones_and_stop_signs() -> None:
+    with pytest.raises(ProfileError, match="'north' is used twice"):
+        parse_profile({"lines": [LINE], "stop_signs": [STOP | {"id": "north"}]})
+    with pytest.raises(ProfileError, match="'road' is used twice"):
+        parse_profile({"detection_zones": [ROAD], "stop_signs": [STOP | {"id": "road"}]})
+    parse_profile({"stop_signs": [STOP, STOP | {"id": "oak"}]})  # two different ones are fine
+
+
+def test_there_is_a_limit_to_the_stop_signs_too() -> None:
+    signs = [STOP | {"id": f"s{i}"} for i in range(33)]
+    with pytest.raises(ProfileError, match="stop_signs"):
+        parse_profile({"stop_signs": signs})
