@@ -4,6 +4,7 @@
 #
 #   scripts/rehearse_ci.sh              all four jobs (about 8 minutes)
 #   scripts/rehearse_ci.sh --skip-e2e   without the browser test
+#   scripts/rehearse_ci.sh --audit      also the weekly audit of the dependencies (scripts/audit_deps.sh)
 #
 # Why: this Pi has things a runner does not (Picamera2 and HailoRT, build output, files that
 # .gitignore hides), so a test that passes here can fail there. The first push failed twice that
@@ -16,7 +17,14 @@ set -uo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 skip_e2e=0
-[[ "${1:-}" == "--skip-e2e" ]] && skip_e2e=1
+audit=0
+for argument in "$@"; do
+  case "$argument" in
+    --skip-e2e) skip_e2e=1 ;;
+    --audit) audit=1 ;;
+    *) echo "unknown option: $argument" >&2; exit 2 ;;
+  esac
+done
 
 work="$(mktemp -d -t rehearse-ci.XXXXXX)"
 failed=0
@@ -79,10 +87,15 @@ browser_test() { # the services are started by the script that CI runs, on other
   return "$status"
 }
 
+audit_deps() { # after the two jobs above, which have installed what it looks at
+  scripts/audit_deps.sh
+}
+
 job "backend (lint, types, tests)" backend
 job "dashboard (lint, types, tests, build)" dashboard
 job "dashboard types match the API" api_types
 if (( skip_e2e )); then echo "skip  browser test"; else job "browser test" browser_test; fi
+if (( audit )); then job "audit (weaknesses and licences)" audit_deps; fi
 
 echo
 if [[ $failed -eq 0 ]]; then echo "all jobs pass"; else echo "$failed job(s) failed"; fi

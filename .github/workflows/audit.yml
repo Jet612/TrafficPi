@@ -1,0 +1,43 @@
+name: Dependency audit
+
+# Looks for known weaknesses and unwelcome licences in the locked dependencies (plan.md M8). It runs
+# weekly and by hand, and is not part of the checks that every push must pass: a new advisory would
+# turn an unrelated push red. The work is in scripts/audit_deps.sh, which scripts/rehearse_ci.sh
+# --audit runs from a fresh clone.
+on:
+  schedule:
+    - cron: "17 5 * * 1" # Mondays, 05:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Weaknesses and licences
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.12.24"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - run: corepack enable
+
+      - name: Install the locked dependencies
+        run: |
+          (cd backend && uv sync --locked)
+          (cd dashboard && pnpm install --frozen-lockfile)
+
+      - name: Audit
+        run: scripts/audit_deps.sh
