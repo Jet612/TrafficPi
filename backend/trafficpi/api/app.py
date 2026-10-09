@@ -21,7 +21,6 @@ import websockets
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request, Response, WebSocket
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
-from fastapi.staticfiles import StaticFiles
 
 from trafficpi.api import analytics, stats, trail_views
 from trafficpi.api.auth import (
@@ -63,6 +62,7 @@ from trafficpi.api.schemas import (
     VisionStatus,
 )
 from trafficpi.api.settings import ApiSettings, normalize_origin
+from trafficpi.api.static import DashboardFiles, content_security_policy
 from trafficpi.api.vision_client import VisionClient, VisionUnavailable
 from trafficpi.core.clock import WallClock, resolve_timezone
 from trafficpi.core.evidence_settings import EvidenceSettings
@@ -90,12 +90,14 @@ SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "same-origin",
-    # The static dashboard needs inline scripts for hydration; tightening this is an M8 item.
-    "Content-Security-Policy": (
-        "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; "
-        "script-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'"
-    ),
+    # Nothing here is meant to be embedded or read by another site, even if a cookie were sent.
+    "Cross-Origin-Opener-Policy": "same-origin",
+    "Cross-Origin-Resource-Policy": "same-origin",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
+    # No inline script is allowed; a dashboard page names its own (DashboardFiles sets that one).
+    "Content-Security-Policy": content_security_policy(),
 }
+HSTS = "max-age=15552000"  # 180 days, this host only; sent only to a browser that came by HTTPS
 
 
 @dataclass(slots=True)
@@ -115,6 +117,15 @@ class ApiContext:
 
 def _ctx(request: Request) -> ApiContext:
     return request.app.state.ctx  # type: ignore[no-any-return]
+
+
+def _by_https(request: Request) -> bool:
+    """Whether the browser spoke HTTPS to whoever is in front of us (a tunnel, a proxy)."""
+    return (
+        request.url.scheme == "https"
+        or request.headers.get("x-forwarded-proto") == "https"
+        or '"https"' in request.headers.get("cf-visitor", "")
+    )
 
 
 def _address(text: str) -> str | None:
@@ -311,6 +322,8 @@ def create_app(
         response = await call_next(request)
         for name, value in SECURITY_HEADERS.items():
             response.headers.setdefault(name, value)
+        if _by_https(request):
+            response.headers.setdefault("Strict-Transport-Security", HSTS)
         if request.url.path.startswith("/api/"):
             response.headers.setdefault("Cache-Control", "no-store")
         return response
@@ -393,16 +406,13 @@ def create_app(
             password_hash = upgraded
             ctx.store.set_password_hash(user.username, password_hash)
         response = Response(status_code=204)
-        secure = (
-            request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
-        )
         response.set_cookie(
             COOKIE_NAME,
             ctx.signer.issue(user.username, password_stamp(password_hash)),
             max_age=settings.session_max_age_s,
             httponly=True,
             samesite="strict",
-            secure=secure,
+            secure=_by_https(request),
             path="/",
         )
         return response
@@ -820,7 +830,9 @@ def create_app(
     # --- the dashboard (last, so it never shadows an API route) -------------------------------
 
     if settings.dashboard_dir is not None and settings.dashboard_dir.is_dir():
-        app.mount("/", StaticFiles(directory=settings.dashboard_dir, html=True), name="dashboard")
+        app.mount(
+            "/", DashboardFiles(directory=settings.dashboard_dir, html=True), name="dashboard"
+        )
     else:
 
         @app.get("/", include_in_schema=False)

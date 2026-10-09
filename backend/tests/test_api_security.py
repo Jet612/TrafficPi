@@ -5,6 +5,8 @@ after it (the commit messages say which gap each one closes).
 """
 
 import asyncio
+import base64
+import hashlib
 import json
 from collections.abc import Iterator
 from pathlib import Path
@@ -13,6 +15,7 @@ import httpx
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from httpx2 import Response
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from trafficpi.api.app import create_app
@@ -46,7 +49,8 @@ def make_app(tmp_path: Path, store: Store, **settings: object) -> FastAPI:
     vision = VisionClient(
         "http://vision", transport=httpx.MockTransport(lambda request: httpx.Response(404))
     )
-    config = ApiSettings(data_dir=tmp_path, dashboard_dir=None, **settings)  # type: ignore[arg-type]
+    settings.setdefault("dashboard_dir", None)
+    config = ApiSettings(data_dir=tmp_path, **settings)  # type: ignore[arg-type]
     return create_app(config, store=store, vision=vision)
 
 
@@ -275,6 +279,134 @@ def test_a_login_turned_away_for_want_of_a_hashing_slot_is_logged_but_not_every_
         for _ in range(5):
             assert client.post("/api/auth/login", json=LOGIN).status_code == 503
     assert sum("busy" in m for m in logged(caplog)) == 1
+
+
+# --- the Content-Security-Policy and the other headers ------------------------------------------
+
+
+def script_hash(text: str) -> str:
+    return "'sha256-" + base64.b64encode(hashlib.sha256(text.encode()).digest()).decode() + "'"
+
+
+INDEX_SCRIPTS = ["self.__next_f=[]", 'self.__next_f.push([1,"a < b && c"])\n']
+HISTORY_SCRIPT = "history_only()"
+
+
+@pytest.fixture
+def site(tmp_path: Path) -> Path:
+    """A little dashboard: pages with inline scripts, as Next's static export writes them."""
+    root = tmp_path / "site"
+    (root / "history").mkdir(parents=True)
+    (root / "index.html").write_text(
+        "<!DOCTYPE html><html><head>"
+        f'<script>{INDEX_SCRIPTS[0]}</script><script src="/_next/a.js"></script>'
+        f'</head><body><script>{INDEX_SCRIPTS[1]}</script><script type="application/json">'
+        "</script></body></html>"
+    )
+    (root / "history" / "index.html").write_text(
+        f"<html><body><script>{HISTORY_SCRIPT}</script></body></html>"
+    )
+    (root / "404.html").write_text(
+        "<html><head><style>.a{color:red}</style></head><body><script>four04()</script></body></html>"
+    )
+    (root / "app.js").write_text("console.log(1)")
+    (tmp_path / "secret.txt").write_text("not for the web")
+    return root
+
+
+@pytest.fixture
+def site_client(tmp_path: Path, store: Store, site: Path) -> Iterator[TestClient]:
+    app = make_app(tmp_path, store, dashboard_dir=site)
+    with TestClient(app, base_url="http://testserver") as c:
+        yield c
+
+
+def policy_of(response: Response) -> dict[str, list[str]]:
+    parts = [p.strip() for p in response.headers["content-security-policy"].split(";") if p.strip()]
+    return {name: rest for name, *rest in (p.split() for p in parts)}
+
+
+def test_a_page_is_sent_with_the_hashes_of_its_own_inline_scripts_and_no_unsafe_inline(
+    site_client: TestClient,
+) -> None:
+    scripts = policy_of(site_client.get("/"))["script-src"]
+    assert scripts[0] == "'self'"
+    assert set(scripts[1:]) == {script_hash(s) for s in INDEX_SCRIPTS}  # not the empty JSON block
+    assert "'unsafe-inline'" not in scripts
+
+
+def test_another_page_gets_its_own_hashes_and_not_the_first_pages(site_client: TestClient) -> None:
+    scripts = policy_of(site_client.get("/history/"))["script-src"]
+    assert set(scripts[1:]) == {script_hash(HISTORY_SCRIPT)}
+
+
+def test_the_not_found_page_has_a_policy_for_its_scripts_too(site_client: TestClient) -> None:
+    response = site_client.get("/no/such/page/")
+    assert response.status_code == 404 and "four04()" in response.text
+    assert script_hash("four04()") in policy_of(response)["script-src"]
+
+
+def test_a_rebuilt_page_gets_a_new_policy_without_restarting_the_server(
+    site_client: TestClient, site: Path
+) -> None:
+    assert script_hash("replaced()") not in policy_of(site_client.get("/history/"))["script-src"]
+    (site / "history" / "index.html").write_text("<script>replaced()</script>" + " " * 7)
+    scripts = policy_of(site_client.get("/history/"))["script-src"]
+    assert script_hash("replaced()") in scripts and script_hash(HISTORY_SCRIPT) not in scripts
+
+
+def test_files_that_are_not_pages_and_the_api_allow_no_inline_script_at_all(
+    site_client: TestClient,
+) -> None:
+    for path in ("/app.js", "/api/health"):
+        assert policy_of(site_client.get(path))["script-src"] == ["'self'"], path
+
+
+def test_the_policy_locks_the_things_the_default_does_not_cover(site_client: TestClient) -> None:
+    policy = policy_of(site_client.get("/"))
+    assert policy["object-src"] == ["'none'"]
+    assert policy["base-uri"] == ["'self'"]
+    assert policy["form-action"] == ["'self'"]
+    assert policy["frame-ancestors"] == ["'none'"]
+    assert policy["default-src"] == ["'self'"]
+    assert policy["connect-src"] == ["'self'"]
+
+
+def test_more_headers_on_everything(site_client: TestClient) -> None:
+    for path in ("/", "/api/health", "/app.js"):
+        headers = site_client.get(path).headers
+        assert headers["cross-origin-opener-policy"] == "same-origin", path
+        assert headers["cross-origin-resource-policy"] == "same-origin", path
+        assert "camera=()" in headers["permissions-policy"], path
+        assert "microphone=()" in headers["permissions-policy"], path
+        assert headers["x-content-type-options"] == "nosniff", path
+        assert headers["x-frame-options"] == "DENY", path
+
+
+def test_hsts_is_sent_only_when_the_request_came_by_https(site_client: TestClient) -> None:
+    assert "strict-transport-security" not in site_client.get("/api/health").headers
+    via_proxy = site_client.get("/api/health", headers={"x-forwarded-proto": "https"})
+    assert via_proxy.headers["strict-transport-security"].startswith("max-age=")
+    assert "includesubdomains" not in via_proxy.headers["strict-transport-security"].lower()
+    cloudflare = site_client.get("/api/health", headers={"cf-visitor": '{"scheme":"https"}'})
+    assert "strict-transport-security" in cloudflare.headers
+
+
+def test_a_request_cannot_reach_a_file_outside_the_dashboard(site_client: TestClient) -> None:
+    for path in (
+        "/../secret.txt",
+        "/%2e%2e/secret.txt",
+        "/..%2fsecret.txt",
+        "/history/../../secret.txt",
+        "/%2e%2e%2f%2e%2e%2fetc/passwd",
+        "//etc/passwd",
+        "/history/%00",
+    ):
+        response = site_client.get(path)
+        assert "not for the web" not in response.text and "root:" not in response.text, path
+        assert response.status_code in (200, 307, 308, 400, 404), (path, response.status_code)
+        if response.status_code == 200:  # the dashboard's own page, nothing outside it
+            assert "<script" in response.text, path
 
 
 # --- the body limit, as an ASGI layer ---------------------------------------------------------
