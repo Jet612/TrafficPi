@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2329  # the check functions below are run by name, through `check`
+# shellcheck disable=SC2317,SC2329  # the check functions below are run by name, through `check` (older shellcheck calls this SC2317)
 # Look for known weaknesses and unwelcome licences in the locked dependencies (plan.md M8 step 8).
 #
 #   scripts/audit_deps.sh              all three checks

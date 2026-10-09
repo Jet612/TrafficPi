@@ -45,7 +45,8 @@ jobs:
         run: uv run ruff format --check .
 
       # The installer and the helper scripts are shell. The script is the one that
-      # scripts/rehearse_ci.sh runs too; the runners have shellcheck.
+      # scripts/rehearse_ci.sh runs too, and it runs one pinned shellcheck (fetched with uv), not the
+      # runner's own, which is older than the one on the development Pi and reports other codes.
       - name: Shell scripts (shellcheck)
         run: ../scripts/lint_shell.sh
 

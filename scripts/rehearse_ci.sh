@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2329  # the job functions below are run by name, through `job`
+# shellcheck disable=SC2317,SC2329  # the job functions below are run by name, through `job` (older shellcheck calls this SC2317)
 # Run CI's four jobs from a fresh clone of what is committed, the way a GitHub runner sees it.
 #
 #   scripts/rehearse_ci.sh              all four jobs (about 8 minutes)
