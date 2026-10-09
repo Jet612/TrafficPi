@@ -206,6 +206,18 @@ pnpm build                            # writes dashboard/out; trafficpi-api serv
 - **TypeScript stays at 5.9**, because typescript-eslint does not support 7 yet. pnpm 12 does not run install scripts unless `pnpm-workspace.yaml` allows them.
 - If a build crashes in an odd way, look at the memory first (see Troubleshooting) and delete `.next` before trying again; also check that no orphaned `next` worker is still using the CPU (`ps -eo pid,pcpu,args | grep next`).
 
+## Heavy jobs share the Pi with the camera
+
+The Pi that counts traffic is also the development machine. The camera and the accelerator alone keep it at 72 to 75 °C; a backend suite, a type check or a dashboard build takes it to 84 °C, and from 80 °C it slows itself down (`vcgencmd get_throttled` shows `0xe0000` once it has). The camera loop kept 30 frames a second through that every time it was looked at. But on 2026-10-09 the camera stalled while an un-niced type check and a test run were going, the vision watchdog restarted the service, and about four minutes later the whole board froze and was reset by its hardware watchdog; the cause was not found (plan.md R19). The load is the one thing we control, so:
+
+```
+taskset -c 2,3 nice -n 15 flock /tmp/trafficpi-heavy.lock <command>
+```
+
+runs a heavy job (`pytest` of more than a few files, `pyright`, `pnpm build`, `tsc`, `scripts/rehearse_ci.sh`, a stress run) on two of the four cores, at the lowest priority, and only when no other heavy job is running (the lock). `scripts/test_in_slices.sh` runs the whole backend suite that way, eight test files at a time, and waits between them for the board to drop below 78 °C. Look at `vcgencmd measure_temp` before a long run. Single-test runs need none of this.
+
+The same link carries everything else: the Pi's Wi-Fi was measured at -72 dBm with a receive rate of 1 Mbit/s that evening, and one live viewer (about 2 Mbit/s) was enough to leave it unable to fetch packages (plan.md R20). If a download times out, look at `iw dev wlan0 link` before suspecting the code; the rehearsal can run from the package caches with `UV_OFFLINE=1 npm_config_offline=true scripts/rehearse_ci.sh`.
+
 ## Rehearsing CI
 
 `scripts/rehearse_ci.sh` clones what is committed to a temporary directory and runs CI's four jobs there (backend: lint, types, tests in a virtualenv without the Pi's system packages; dashboard: install from the lockfile, lint, types before any build, tests, build; the check that the generated API types are current; the browser test against the made-up street on ports 18000 and 18001, beside the services). It takes about eight minutes and ends with the number of failed jobs as its exit status. Run it after committing and before pushing: this Pi has things a runner does not (Picamera2, HailoRT, build output, files that `.gitignore` hides), and the first push failed twice for that reason. A third time the rehearsal had its own copy of how CI starts the services, and waited for both where CI waited for one: the vision service listens a few seconds after the API, so CI asked it too early and failed. Both now start them with `scripts/start_demo.sh`, so change that script, not one of the two callers. The rest can still differ: CI uses Google Chrome and the rehearsal the old headless shell by default, so `CHROMIUM=/path/to/a/full/chromium scripts/rehearse_ci.sh` is nearer (Playwright's own build, if it was downloaded, is in `~/.cache/ms-playwright/chromium-*/`). `--skip-e2e` leaves out the browser test.
