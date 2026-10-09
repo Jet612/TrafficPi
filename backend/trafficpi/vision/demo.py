@@ -9,10 +9,13 @@ machine, for the browser tests in CI, and for screenshots of a street that is no
 
 from __future__ import annotations
 
+import math
 import random
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime, timedelta, tzinfo
+from datetime import time as clock_time
 
 import cv2
 import numpy as np
@@ -20,6 +23,7 @@ import numpy as np
 from trafficpi.core.types import Detection
 from trafficpi.vision.detector import DetectTimings
 from trafficpi.vision.sources import Frame
+from trafficpi.vision.trails import FinishedTrail, encode_path
 
 FRAME_SIZE = (640, 360)
 FPS = 30
@@ -235,3 +239,71 @@ class DemoStreet:
                 )
             )
         return found
+
+
+# --- a made-up past -------------------------------------------------------------------------
+
+# Vehicles an hour at each hour of a weekday, on the clock of the street's time zone: quiet at
+# night, a rush hour in the morning and a bigger one in the evening. About 5,000 a day, which is
+# enough to need an even sample when a whole day is drawn.
+HOURLY_RATE = (
+    20, 12, 8, 8, 15, 60, 180, 420, 480, 330, 260, 250,
+    280, 270, 260, 300, 420, 500, 380, 220, 140, 90, 55, 30,
+)  # fmt: skip
+WEEKEND_FACTOR = 0.7
+SAMPLE_MS = 200  # a point every 200 ms, as the recorder takes them
+
+
+def demo_history(days: int, *, now_ms: int, tz: tzinfo, seed: int = 11) -> list[FinishedTrail]:
+    """Made-up trails for each of the ``days`` days before today on ``tz``'s calendar, oldest first.
+
+    They run along the same two lanes as the live street, at the same speeds, so that they lie on
+    its road in the picture. For trying the History page, and the browser tests, without waiting
+    for traffic; nothing in them is real.
+    """
+    rng = random.Random(seed)
+    today = datetime.fromtimestamp(now_ms / 1000, tz).date()
+    trails: list[FinishedTrail] = []
+    for back in range(days, 0, -1):
+        day = today - timedelta(days=back)
+        busy = (WEEKEND_FACTOR if day.weekday() >= 5 else 1.0) * rng.uniform(0.9, 1.1)
+        midnight = datetime.combine(day, clock_time.min, tzinfo=tz)
+        for hour in range(24):
+            hour_start = int((midnight + timedelta(hours=hour)).timestamp() * 1000)
+            mean = HOURLY_RATE[hour] * busy
+            count = max(0, round(rng.gauss(mean, math.sqrt(mean))))
+            starts = sorted(hour_start + rng.randrange(3_600_000) for _ in range(count))
+            trails.extend(
+                _made_up_trail(rng, start, len(trails) + i) for i, start in enumerate(starts)
+            )
+    return trails
+
+
+def _made_up_trail(rng: random.Random, started_at: int, track_id: int) -> FinishedTrail:
+    """One vehicle driving all the way across the picture in one of the two lanes."""
+    lane = rng.choice(("right", "left"))
+    direction = 1 if lane == "right" else -1
+    kind = rng.choices(KINDS, weights=[k.weight for k in KINDS])[0]
+    speed = rng.uniform(*kind.speed)
+    # The tracker confirms a vehicle a few frames after it enters and loses it as it leaves.
+    x_from, x_to = (0.03, 0.97) if direction > 0 else (0.97, 0.03)
+    duration_ms = round(abs(x_to - x_from) / speed * 1000)
+    points = max(3, duration_ms // SAMPLE_MS + 1)
+    offsets = [round(i * duration_ms / (points - 1)) for i in range(points)]
+    xs = [x_from + (x_to - x_from) * i / (points - 1) for i in range(points)]
+    bottom = LANES[lane] + rng.uniform(-0.01, 0.01)  # drivers do not all take the same line
+    wobble = 0.0
+    ys: list[float] = []
+    for _ in range(points):  # the detector's boxes jitter, so a ground point does too
+        wobble = max(-0.006, min(0.006, wobble + rng.uniform(-0.002, 0.002)))
+        ys.append(bottom + wobble)
+    extent = math.hypot(max(xs) - min(xs), max(ys) - min(ys))
+    return FinishedTrail(
+        track_id=track_id,
+        started_at=started_at,
+        ended_at=started_at + duration_ms,
+        label=kind.name,
+        points=points,
+        extent=round(extent, 4),
+        path=encode_path(offsets, xs, ys),
+    )

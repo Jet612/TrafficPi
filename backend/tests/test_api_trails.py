@@ -108,6 +108,9 @@ def test_a_day_is_counted_by_the_local_hour_and_the_kind(client: TestClient, sto
     assert day["hours"][5]["by_kind"] == {}
     assert day["hours"][0]["t"] == at(NEW_YORK, "2025-03-05 00:00")
     assert day["hours"][9]["t"] - day["hours"][8]["t"] == HOUR_MS
+    # every hour ends where the next begins, and the last ends where the next day does
+    assert [h["end"] for h in day["hours"][:-1]] == [h["t"] for h in day["hours"][1:]]
+    assert day["hours"][23]["end"] == at(NEW_YORK, "2025-03-06 00:00")
 
 
 def test_the_first_and_last_days_with_trails_are_dates_on_the_local_calendar(
@@ -178,6 +181,19 @@ def test_the_day_the_clocks_go_back_has_twenty_five_hours_and_the_repeated_one_t
     assert second["by_kind"] == {"truck": 2}
     assert second["t"] - first["t"] == HOUR_MS
     assert day["total"] == 3
+
+
+def test_a_day_that_changes_by_half_an_hour_ends_its_last_hour_where_the_day_ends(
+    client: TestClient, store: Store
+) -> None:
+    """Lord Howe Island moves its clocks by 30 minutes: the day it does is 24.5 hours long."""
+    zone = "Australia/Lord_Howe"
+    store.set_setting("timezone", zone)
+    day = client.get("/api/trails/day", params={"day": "2025-04-06"}).json()  # the clocks go back
+    assert len(day["hours"]) == 25
+    last = day["hours"][-1]
+    assert last["end"] - last["t"] == HOUR_MS // 2
+    assert last["end"] == at(zone, "2025-04-07 00:00")
 
 
 def test_a_zone_a_half_hour_from_utc_still_gets_whole_local_hours(

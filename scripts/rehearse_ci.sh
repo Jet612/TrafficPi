@@ -70,7 +70,7 @@ browser_test() {
   local data="$work/data"
   (cd backend && printf '%s\n' "$password" \
     | uv run trafficpi-admin --data-dir "$data" set-password --password-stdin) || return 1
-  (cd backend && nohup uv run trafficpi-vision run --demo --data-dir "$data" --port 18001 \
+  (cd backend && nohup uv run trafficpi-vision run --demo --history-days 3 --data-dir "$data" --port 18001 \
     > "$work/vision.log" 2>&1 < /dev/null &)
   (cd backend && nohup uv run trafficpi-api --data-dir "$data" --host 127.0.0.1 --port 18000 \
     --vision-url http://127.0.0.1:18001 > "$work/api.log" 2>&1 < /dev/null &)

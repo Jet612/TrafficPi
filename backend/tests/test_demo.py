@@ -1,13 +1,28 @@
 import itertools
+import logging
 import statistics
+from collections import Counter
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import pytest
 
 from trafficpi.db import create_db_engine, upgrade_to_head
 from trafficpi.db.store import Store
-from trafficpi.vision.demo import FPS, FRAME_SIZE, PERIOD_NS, DemoStreet
+from trafficpi.vision import cli
+from trafficpi.vision.demo import (
+    FPS,
+    FRAME_SIZE,
+    HOURLY_RATE,
+    KINDS,
+    LANES,
+    PERIOD_NS,
+    DemoStreet,
+    demo_history,
+)
 from trafficpi.vision.service import VisionService
 from trafficpi.vision.shutdown import StopRequest
+from trafficpi.vision.trails import MIN_EXTENT, decode_path
 
 
 class FakeTime:
@@ -131,3 +146,101 @@ def test_a_counting_line_counts_the_demo_traffic_in_both_directions() -> None:
     assert {e.direction for e in events} == {1, -1}
     assert {e.class_label for e in events} >= {"car"}
     assert all(e.line_id == "mid" for e in events)
+
+
+# --- the made-up past ---------------------------------------------------------------------------
+
+NEW_YORK = ZoneInfo("America/New_York")
+THURSDAY_NOON = int(datetime(2026, 10, 8, 12, 0, tzinfo=NEW_YORK).timestamp() * 1000)
+
+
+def local_date(ms: int) -> str:
+    return datetime.fromtimestamp(ms / 1000, NEW_YORK).date().isoformat()
+
+
+def test_the_history_covers_each_day_before_today_and_not_today() -> None:
+    trails = demo_history(3, now_ms=THURSDAY_NOON, tz=NEW_YORK)
+    days = Counter(local_date(t.started_at) for t in trails)
+    assert sorted(days) == ["2026-10-05", "2026-10-06", "2026-10-07"]
+    assert all(3_000 < n < 7_000 for n in days.values())  # about a weekday's worth each
+    assert [t.started_at for t in trails] == sorted(t.started_at for t in trails)
+
+
+def test_no_days_is_no_history() -> None:
+    assert demo_history(0, now_ms=THURSDAY_NOON, tz=NEW_YORK) == []
+
+
+def test_the_same_seed_gives_the_same_history_and_another_gives_another() -> None:
+    first = demo_history(1, now_ms=THURSDAY_NOON, tz=NEW_YORK, seed=3)
+    again = demo_history(1, now_ms=THURSDAY_NOON, tz=NEW_YORK, seed=3)
+    other = demo_history(1, now_ms=THURSDAY_NOON, tz=NEW_YORK, seed=4)
+    assert first == again
+    assert first != other
+
+
+def test_the_rush_hours_are_busier_than_the_night_and_weekends_than_weekdays() -> None:
+    # Monday 5 October to Sunday 11 October; "today" is the Monday after
+    now = int(datetime(2026, 10, 12, 12, 0, tzinfo=NEW_YORK).timestamp() * 1000)
+    trails = demo_history(7, now_ms=now, tz=NEW_YORK)
+    by_hour = Counter(datetime.fromtimestamp(t.started_at / 1000, NEW_YORK).hour for t in trails)
+    assert by_hour[8] > 8 * by_hour[3] and by_hour[17] > by_hour[8]
+    assert HOURLY_RATE[17] == max(HOURLY_RATE)
+    by_day = Counter(local_date(t.started_at) for t in trails)
+    assert by_day["2026-10-10"] < 0.85 * by_day["2026-10-08"]  # a Saturday and a Thursday
+    assert by_day["2026-10-11"] < 0.85 * by_day["2026-10-09"]  # a Sunday and a Friday
+
+
+def test_every_made_up_trail_is_a_vehicle_driving_along_a_lane_the_recorder_would_keep() -> None:
+    trails = demo_history(1, now_ms=THURSDAY_NOON, tz=NEW_YORK)[:400]
+    kinds = {kind.name for kind in KINDS}
+    for trail in trails:
+        path = decode_path(trail.path)
+        assert trail.label in kinds
+        assert trail.points == len(path) and trail.points >= 3
+        assert trail.ended_at - trail.started_at == path.offsets_ms[-1]
+        assert trail.extent >= MIN_EXTENT and trail.extent > 0.8  # all the way across
+        assert (path.offsets_ms[1:] > path.offsets_ms[:-1]).all()  # time only goes forward
+        assert path.x.min() >= 0.0 and path.x.max() <= 1.0
+        lane = min(LANES.values(), key=lambda bottom: abs(bottom - path.y.mean()))
+        assert abs(path.y.mean() - lane) < 0.02
+        assert abs(path.y.max() - path.y.min()) < 0.02  # a vehicle holds its lane
+    # in both directions, in both lanes
+    directions = {decode_path(t.path).x[-1] > decode_path(t.path).x[0] for t in trails}
+    assert directions == {True, False}
+
+
+def test_a_vehicle_takes_as_long_to_cross_as_the_live_street_gives_it() -> None:
+    trails = demo_history(1, now_ms=THURSDAY_NOON, tz=NEW_YORK)
+    seconds = {k.name: [] for k in KINDS}
+    for trail in trails:
+        seconds[trail.label].append((trail.ended_at - trail.started_at) / 1000)
+    for kind in KINDS:
+        slowest, fastest = 0.94 / kind.speed[0], 0.94 / kind.speed[1]
+        assert fastest - 0.1 <= min(seconds[kind.name]) and max(seconds[kind.name]) <= slowest + 0.1
+
+
+def test_the_demo_is_given_a_past_once_and_only_if_it_has_none(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    engine = create_db_engine(":memory:")
+    upgrade_to_head(engine)
+    store = Store(engine)
+    store.ensure_camera()
+    store.set_setting("timezone", "America/New_York")
+    log = logging.getLogger("trafficpi.vision")
+    with caplog.at_level(logging.WARNING, logger="trafficpi.vision"):
+        cli._seed_demo_history(store, 2, log)
+    written = store.trail_count()
+    assert written > 5_000
+    assert f"wrote {written} made-up trails for the 2 days" in caplog.text
+    # a second start of the same demo keeps what it has: the same days, not twice as many
+    cli._seed_demo_history(store, 2, log)
+    assert store.trail_count() == written
+    # and a demo that has live trails of its own is left alone
+    other_engine = create_db_engine(":memory:")
+    upgrade_to_head(other_engine)
+    other = Store(other_engine)
+    other.ensure_camera()
+    other.add_trails(demo_history(1, now_ms=THURSDAY_NOON, tz=NEW_YORK)[:1])
+    cli._seed_demo_history(other, 2, log)
+    assert other.trail_count() == 1

@@ -20,15 +20,16 @@ import numpy as np
 os.environ.setdefault("LIBCAMERA_LOG_LEVELS", "*:WARN")
 os.environ.setdefault("HAILORT_LOGGER_PATH", "NONE")
 
+from trafficpi.core.clock import resolve_timezone
 from trafficpi.core.coco import TRAFFIC_CLASS_IDS
 from trafficpi.core.paths import DATA_DIR_HELP, default_data_dir
 from trafficpi.core.profile import ProfileError
 from trafficpi.core.types import Detection
-from trafficpi.db.store import open_store
+from trafficpi.db.store import Store, open_store
 from trafficpi.vision import pipeline
 from trafficpi.vision.annotate import annotate_clip
 from trafficpi.vision.compare import compare_logs, format_comparison
-from trafficpi.vision.demo import DemoStreet
+from trafficpi.vision.demo import DemoStreet, demo_history
 from trafficpi.vision.detector import (
     DEFAULT_MODEL,
     DEFAULT_SCORE_THRESHOLD,
@@ -421,6 +422,20 @@ def _configure_logging() -> None:
     logging.getLogger("alembic").setLevel(logging.WARNING)  # and so does the migration runner
 
 
+def _seed_demo_history(store: Store, days: int, log: logging.Logger) -> None:
+    """Give a demo database that has no trails yet some made-up ones for the days before today."""
+    if store.trail_count() > 0:
+        return
+    trails = demo_history(
+        days,
+        now_ms=time.time_ns() // 1_000_000,
+        tz=resolve_timezone(store.get_setting("timezone")),
+    )
+    for start in range(0, len(trails), 2_000):
+        store.add_trails(trails[start : start + 2_000])
+    log.warning("DEMO: wrote %d made-up trails for the %d days before today", len(trails), days)
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     """The vision service: count traffic into the database and serve the live view locally."""
     _configure_logging()
@@ -440,6 +455,8 @@ def cmd_run(args: argparse.Namespace) -> int:
             "DEMO: a made-up street instead of the camera; counts go to %s",
             data_dir / "trafficpi.db",
         )
+        if args.history_days:
+            _seed_demo_history(store, args.history_days, log)
     else:
         settings = _camera_settings(args)
         detector, hef = _make_detector(args)
@@ -520,6 +537,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="a made-up street with cars, trucks and bicycles instead of the camera and the "
         "accelerator, neither of which is needed; counts go to <data-dir>/demo unless "
         "--data-dir is given",
+    )
+    run.add_argument(
+        "--history-days",
+        type=int,
+        default=0,
+        metavar="N",
+        help="with --demo: if the demo has no trails yet, make up some for each of the N days "
+        "before today, so that the History page has something to show at once",
     )
     run.set_defaults(func=cmd_run)
 

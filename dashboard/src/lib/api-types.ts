@@ -609,6 +609,8 @@ export interface components {
             };
             /** Count */
             count: number;
+            /** End */
+            end: number;
             /** Hour */
             hour: number;
             /** T */

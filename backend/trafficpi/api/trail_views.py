@@ -62,6 +62,7 @@ def day_by_the_hour(store: Store, tz: ZoneInfo, day: date) -> dict[str, Any]:
         hours.append(
             {
                 "t": t,
+                "end": min(t + HOUR_MS, end_ms),
                 "hour": datetime.fromtimestamp(t / 1000, tz).hour,
                 "count": sum(by_kind.values()),
                 "by_kind": dict(by_kind),

@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 class WallClock:
@@ -57,3 +58,11 @@ def system_timezone_name() -> str:
         return "UTC"
     marker = "zoneinfo/"
     return target.split(marker, 1)[1] if marker in target else "UTC"
+
+
+def resolve_timezone(name: object) -> ZoneInfo:
+    """The time zone called ``name``: the machine's own if there is no name, UTC if no such zone."""
+    try:
+        return ZoneInfo(name if isinstance(name, str) and name else system_timezone_name())
+    except (ZoneInfoNotFoundError, ValueError):
+        return ZoneInfo("UTC")

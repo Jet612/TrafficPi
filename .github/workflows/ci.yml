@@ -148,13 +148,14 @@ jobs:
           (cd dashboard && pnpm install --frozen-lockfile && pnpm build)
 
       # No camera or accelerator here: `run --demo` plays a drawn street through the real tracker,
-      # counting lines and database, and the API serves the built dashboard.
+      # counting lines and database, and the API serves the built dashboard. --history-days gives
+      # it three earlier days of made-up trails, so that the History page has days to move between.
       - name: Start the services
         working-directory: backend
         run: |
           data="$RUNNER_TEMP/trafficpi"
           printf '%s\n' "$E2E_PASSWORD" | uv run trafficpi-admin --data-dir "$data" set-password --password-stdin
-          nohup uv run trafficpi-vision run --demo --data-dir "$data" > "$RUNNER_TEMP/vision.log" 2>&1 &
+          nohup uv run trafficpi-vision run --demo --history-days 3 --data-dir "$data" > "$RUNNER_TEMP/vision.log" 2>&1 &
           nohup uv run trafficpi-api --data-dir "$data" --host 127.0.0.1 > "$RUNNER_TEMP/api.log" 2>&1 &
           for _ in $(seq 1 60); do
             curl -fsS http://127.0.0.1:8000/api/health && break

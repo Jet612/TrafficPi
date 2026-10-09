@@ -51,7 +51,7 @@ from trafficpi.api.schemas import (
 )
 from trafficpi.api.settings import ApiSettings, normalize_origin
 from trafficpi.api.vision_client import VisionClient, VisionUnavailable
-from trafficpi.core.clock import WallClock, system_timezone_name
+from trafficpi.core.clock import WallClock, resolve_timezone
 from trafficpi.core.profile import (
     Profile,
     ProfileError,
@@ -134,11 +134,7 @@ def _trail_kinds(kinds: str | None) -> list[str] | None:
 
 
 def _timezone(store: Store) -> ZoneInfo:
-    name = store.get_setting("timezone") or system_timezone_name()
-    try:
-        return ZoneInfo(name)
-    except ZoneInfoNotFoundError:
-        return ZoneInfo("UTC")
+    return resolve_timezone(store.get_setting("timezone"))
 
 
 def _logged_in_user(ctx: ApiContext, cookie: str | None) -> str | None:

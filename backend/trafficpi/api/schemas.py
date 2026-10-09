@@ -108,6 +108,7 @@ class Settings(BaseModel):
 
 class TrailHour(BaseModel):
     t: int  # ms since the epoch: when the hour began
+    end: int  # and when it ended: an hour on, or sooner where the day ends
     hour: int  # on the local clock, 0 to 23 (twice, for the hour that repeats when clocks go back)
     count: int  # trails that began in it
     by_kind: dict[str, int]

@@ -782,6 +782,10 @@
             "title": "Count",
             "type": "integer"
           },
+          "end": {
+            "title": "End",
+            "type": "integer"
+          },
           "hour": {
             "title": "Hour",
             "type": "integer"
@@ -793,6 +797,7 @@
         },
         "required": [
           "t",
+          "end",
           "hour",
           "count",
           "by_kind"
