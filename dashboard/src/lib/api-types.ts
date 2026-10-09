@@ -578,6 +578,8 @@ export interface components {
             hourly: components["schemas"]["HourCount"][];
             /** Lines */
             lines: components["schemas"]["LineTotals"][];
+            /** Removed */
+            removed: number;
             /** Timezone */
             timezone: string;
             /** Total */

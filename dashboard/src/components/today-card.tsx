@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { useStats } from "@/components/stats-provider";
 import { classColor, classLabel, orderedClasses } from "@/lib/classes";
@@ -34,11 +35,19 @@ function TodayBody({ today }: { today: TodaySummary }) {
           {formatCount(today.total)}
         </p>
         <p className="mt-2 text-sm text-ink-2">
-          {today.lines.length === 0
-            ? "No counting lines yet. Add one under Counting lines, further down."
-            : today.total === 0
-              ? "Nothing has crossed a counting line yet today."
-              : `across ${today.lines.length} counting line${today.lines.length === 1 ? "" : "s"}`}
+          {today.lines.length === 0 ? (
+            <>
+              {today.total === 0 ? "No counting lines yet." : "All of these were counted by lines that have since been removed."}{" "}
+              <Link href="/setup/" className="font-medium text-accent underline underline-offset-2">
+                Add a line on the Setup page
+              </Link>
+              {today.total === 0 ? "." : " to count again."}
+            </>
+          ) : today.total === 0 ? (
+            "Nothing has crossed a counting line yet today."
+          ) : (
+            `across ${today.lines.length} counting line${today.lines.length === 1 ? "" : "s"}`
+          )}
         </p>
       </div>
 
@@ -85,6 +94,13 @@ function TodayBody({ today }: { today: TodaySummary }) {
             </tbody>
           </table>
           <p className="mt-2 text-sm text-ink-3">Forward is the way the arrow on the video points.</p>
+          {today.removed > 0 && (
+            <p className="mt-1 text-sm text-ink-3" data-testid="removed-lines-note">
+              {today.removed === 1
+                ? "1 more was counted by a line that has since been removed."
+                : `${formatCount(today.removed)} more were counted by lines that have since been removed.`}
+            </p>
+          )}
         </div>
       )}
     </>

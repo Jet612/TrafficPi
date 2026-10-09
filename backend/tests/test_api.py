@@ -414,7 +414,13 @@ def test_today_counts_by_line_direction_and_class(logged_in: TestClient, store: 
     (line,) = today["lines"]
     assert line["name"] == "Northbound" and line["forward"] == 2 and line["reverse"] == 1
     assert line["by_class"] == {"car": 2, "truck": 1}
+    assert today["removed"] == 0
     assert len(today["hourly"]) >= 1
+    # a line that is deleted afterwards: its counts stay in the total, as one number, not a row
+    count(store, "south", 1, "bus", now)
+    again = logged_in.get("/api/stats/today").json()
+    assert again["total"] == 4 and again["removed"] == 1
+    assert [x["id"] for x in again["lines"]] == ["north"]
 
 
 def test_series_buckets_and_validates_the_range(logged_in: TestClient, store: Store) -> None:

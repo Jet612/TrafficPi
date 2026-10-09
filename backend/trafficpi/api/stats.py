@@ -35,22 +35,30 @@ def summarize(
 ) -> dict[str, Any]:
     """Totals overall, by class and by line, from minute rows.
 
-    Every line in ``line_names`` is listed, with zeros if nothing crossed it yet; so are lines
-    that have counts but are no longer configured.
+    ``line_names`` says which lines exist: every one of them is listed, with zeros if nothing
+    crossed it yet. What a line that has since been deleted counted stays in the totals, and is
+    given together as ``removed`` rather than as a row for each (nobody remembers their ids).
+    Without ``line_names`` every line that has counts is listed.
     """
+    configured = line_names is not None
     names = line_names or {}
     total = 0
+    removed = 0
     by_class: Counter[str] = Counter()
     lines: dict[str, dict[str, Any]] = {line_id: _empty_line() for line_id in names}
     for row in rows:
         total += row.count
         by_class[row.class_label] += row.count
+        if configured and row.line_id not in lines:
+            removed += row.count
+            continue
         line = lines.setdefault(row.line_id, _empty_line())
         line[DIRECTION_NAMES.get(row.direction, "forward")] += row.count
         line["by_class"][row.class_label] = line["by_class"].get(row.class_label, 0) + row.count
     return {
         "total": total,
         "by_class": dict(by_class.most_common()),
+        "removed": removed,
         "lines": [
             {"id": line_id, "name": names.get(line_id, ""), **data}
             for line_id, data in sorted(lines.items())

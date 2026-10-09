@@ -11,6 +11,7 @@ function today(counts: number[], startHour = 0): TodaySummary {
     timezone: "America/New_York",
     total: counts.reduce((a, b) => a + b, 0),
     by_class: {},
+    removed: 0,
     lines: [],
     hourly: counts.map((count, i) => ({ t: MIDNIGHT + i * HOUR, hour: startHour + i, count })),
   };

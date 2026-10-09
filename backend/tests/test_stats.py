@@ -44,28 +44,54 @@ def test_summarize_by_class_and_line(store: Store) -> None:
     count(store, ms(2026, 10, 8, 9, 7), direction=-1)
     count(store, ms(2026, 10, 8, 9, 8), line="side", label="bus")
     rows = store.minute_counts(0, 2**40)
-    summary = stats.summarize(rows, {"main": "Main road"})
+    summary = stats.summarize(rows, {"main": "Main road", "side": "Side street"})
     assert summary["total"] == 4 and summary["by_class"] == {"car": 2, "truck": 1, "bus": 1}
     main, side = summary["lines"]
     assert main["id"] == "main" and main["name"] == "Main road"
     assert (main["forward"], main["reverse"]) == (2, 1)
     assert main["by_class"] == {"car": 2, "truck": 1}
-    assert side["id"] == "side" and side["name"] == "" and side["forward"] == 1
+    assert side["id"] == "side" and side["name"] == "Side street" and side["forward"] == 1
+    assert summary["removed"] == 0
+
+
+def test_without_names_every_line_that_has_counts_is_listed_by_its_id(store: Store) -> None:
+    count(store, ms(2026, 10, 8, 9, 5))
+    count(store, ms(2026, 10, 8, 9, 6), line="side", label="bus")
+    summary = stats.summarize(store.minute_counts(0, 2**40))
+    assert [(x["id"], x["name"]) for x in summary["lines"]] == [("main", ""), ("side", "")]
+    assert summary["removed"] == 0
 
 
 def test_every_configured_line_is_listed_even_with_no_counts(store: Store) -> None:
-    count(store, ms(2026, 10, 8, 9, 5), line="gone")  # counted once, since removed from the profile
     summary = stats.summarize(
         store.minute_counts(0, 2**40), {"north": "Northbound", "south": "Southbound"}
     )
     assert [(x["id"], x["name"], x["forward"] + x["reverse"]) for x in summary["lines"]] == [
-        ("gone", "", 1),
         ("north", "Northbound", 0),
         ("south", "Southbound", 0),
     ]
-    assert summary["lines"][1]["by_class"] == {}
+    assert summary["lines"][0]["by_class"] == {}
     empty = stats.today_summary(store, NY, ms(2026, 10, 9, 15), {"north": "Northbound"})
     assert empty["total"] == 0 and [x["id"] for x in empty["lines"]] == ["north"]
+
+
+def test_what_deleted_lines_counted_is_in_the_totals_and_given_once_not_listed(
+    store: Store,
+) -> None:
+    """Lines get deleted and drawn again; their counts stay, but a row for each id is clutter."""
+    count(store, ms(2026, 10, 8, 9, 5), line="north")
+    count(store, ms(2026, 10, 8, 9, 6), line="gone-1", direction=-1)
+    count(store, ms(2026, 10, 8, 9, 7), line="gone-1", label="truck")
+    count(store, ms(2026, 10, 8, 9, 8), line="gone-2", label="bus")
+    summary = stats.summarize(store.minute_counts(0, 2**40), {"north": "Northbound"})
+    assert summary["total"] == 4 and summary["removed"] == 3
+    assert summary["by_class"] == {"car": 2, "truck": 1, "bus": 1}  # by kind they still count
+    assert [x["id"] for x in summary["lines"]] == ["north"]
+    (north,) = summary["lines"]
+    assert north["forward"] + north["reverse"] == 1
+    # with no line at all (all deleted), the whole total is "removed"
+    nothing = stats.summarize(store.minute_counts(0, 2**40), {})
+    assert nothing["lines"] == [] and nothing["removed"] == nothing["total"] == 4
 
 
 def test_today_uses_the_local_day_not_the_utc_day(store: Store) -> None:

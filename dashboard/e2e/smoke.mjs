@@ -599,6 +599,47 @@ try {
     assert.equal(await page.getByRole("dialog").count(), 0);
   });
 
+  await step("what deleted lines counted is one note under the table, not a row for each", async () => {
+    await goTo("Live");
+    const today = (over) => ({
+      date: "2026-10-09",
+      timezone: "UTC",
+      total: 15,
+      by_class: { car: 12, truck: 3 },
+      removed: 5,
+      lines: [{ id: "north", name: "Northbound", forward: 8, reverse: 2, by_class: { car: 8, truck: 2 } }],
+      hourly: [{ t: Date.UTC(2026, 9, 9), hour: 0, count: 15 }],
+      ...over,
+    });
+    const route = "**/api/stats/today";
+    const answer = (body) => (handler) => handler.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+    await page.route(route, answer(today()));
+    await page.reload();
+    await eventually(async () => assert.equal(await page.getByTestId("today-total").innerText(), "15"));
+    const rows = page.getByRole("table", { name: "Crossings by counting line" }).locator("tbody tr");
+    assert.equal(await rows.count(), 1, "one row, for the one line that exists");
+    assert.match(await rows.first().innerText(), /Northbound\s+8\s+2/);
+    assert.equal(await page.getByTestId("removed-lines-note").innerText(), "5 more were counted by lines that have since been removed.");
+
+    await page.unroute(route);
+    await page.route(route, answer(today({ removed: 1, total: 11 })));
+    await page.reload();
+    await eventually(async () => assert.equal(await page.getByTestId("removed-lines-note").innerText(), "1 more was counted by a line that has since been removed."));
+
+    await page.unroute(route);
+    await page.route(route, answer(today({ removed: 7, total: 7, by_class: { car: 7 }, lines: [] })));
+    await page.reload();
+    await page.getByText("All of these were counted by lines that have since been removed.").waitFor();
+    assert.equal(await page.getByRole("table", { name: "Crossings by counting line" }).count(), 0, "no table when no line exists");
+    await page.getByRole("link", { name: "Add a line on the Setup page" }).click();
+    await page.getByRole("heading", { level: 1, name: "Setup" }).waitFor({ state: "attached" });
+
+    await page.unroute(route);
+    await goTo("Live");
+    await page.reload();
+    await page.getByTestId("today-total").waitFor();
+  });
+
   await step("the chart shows a tooltip with the hour's counts", async () => {
     await goTo("History");
     // Hovering needs the bars on screen, as for a person, who would scroll down to the chart.

@@ -42,6 +42,7 @@ class TodaySummary(BaseModel):
     timezone: str
     total: int
     by_class: dict[str, int]
+    removed: int  # of the total, counted by lines that have been deleted since (not in `lines`)
     lines: list[LineTotals]
     hourly: list[HourCount]
 
