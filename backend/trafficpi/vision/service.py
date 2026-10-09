@@ -21,12 +21,13 @@ import numpy as np
 
 from trafficpi.core.clock import WallClock, resolve_timezone
 from trafficpi.core.evidence_settings import EvidenceSettings
-from trafficpi.core.paths import evidence_dir
+from trafficpi.core.paths import evidence_dir, reference_file
 from trafficpi.core.profile import Profile, ProfileError, empty_profile, parse_profile
 from trafficpi.core.trail_settings import DEFAULT_KEEP_DAYS
 from trafficpi.db.store import Store
 from trafficpi.vision import evidence as evidence_module
 from trafficpi.vision.detector import Detector
+from trafficpi.vision.drift import DriftMonitor, shape_points
 from trafficpi.vision.engine import EngineResult, TrafficEngine
 from trafficpi.vision.evidence import EvidenceFiles, EvidenceJob, EvidenceRecorder
 from trafficpi.vision.metrics import SystemSample, SystemSampler, decode_throttled
@@ -91,6 +92,7 @@ class LiveState:
         self._stop_signs: list[dict[str, Any]] = []
         self._profile_error: str | None = None
         self._system: dict[str, Any] = {}
+        self._drift: dict[str, Any] = {}
         self._camera_ok = False
         self._camera_error: str | None = None
         self._profile_version = 0
@@ -177,6 +179,11 @@ class LiveState:
                 "throttled_since_boot": since,
             }
 
+    def set_drift(self, status: dict[str, Any]) -> None:
+        """Publish what the camera-drift check has found (see :class:`DriftMonitor.status`)."""
+        with self._condition:
+            self._drift = dict(status)
+
     def set_camera_error(self, message: str) -> None:
         with self._condition:
             self._camera_ok, self._camera_error = False, message
@@ -212,6 +219,7 @@ class LiveState:
                 "tracks": list(self._tracks),
                 "events": list(self._events),
                 "system": dict(self._system),
+                "drift": dict(self._drift),
             }
 
     def latest_frame(self) -> tuple[int, np.ndarray | None]:
@@ -254,9 +262,11 @@ class VisionService:
         perf_counter: Callable[[], float] = time.perf_counter,
         data_dir: Path | None = None,
         evidence: EvidenceRecorder | None = None,
+        drift: DriftMonitor | None = None,
     ) -> None:
-        """``data_dir`` is where evidence is kept (None: none is kept); a ``evidence`` recorder can
-        be given, instead of the one made from it, for tests."""
+        """``data_dir`` is where evidence is kept and the reference picture is looked for (None:
+        neither); an ``evidence`` recorder or a ``drift`` monitor can be given, instead of the ones
+        made from it, for tests."""
         self.source = source
         self.detector = detector
         self.store = store
@@ -293,6 +303,7 @@ class VisionService:
         self._dropped_by_finished = 0  # frames that finished recorders had no room for
         self._next_evidence_cleanup = 0.0  # time.monotonic()
         self._stop_signs: dict[str, StopSign] = {}
+        self._drift = drift  # None until the service runs, and always without a data directory
 
     # --- configuration ----------------------------------------------------------------------
 
@@ -341,6 +352,8 @@ class VisionService:
         self._stop_signs = {sign.id: sign for sign in compiled.stop_signs}
         self._active_profile = profile
         self.profile_version = version
+        if self._drift is not None:
+            self._drift.set_points(shape_points(profile))
         self.live.set_profile(profile, version)
         log.info(
             "profile v%s loaded: %d counting line(s), %d stop sign(s), %d detection zone(s), "
@@ -368,7 +381,9 @@ class VisionService:
         self.load_profile()
         self._load_trail_settings()
         self._load_evidence_settings()
+        self._start_drift()
         if not self._open_source(stop):
+            self._finish_drift()
             return
         try:
             self._loop(stop, max_frames)
@@ -376,6 +391,7 @@ class VisionService:
             self._close_source()
             self._finish_trails()
             self._finish_evidence()
+            self._finish_drift()
 
     def _loop(self, stop: StopRequest, max_frames: int | None) -> None:
         sampler = SystemSampler()
@@ -402,6 +418,8 @@ class VisionService:
                 log.info("the camera is delivering frames again")
                 self._camera_failures = 0
                 self._camera_down_since = None
+            if self._drift is not None:
+                self._drift.offer(frame.image)  # returns at once unless a check is due
             detections = self.detector.detect(frame.image)
             result = self._engine.update(frame.timestamp_ns, detections)
 
@@ -505,6 +523,24 @@ class VisionService:
                     queued.min_speed,
                     queued.observed_s,
                 )
+
+    # --- the camera's view (plan.md M7, D40) ---------------------------------------------------
+
+    def _start_drift(self) -> None:
+        """Begin checking that the camera still sees what it saw when the reference picture was
+        kept. It only warns: nothing it finds changes what is counted."""
+        if self._drift is None:
+            if self._data_dir is None:
+                return
+            self._drift = DriftMonitor(reference_file(self._data_dir), publish=self.live.set_drift)
+        if self._active_profile is not None:
+            self._drift.set_points(shape_points(self._active_profile))
+        self.live.set_drift(self._drift.status())
+
+    def _finish_drift(self) -> None:
+        if self._drift is not None:
+            self._drift.close()
+            self._drift = None
 
     # --- evidence (plan.md D8, D24) ---------------------------------------------------------
 

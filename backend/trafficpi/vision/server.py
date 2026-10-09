@@ -114,6 +114,7 @@ def create_app(
             "evidence_waiting": service.evidence_waiting,
             "evidence_frames_dropped": service.evidence_frames_dropped,
             "profile_version": service.profile_version,
+            "drift": state["drift"].get("state"),  # ok, drifted, unknown, no_reference; None: off
         }
 
     @app.get("/state")

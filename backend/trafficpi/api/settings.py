@@ -6,7 +6,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from trafficpi.core.paths import default_data_dir
+from trafficpi.core.paths import default_data_dir, reference_file
 
 
 def _default_dashboard() -> Path | None:
@@ -76,4 +76,4 @@ class ApiSettings:
     @property
     def reference_path(self) -> Path:
         """The camera's reference picture: what the lines and zones were drawn on."""
-        return self.data_dir / "reference.jpg"
+        return reference_file(self.data_dir)

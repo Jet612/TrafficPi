@@ -30,3 +30,9 @@ def evidence_dir(data_dir: Path) -> Path:
     """Where the pictures and clips of stop-sign passes are kept. Paths in the database are
     relative to the data directory, so they begin with this folder's name."""
     return data_dir / "evidence"
+
+
+def reference_file(data_dir: Path) -> Path:
+    """The picture the lines and zones were drawn on, kept when the owner saves it in the editor.
+    The camera-drift check compares the live picture with it."""
+    return data_dir / "reference.jpg"

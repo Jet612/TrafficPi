@@ -40,8 +40,19 @@ def test_health_and_state(service: VisionService) -> None:
     assert health["trails_recorded"] == 1  # the car that drove through was saved when the run ended
     assert (health["evidence_written"], health["evidence_waiting"]) == (0, 0)
     assert health["evidence_frames_dropped"] == 0
+    assert health["drift"] is None  # the service has no data directory, so it keeps no check
     state = client.get("/state").json()
     assert state["frame"] == 29 and state["camera"]["ok"] and len(state["tracks"]) == 1
+    assert state["drift"] == {}
+
+
+def test_health_and_state_say_what_the_drift_check_has_found(service: VisionService) -> None:
+    service.live.set_drift(
+        {"state": "drifted", "message": "The view has changed.", "shift_pct": 2.4}
+    )
+    client = TestClient(create_app(service))
+    assert client.get("/health").json()["drift"] == "drifted"
+    assert client.get("/state").json()["drift"]["shift_pct"] == 2.4
 
 
 def test_health_reports_a_camera_that_is_offline(service: VisionService) -> None:
