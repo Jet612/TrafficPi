@@ -59,9 +59,21 @@ const edgeDots = () => canvas().locator('[data-handle="edge"]');
 const saveButton = () => page.getByRole("button", { name: "Save", exact: true });
 const listRows = () => page.getByRole("list", { name: "Lines and zones" }).getByRole("button");
 
-/** The editor is folded away once there is something in it; open it if it is. */
+const pagesNav = () => page.getByRole("navigation", { name: "Pages" });
+const pagePath = () => new URL(page.url()).pathname;
+
+/** Follow the header's link to a page (and do nothing when already there). */
+async function goTo(label) {
+  const link = pagesNav().getByRole("link", { name: label, exact: true });
+  if ((await link.getAttribute("aria-current")) === "page") return;
+  await link.click();
+  await page.getByRole("heading", { level: 1, name: label }).waitFor({ state: "attached" });
+  assert.equal(await pagesNav().getByRole("link", { name: label, exact: true }).getAttribute("aria-current"), "page");
+}
+
+/** The editor is on the Setup page; wait for it to have its profile. */
 async function openEditor() {
-  // Wait for the card to have its profile, which is when it decides whether to open by itself.
+  await goTo("Setup");
   await page.locator("summary", { hasText: "Lines and zones" }).filter({ hasText: /version \d+/ }).waitFor();
   const add = page.getByRole("button", { name: "Add counting line" });
   if (!(await add.isVisible())) await page.getByText("Lines and zones", { exact: true }).click();
@@ -157,6 +169,7 @@ try {
   });
 
   await step("today's total is a number", async () => {
+    await goTo("Live");
     const total = await page.getByTestId("today-total").innerText();
     assert.match(total, /^[\d,]+$/);
   });
@@ -211,6 +224,7 @@ try {
 
   if (demo) {
     await step("vehicles driving across the line are counted, and show up everywhere", async () => {
+      await goTo("Live");
       await waitForCounts(3);
       // A count has just happened: the list of latest counts and the table must have it too.
       await page.getByRole("list").filter({ has: page.locator("time") }).first().waitFor();
@@ -219,6 +233,7 @@ try {
   }
 
   await step("the line is drawn on the picture", async () => {
+    await goTo("Live");
     await page.waitForFunction(
       () => {
         const canvas = document.querySelector("canvas");
@@ -235,10 +250,12 @@ try {
   });
 
   await step("the line is listed under today's counts", async () => {
+    await goTo("Live");
     await page.getByRole("row", { name: /Across the street/ }).waitFor();
   });
 
   await step("a detection zone is reshaped with the mouse: a corner is added by its dot and removed by two presses", async () => {
+    await openEditor();
     await page.getByRole("button", { name: "Add detection zone" }).click();
     await edgeDots().first().waitFor();
     assert.equal(await corners().count(), 4, "a new zone is a rectangle");
@@ -330,6 +347,7 @@ try {
     const profile = await stored();
     assert.equal(profile.exclusion_zones.length, 1);
 
+    await goTo("Live");
     // The live view draws the zones' outlines. Look along the bottom edge of the exclusion zone
     // (0.85 of the way down, from 0.1 to 0.3 across), where no vehicle's box ever has an edge, and
     // check that something is drawn there, and nothing once the Zones switch is off.
@@ -363,11 +381,13 @@ try {
 
   if (demo) {
     await step("vehicles are still counted with the zones in place", async () => {
+      await goTo("Live");
       await waitForCounts(3);
     });
   }
 
   await step("the picture can be kept, and the profile exported and imported", async () => {
+    await openEditor();
     await page.getByRole("button", { name: /Keep this picture|Replace the saved picture/ }).click();
     await page.getByText(/Picture saved/).waitFor();
 
@@ -413,8 +433,8 @@ try {
   });
 
   await step("after a reload the editor shows what was saved", async () => {
-    await page.reload();
-    await page.getByRole("heading", { name: "Live view" }).waitFor();
+    await page.reload(); // on the Setup page: its address is its own
+    await page.getByRole("heading", { level: 1, name: "Setup" }).waitFor({ state: "attached" });
     await openEditor();
     await page.getByRole("button", { name: /Across the street/ }).waitFor();
     await page.getByRole("button", { name: /The road/ }).waitFor();
@@ -426,6 +446,7 @@ try {
   });
 
   await step("the overlay switches work and are remembered", async () => {
+    await goTo("Live");
     const lines = page.getByRole("switch", { name: "Lines" });
     assert.equal(await lines.getAttribute("aria-checked"), "true");
     await lines.click();
@@ -457,6 +478,7 @@ try {
       Element.prototype.requestFullscreen = undefined;
       Element.prototype.webkitRequestFullscreen = undefined;
     });
+    await goTo("Live");
     const stage = page.getByTestId("live-stage");
     const frame = page.getByTestId("live-frame");
     await stage.scrollIntoViewIfNeeded();
@@ -503,6 +525,7 @@ try {
   });
 
   await step("the chart shows a tooltip with the hour's counts", async () => {
+    await goTo("History");
     // Hovering needs the bars on screen, as for a person, who would scroll down to the chart.
     await page.locator(".recharts-wrapper").first().scrollIntoViewIfNeeded();
     // The bars exist a moment before they have a size, and the chart redraws as counts arrive, so
@@ -536,6 +559,54 @@ try {
     await table.waitFor();
     assert.ok((await table.getByRole("row").count()) >= 24, "a row for each hour, and the header");
     await page.getByRole("button", { name: "Chart", pressed: false }).click();
+  });
+
+  await step("the pages are real addresses: links, deep links, a missing slash, reload and back all work", async () => {
+    await goTo("Live");
+    assert.equal(pagePath(), "/");
+    const status = () => page.locator("header").getByRole("status").innerText();
+    const before = await status();
+    await goTo("System");
+    assert.equal(pagePath(), "/system/");
+    assert.equal(await pagesNav().getByRole("link", { name: "Live", exact: true }).getAttribute("aria-current"), null);
+    assert.equal(await page.getByRole("heading", { name: "System", level: 2 }).count(), 1, "the system card");
+    assert.match(await status(), /Live|offline|lost/i, `the header still reports the camera (it said: ${before})`);
+
+    await page.reload();
+    await page.getByRole("heading", { level: 1, name: "System" }).waitFor({ state: "attached" });
+    await page.goBack(); // the browser's back button returns to the page before
+    await page.getByRole("heading", { level: 1, name: "Live" }).waitFor({ state: "attached" });
+    assert.equal(pagePath(), "/");
+
+    await page.goto(`${base}/history`); // no trailing slash: the server sends it to the page
+    await page.getByRole("heading", { level: 1, name: "History" }).waitFor({ state: "attached" });
+    assert.equal(pagePath(), "/history/");
+    await page.goto(`${base}/setup/`); // a page opened directly, as from a bookmark
+    await page.getByRole("heading", { level: 1, name: "Setup" }).waitFor({ state: "attached" });
+    assert.equal(await page.title(), "Setup · TrafficPi");
+  });
+
+  await step("leaving the Setup page with unsaved changes asks first, and nothing is lost if you stay", async () => {
+    await openEditor();
+    await page.getByRole("button", { name: "Add counting line" }).click(); // an unsaved line
+    const unsaved = page.getByRole("list", { name: "Lines and zones" }).getByRole("button");
+    const before = await unsaved.count();
+    const asked = [];
+    page.once("dialog", async (dialog) => {
+      asked.push(dialog.message());
+      await dialog.dismiss(); // stay
+    });
+    await pagesNav().getByRole("link", { name: "Live", exact: true }).click();
+    await page.waitForTimeout(300);
+    assert.match(asked[0] ?? "", /not saved/);
+    assert.equal(pagePath(), "/setup/", "still on the page");
+    assert.equal(await unsaved.count(), before, "and the draft is intact");
+
+    page.once("dialog", (dialog) => void dialog.accept()); // now leave
+    await goTo("Live");
+    await openEditor();
+    assert.equal(await unsaved.count(), before - 1, "the unsaved line did not survive leaving");
+    assert.equal(await saveButton().isEnabled(), false);
   });
 
   await shot("dashboard");

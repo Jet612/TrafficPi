@@ -1,5 +1,6 @@
-// Sign in and photograph the dashboard, with the lines and zones editor open and a shape selected,
-// in light and dark, on a desktop and on a phone. For the README and for looking at the layout.
+// Sign in and photograph every page of the dashboard (Live, History, Setup with a shape selected,
+// System), in light and dark, on a desktop and on a phone. For the README and for looking at the
+// layout.
 //
 //   E2E_PASSWORD=... node e2e/screenshots.mjs [outputDir]
 //
@@ -39,16 +40,28 @@ for (const view of views) {
     await page.getByRole("heading", { name: "Live view" }).waitFor();
     await page.getByRole("status").filter({ hasText: /Live|offline|Connecting/ }).first().waitFor();
     await page.waitForTimeout(3500); // let the first frames, boxes and statistics arrive
-    await page.screenshot({ path: `${out}/${view.name}-${scheme}.png`, fullPage: true });
+    const shot = (name) => page.screenshot({ path: `${out}/${view.name}-${scheme}-${name}.png`, fullPage: true });
+    await shot("live");
 
-    // Open the editor (it is folded away once something is drawn) and select the first shape.
-    const add = page.getByRole("button", { name: "Add counting line" });
-    if (!(await add.isVisible())) await page.getByText("Lines and zones", { exact: true }).click();
-    await add.waitFor();
-    await page.getByRole("list", { name: "Lines and zones" }).getByRole("button").first().click();
+    // The other pages, by their own addresses (as a bookmark would open them).
+    await page.goto(`${base}/history/`);
+    await page.getByRole("heading", { level: 1, name: "History" }).waitFor({ state: "attached" });
+    await page.waitForTimeout(1200);
+    await shot("history");
+
+    await page.goto(`${base}/setup/`);
+    await page.getByRole("heading", { level: 1, name: "Setup" }).waitFor({ state: "attached" });
+    await page.getByRole("button", { name: "Add counting line" }).waitFor();
+    const shapes = page.getByRole("list", { name: "Lines and zones" }).getByRole("button");
+    if ((await shapes.count()) > 0) await shapes.first().click();
     await page.getByTestId("zone-canvas").waitFor();
     await page.waitForTimeout(800); // the picture
-    await page.screenshot({ path: `${out}/${view.name}-${scheme}-editor.png`, fullPage: true });
+    await shot("setup");
+
+    await page.goto(`${base}/system/`);
+    await page.getByRole("heading", { level: 1, name: "System" }).waitFor({ state: "attached" });
+    await page.waitForTimeout(800);
+    await shot("system");
     await context.close();
   }
 }

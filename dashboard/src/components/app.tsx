@@ -1,21 +1,28 @@
 "use client";
 
-import { Dashboard } from "@/components/dashboard";
+import { Header } from "@/components/header";
 import { LiveProvider } from "@/components/live-provider";
 import { LoginScreen } from "@/components/login-screen";
 import { Logo } from "@/components/logo";
 import { SessionProvider, useSession } from "@/components/session";
+import { StatsProvider } from "@/components/stats-provider";
 import { Button } from "@/components/ui/button";
+import { UnsavedProvider } from "@/components/unsaved";
 
-export function App() {
+/**
+ * Everything the pages share: the session, the live socket, today's numbers and the header with
+ * its navigation. It is the layout of every page, so moving between pages keeps all of it (the
+ * socket does not reconnect, nothing is fetched twice).
+ */
+export function App({ children }: { children: React.ReactNode }) {
   return (
     <SessionProvider>
-      <Gate />
+      <Gate>{children}</Gate>
     </SessionProvider>
   );
 }
 
-function Gate() {
+function Gate({ children }: { children: React.ReactNode }) {
   const { status, recheck } = useSession();
   if (status === "loading") {
     return (
@@ -40,7 +47,20 @@ function Gate() {
   if (status === "anonymous") return <LoginScreen />;
   return (
     <LiveProvider onRefused={recheck}>
-      <Dashboard />
+      <UnsavedProvider>
+        <StatsProvider>
+          <a
+            href="#main"
+            className="sr-only rounded-lg bg-accent px-4 py-2 text-accent-ink focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50"
+          >
+            Skip to the dashboard
+          </a>
+          <Header />
+          <main id="main" className="mx-auto max-w-[1280px] px-4 py-4 sm:px-6 sm:py-6">
+            {children}
+          </main>
+        </StatsProvider>
+      </UnsavedProvider>
     </LiveProvider>
   );
 }

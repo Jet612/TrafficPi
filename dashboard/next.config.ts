@@ -6,7 +6,9 @@ const development = process.env.NODE_ENV === "development";
 
 // `next dev` writes an AGENTS.md of instructions for AI tools into the project. This project keeps
 // its guidance for such tools in CLAUDE.md at the top, so the generator is off.
-const shared = { agentRules: false } as const;
+// `trailingSlash` makes the export write each page as a folder with an index.html (history/index.html),
+// which the API's static files serve at /history/ without any rewrite rule.
+const shared = { agentRules: false, trailingSlash: true } as const;
 
 const config: NextConfig = development
   ? {

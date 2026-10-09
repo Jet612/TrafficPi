@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "TrafficPi",
+  title: { default: "TrafficPi", template: "%s · TrafficPi" },
   description: "Traffic counts from a camera on a Raspberry Pi.",
   // A private dashboard: nothing here should be indexed.
   robots: { index: false, follow: false },

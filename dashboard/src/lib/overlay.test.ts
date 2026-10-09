@@ -223,6 +223,13 @@ describe("zones", () => {
     expect(texts(draw([road], { labels: false }).ctx)).toEqual([]);
   });
 
+  it("leaves the zones' names off a small picture, where they would run into everything else", () => {
+    const phone = { width: 360, height: 200 };
+    expect(texts(draw([road, parking], { labels: true }, phone).ctx)).toEqual([]);
+    // the outlines are still drawn
+    expect(draw([road], { labels: true }, phone).calls.filter((c) => c === "closePath")).toHaveLength(2);
+  });
+
   it("draws no zones when they are switched off, and skips one with too few corners", () => {
     expect(draw([road, parking], { zones: false }).calls).toEqual(["clearRect"]);
     expect(draw([{ ...road, points: [[0.1, 0.1], [0.2, 0.2]] }]).calls).toEqual(["clearRect"]);

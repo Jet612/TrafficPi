@@ -5,6 +5,7 @@ import { Ban, Camera, ChevronRight, Download, Pentagon, Redo2, RefreshCw, Route,
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status";
+import { useUnsavedWarning } from "@/components/unsaved";
 import { useStats } from "@/components/stats-provider";
 import { ZoneCanvas } from "@/components/zone-canvas";
 import { ZoneInspector } from "@/components/zone-inspector";
@@ -14,7 +15,6 @@ import { formatDateTime } from "@/lib/format";
 import { canRedo, canUndo, editorReducer, initialEditorState } from "@/lib/editor-state";
 import {
   MAX_ELEMENTS,
-  elements,
   emptyProfile,
   hasErrors,
   problems as findProblems,
@@ -43,7 +43,7 @@ export function ZoneEditor() {
   const [saved, setSaved] = useState<Saved | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [unreadable, setUnreadable] = useState<string | null>(null);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true); // it has a page of its own now
   const [busy, setBusy] = useState<null | "save" | "picture" | "import">(null);
   const [outcome, setOutcome] = useState<Outcome>(null);
   const [stillAt, setStillAt] = useState(0); // changes when a new still from the camera is wanted
@@ -56,6 +56,7 @@ export function ZoneEditor() {
   const found = useMemo(() => findProblems(draft), [draft]);
   const blocked = hasErrors(found);
   const dirty = saved !== null && !sameProfile(draft, saved.profile);
+  useUnsavedWarning(dirty); // leaving the page, by a link or by closing the tab, asks first
 
   useEffect(() => {
     const controller = new AbortController();
@@ -65,11 +66,6 @@ export function ZoneEditor() {
         dispatch({ type: "load", profile: result.profile });
         setSaved({ profile: result.profile, version: result.version, referenceAt: result.reference_at });
         setUnreadable(result.problem);
-        // With nothing drawn yet this is where a new installation starts, so show the editor.
-        if (elements(result.profile).length === 0) {
-          setStillAt(Date.now());
-          setOpen(true);
-        }
       })
       .catch((error: unknown) => {
         if (!controller.signal.aborted) {

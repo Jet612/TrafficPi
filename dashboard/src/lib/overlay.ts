@@ -185,7 +185,9 @@ export function drawOverlay(
   ctx.lineJoin = "round";
   ctx.lineCap = "round";
 
-  if (options.zones) drawZones(ctx, size, scene.zones, options.labels, colors, compact);
+  // A zone's name is long ("Ignored: Parked cars") and, on a phone's small picture, runs into the
+  // lines and the vehicles' labels; the outline says where it is, and the Setup page has the names.
+  if (options.zones) drawZones(ctx, size, scene.zones, options.labels && !compact, colors, compact);
 
   if (options.trails) {
     for (const [, trail] of trails) {
