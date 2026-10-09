@@ -2,20 +2,29 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Collection, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
-from sqlalchemy import Engine, func, select
+from sqlalchemy import CursorResult, Engine, delete, func, select
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.orm import Session, sessionmaker
 
 from trafficpi.core.clock import WallClock
-from trafficpi.db.models import Camera, Event, MinuteCount, Profile, Setting, User
+from trafficpi.core.trail_settings import (
+    DEFAULT_KEEP_DAYS,
+    ENABLED_KEY,
+    KEEP_DAYS_KEY,
+    MAX_KEEP_DAYS,
+    PEOPLE_KEY,
+    TrailSettings,
+)
+from trafficpi.db.models import Camera, Event, MinuteCount, Profile, Setting, Trail, User
 from trafficpi.db.session import create_db_engine, upgrade_to_head
 from trafficpi.vision.rules import CountEvent
+from trafficpi.vision.trails import FinishedTrail
 
 DEFAULT_CAMERA = "default"
 
@@ -40,6 +49,17 @@ class CountRow:
     direction: int
     class_label: str
     count: int
+
+
+@dataclass(frozen=True, slots=True)
+class TrailRow:
+    id: int
+    started_at: int  # ms since the epoch, UTC
+    ended_at: int
+    class_label: str
+    points: int
+    extent: float
+    path: bytes  # decode with ``trafficpi.vision.trails.decode_path``
 
 
 @dataclass(frozen=True, slots=True)
@@ -182,6 +202,91 @@ class Store:
             return s.execute(
                 select(func.count(Event.id)).where(Event.camera_id == self.camera_id)
             ).scalar_one()
+
+    # --- trails ----------------------------------------------------------------------------
+
+    def add_trails(self, trails: Sequence[FinishedTrail]) -> None:
+        """Store finished trails, all in one transaction."""
+        if not trails:
+            return
+        with self._session() as s:
+            s.add_all(
+                Trail(
+                    camera_id=self.camera_id,
+                    started_at=t.started_at,
+                    ended_at=t.ended_at,
+                    class_label=t.label,
+                    points=t.points,
+                    extent=t.extent,
+                    path=t.path,
+                )
+                for t in trails
+            )
+
+    def trails_between(
+        self,
+        start_ms: int,
+        end_ms: int,
+        *,
+        labels: Collection[str] | None = None,
+        limit: int = 20_000,
+    ) -> list[TrailRow]:
+        """Trails that began in ``[start_ms, end_ms)``, oldest first, at most ``limit`` of them."""
+        query = select(Trail).where(
+            Trail.camera_id == self.camera_id,
+            Trail.started_at >= start_ms,
+            Trail.started_at < end_ms,
+        )
+        if labels is not None:
+            query = query.where(Trail.class_label.in_(list(labels)))
+        with self._session() as s:
+            rows = s.execute(query.order_by(Trail.started_at, Trail.id).limit(limit)).scalars()
+            return [
+                TrailRow(r.id, r.started_at, r.ended_at, r.class_label, r.points, r.extent, r.path)
+                for r in rows
+            ]
+
+    def trail_count(self, start_ms: int | None = None, end_ms: int | None = None) -> int:
+        """How many trails began in ``[start_ms, end_ms)`` (open ended when a bound is None)."""
+        query = select(func.count(Trail.id)).where(Trail.camera_id == self.camera_id)
+        if start_ms is not None:
+            query = query.where(Trail.started_at >= start_ms)
+        if end_ms is not None:
+            query = query.where(Trail.started_at < end_ms)
+        with self._session() as s:
+            return s.execute(query).scalar_one()
+
+    def delete_trails_before(self, cutoff_ms: int, *, limit: int = 2_000) -> int:
+        """Delete up to ``limit`` trails that ended before ``cutoff_ms``; returns how many went.
+
+        A limit keeps each transaction short, so that the camera loop, which writes counts to the
+        same file, is never made to wait for a big clean-up: call it again while it returns
+        ``limit``.
+        """
+        oldest = (
+            select(Trail.id)
+            .where(Trail.camera_id == self.camera_id, Trail.ended_at < cutoff_ms)
+            .order_by(Trail.ended_at)
+            .limit(limit)
+        )
+        with self._session() as s:
+            result = cast("CursorResult[Any]", s.execute(delete(Trail).where(Trail.id.in_(oldest))))
+            return result.rowcount
+
+    def get_trail_settings(self) -> TrailSettings:
+        """Which trails are saved and for how long; what is stored but unusable is ignored."""
+        keep = self.get_setting(KEEP_DAYS_KEY, DEFAULT_KEEP_DAYS)
+        usable = isinstance(keep, int) and not isinstance(keep, bool) and 1 <= keep <= MAX_KEEP_DAYS
+        return TrailSettings(
+            enabled=self.get_setting(ENABLED_KEY, True) is not False,
+            people=self.get_setting(PEOPLE_KEY, False) is True,
+            keep_days=keep if usable else DEFAULT_KEEP_DAYS,
+        )
+
+    def set_trail_settings(self, settings: TrailSettings) -> None:
+        self.set_setting(ENABLED_KEY, settings.enabled)
+        self.set_setting(PEOPLE_KEY, settings.people)
+        self.set_setting(KEEP_DAYS_KEY, settings.keep_days)
 
     # --- settings and profile --------------------------------------------------------------
 

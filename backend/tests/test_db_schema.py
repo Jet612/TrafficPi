@@ -11,7 +11,15 @@ def test_migrating_creates_every_table(tmp_path: Path) -> None:
     engine = create_db_engine(tmp_path / "t.db")
     upgrade_to_head(engine)
     tables = set(inspect(engine).get_table_names())
-    assert {"cameras", "events", "minute_counts", "users", "settings", "profiles"} <= tables
+    assert {
+        "cameras",
+        "events",
+        "minute_counts",
+        "users",
+        "settings",
+        "profiles",
+        "trails",
+    } <= tables
     assert "alembic_version" in tables
 
 

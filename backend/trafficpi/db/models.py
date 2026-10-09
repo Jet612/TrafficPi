@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import JSON, ForeignKey, Index, Integer, String
+from sqlalchemy import JSON, Float, ForeignKey, Index, Integer, LargeBinary, String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -59,6 +59,22 @@ class MinuteCount(Base):
     direction: Mapped[int] = mapped_column(Integer, primary_key=True)
     class_label: Mapped[str] = mapped_column(String, primary_key=True)
     count: Mapped[int] = mapped_column(Integer)
+
+
+class Trail(Base):
+    """The path one vehicle took, saved when its track ended (see ``vision/trails.py``)."""
+
+    __tablename__ = "trails"
+    __table_args__ = (Index("ix_trails_camera_time", "camera_id", "started_at"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    camera_id: Mapped[str] = mapped_column(ForeignKey("cameras.id"))
+    started_at: Mapped[int] = mapped_column(Integer)  # ms
+    ended_at: Mapped[int] = mapped_column(Integer)  # ms
+    class_label: Mapped[str] = mapped_column(String)
+    points: Mapped[int] = mapped_column(Integer)
+    extent: Mapped[float] = mapped_column(Float)  # how far the path spreads, as a picture fraction
+    path: Mapped[bytes] = mapped_column(LargeBinary)  # ``encode_path`` in vision/trails.py
 
 
 class User(Base):

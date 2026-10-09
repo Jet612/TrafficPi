@@ -109,6 +109,7 @@ def create_app(
             "uptime_s": state["uptime_s"],
             "frames": service.frames,
             "events_recorded": service.events_recorded,
+            "trails_recorded": service.trails_recorded,
             "profile_version": service.profile_version,
         }
 

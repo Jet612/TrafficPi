@@ -7,6 +7,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from trafficpi.core.profile import Profile
+from trafficpi.core.trail_settings import MAX_KEEP_DAYS
 
 
 class LoginRequest(BaseModel):
@@ -95,8 +96,14 @@ class ReferenceSaved(BaseModel):
 
 
 class Settings(BaseModel):
+    """Everything the Setup page can change. A PUT replaces all of it, so every member is given."""
+
     timezone: str
     units: Literal["mph", "kmh"]
+    # Strict, so that a stray `true` is not read as the number of days, nor "yes" as a switch.
+    trails_enabled: bool = Field(strict=True)  # save the path each vehicle took (plan.md D21)
+    trails_people: bool = Field(strict=True)  # and people's paths too (vehicles' only, if not)
+    trails_keep_days: int = Field(strict=True, ge=1, le=MAX_KEEP_DAYS)  # older ones are deleted
 
 
 class DiskStatus(BaseModel):

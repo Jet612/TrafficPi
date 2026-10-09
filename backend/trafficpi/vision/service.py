@@ -19,19 +19,25 @@ import numpy as np
 
 from trafficpi.core.clock import WallClock
 from trafficpi.core.profile import Profile, ProfileError, empty_profile, parse_profile
+from trafficpi.core.trail_settings import DEFAULT_KEEP_DAYS
 from trafficpi.db.store import Store
 from trafficpi.vision.detector import Detector
-from trafficpi.vision.engine import TrafficEngine
+from trafficpi.vision.engine import EngineResult, TrafficEngine
 from trafficpi.vision.metrics import SystemSample, SystemSampler, decode_throttled
 from trafficpi.vision.profile import compile_profile
 from trafficpi.vision.rules import CountEvent, CountingRule, Rule
 from trafficpi.vision.shutdown import StopRequest
 from trafficpi.vision.sources import EndOfStream, Frame, FrameSource
 from trafficpi.vision.tracker import ByteTracker, TrackerConfig, TrackUpdate
+from trafficpi.vision.trails import FinishedTrail, TrailConfig, TrailRecorder, trail_classes
 
 log = logging.getLogger("trafficpi.vision")
 
 MAX_PENDING_WRITES = 1000
+MAX_PENDING_TRAILS = 2000
+TRAIL_RETRY_S = 5.0  # after a failed write, wait this long before trying again
+TRAIL_CLEANUP_CHUNK = 2000  # trails deleted in one transaction
+TRAIL_CLEANUP_CHUNKS_PER_PASS = 5  # so that a big backlog never holds up the camera loop
 
 
 class CameraUnavailable(RuntimeError):
@@ -48,6 +54,9 @@ class ServiceConfig:
     # a supervisor (systemd) restarts the whole process. Starting afresh also resets libcamera,
     # and bounds what Picamera2 leaks (a file descriptor) on every failed attempt.
     camera_giveup_s: float = 300.0
+    trail_cleanup_every_s: float = (
+        6 * 3600.0
+    )  # how often trails older than the owner wants are deleted
 
 
 class LiveState:
@@ -245,6 +254,12 @@ class VisionService:
         self.events_recorded = 0
         self._camera_failures = 0  # in a row, since a frame last arrived
         self._camera_down_since: float | None = None  # time.monotonic() of the first of them
+        self._trails: TrailRecorder | None = None  # None while trails are switched off
+        self._pending_trails: deque[FinishedTrail] = deque(maxlen=MAX_PENDING_TRAILS)
+        self._trail_retry_at = 0.0  # time.monotonic(): do not try to store trails before this
+        self._next_trail_cleanup = 0.0  # time.monotonic(): delete old trails when this has passed
+        self._keep_days = DEFAULT_KEEP_DAYS
+        self.trails_recorded = 0
 
     # --- configuration ----------------------------------------------------------------------
 
@@ -305,12 +320,14 @@ class VisionService:
         state and started again every ``camera_retry_s`` seconds; the loop never gives up.
         """
         self.load_profile()
+        self._load_trail_settings()
         if not self._open_source(stop):
             return
         try:
             self._loop(stop, max_frames)
         finally:
             self._close_source()
+            self._finish_trails()
 
     def _loop(self, stop: StopRequest, max_frames: int | None) -> None:
         sampler = SystemSampler()
@@ -321,6 +338,7 @@ class VisionService:
             if self._reload.is_set():
                 self._reload.clear()
                 self.load_profile()
+                self._load_trail_settings()
             try:
                 frame = self.source.read()
             except EndOfStream:
@@ -342,6 +360,7 @@ class VisionService:
             for event in result.events:
                 if isinstance(event, CountEvent):
                     self._record(event, now_ms)
+            self._follow_trails(result, now_ms)
 
             now = self._perf_counter()
             gap = now - last
@@ -357,6 +376,8 @@ class VisionService:
             if time.monotonic() >= next_metrics:
                 self.live.set_system(sampler.sample())
                 next_metrics = time.monotonic() + self.config.metrics_every_s
+            if time.monotonic() >= self._next_trail_cleanup:
+                self._clean_up_trails()
 
     # --- the frame source's life cycle ------------------------------------------------------
 
@@ -413,3 +434,77 @@ class VisionService:
                 return
             self._pending.popleft()
             self.events_recorded += 1
+
+    # --- trails (plan.md D21) ---------------------------------------------------------------
+
+    def _load_trail_settings(self) -> None:
+        """Read which trails are saved and for how long (the owner may have changed it)."""
+        try:
+            settings = self.store.get_trail_settings()
+        except Exception:
+            log.exception("could not read the trail settings; keeping the ones in use")
+            return
+        self._keep_days = settings.keep_days
+        if not settings.enabled:
+            self._trails = None  # paths in progress are dropped: switched off means no more
+            return
+        config = TrailConfig(classes=trail_classes(people=settings.people))
+        if self._trails is None:
+            self._trails = TrailRecorder(config)
+        else:
+            self._trails.config = config
+
+    def _follow_trails(self, result: EngineResult, now_ms: int) -> None:
+        if self._trails is None:
+            return
+        self._pending_trails.extend(self._trails.update(now_ms, result.tracks, result.ended))
+        self._write_trails()
+
+    def _write_trails(self) -> None:
+        """Store finished trails; if the database is unavailable, keep them for another try.
+
+        A failed write is not tried again for a few seconds (the loop runs thirty times a second,
+        and each failure logs), and the queue is bounded, so a database that stays away costs the
+        oldest trails and nothing else.
+        """
+        if not self._pending_trails or time.monotonic() < self._trail_retry_at:
+            return
+        batch = list(self._pending_trails)
+        try:
+            self.store.add_trails(batch)
+        except Exception:
+            self._trail_retry_at = time.monotonic() + TRAIL_RETRY_S
+            log.exception("could not store %d trail(s); will retry", len(batch))
+            return
+        for _ in batch:
+            self._pending_trails.popleft()
+        self.trails_recorded += len(batch)
+
+    def _finish_trails(self) -> None:
+        """The service is stopping: the paths in progress are finished and stored as they stand."""
+        if self._trails is None:
+            return
+        try:
+            self._pending_trails.extend(self._trails.finish_all())
+            self._trail_retry_at = 0.0
+            self._write_trails()
+        except Exception:
+            log.exception("could not store the trails in progress")
+
+    def _clean_up_trails(self) -> None:
+        """Delete trails older than the owner wants kept, a few chunks at a time."""
+        self._next_trail_cleanup = time.monotonic() + self.config.trail_cleanup_every_s
+        cutoff = self._clock.now_ms() - self._keep_days * 86_400_000
+        removed = 0
+        try:
+            for _ in range(TRAIL_CLEANUP_CHUNKS_PER_PASS):
+                gone = self.store.delete_trails_before(cutoff, limit=TRAIL_CLEANUP_CHUNK)
+                removed += gone
+                if gone < TRAIL_CLEANUP_CHUNK:
+                    break
+            else:  # more remain: carry on soon, instead of waiting for the next scheduled pass
+                self._next_trail_cleanup = time.monotonic() + 30.0
+        except Exception:
+            log.exception("could not delete old trails")
+        if removed:
+            log.info("deleted %d trail(s) older than %d days", removed, self._keep_days)

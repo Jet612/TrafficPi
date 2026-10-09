@@ -529,10 +529,25 @@
         "type": "object"
       },
       "Settings": {
+        "description": "Everything the Setup page can change. A PUT replaces all of it, so every member is given.",
         "properties": {
           "timezone": {
             "title": "Timezone",
             "type": "string"
+          },
+          "trails_enabled": {
+            "title": "Trails Enabled",
+            "type": "boolean"
+          },
+          "trails_keep_days": {
+            "maximum": 3650.0,
+            "minimum": 1.0,
+            "title": "Trails Keep Days",
+            "type": "integer"
+          },
+          "trails_people": {
+            "title": "Trails People",
+            "type": "boolean"
           },
           "units": {
             "enum": [
@@ -545,7 +560,10 @@
         },
         "required": [
           "timezone",
-          "units"
+          "units",
+          "trails_enabled",
+          "trails_people",
+          "trails_keep_days"
         ],
         "title": "Settings",
         "type": "object"

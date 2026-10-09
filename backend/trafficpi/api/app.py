@@ -56,6 +56,7 @@ from trafficpi.core.profile import (
     empty_profile,
     parse_profile,
 )
+from trafficpi.core.trail_settings import TrailSettings
 from trafficpi.db.store import Store, open_store
 
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
@@ -391,12 +392,17 @@ def create_app(
     @app.get("/api/settings", response_model=Settings)
     def get_settings(user: User) -> Settings:
         units = ctx.store.get_setting("units", "mph")
+        trails = ctx.store.get_trail_settings()
         return Settings(
-            timezone=str(_timezone(ctx.store)), units="kmh" if units == "kmh" else "mph"
+            timezone=str(_timezone(ctx.store)),
+            units="kmh" if units == "kmh" else "mph",
+            trails_enabled=trails.enabled,
+            trails_people=trails.people,
+            trails_keep_days=trails.keep_days,
         )
 
     @app.put("/api/settings", response_model=Settings)
-    def put_settings(user: User, body: Settings) -> Settings:
+    async def put_settings(user: User, body: Settings) -> Settings:
         try:
             ZoneInfo(body.timezone)
         except (ZoneInfoNotFoundError, ValueError) as exc:
@@ -405,6 +411,14 @@ def create_app(
             ) from exc
         ctx.store.set_setting("timezone", body.timezone)
         ctx.store.set_setting("units", body.units)
+        ctx.store.set_trail_settings(
+            TrailSettings(
+                enabled=body.trails_enabled,
+                people=body.trails_people,
+                keep_days=body.trails_keep_days,
+            )
+        )
+        await ctx.vision.reload()  # the vision service reads the trail settings when told to
         return body
 
     # --- the camera, relayed from the vision service -------------------------------------------

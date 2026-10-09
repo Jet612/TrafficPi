@@ -472,10 +472,19 @@ export interface components {
             /** Total */
             total: number;
         };
-        /** Settings */
+        /**
+         * Settings
+         * @description Everything the Setup page can change. A PUT replaces all of it, so every member is given.
+         */
         Settings: {
             /** Timezone */
             timezone: string;
+            /** Trails Enabled */
+            trails_enabled: boolean;
+            /** Trails Keep Days */
+            trails_keep_days: number;
+            /** Trails People */
+            trails_people: boolean;
             /**
              * Units
              * @enum {string}

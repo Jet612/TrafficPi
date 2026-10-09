@@ -402,7 +402,7 @@ def test_status_shows_an_unreachable_vision_service_without_failing(
 
 
 def test_today_counts_by_line_direction_and_class(logged_in: TestClient, store: Store) -> None:
-    logged_in.put("/api/settings", json={"timezone": "UTC", "units": "mph"})
+    assert logged_in.put("/api/settings", json=settings()).status_code == 200
     logged_in.put("/api/profile", json=LINES)
     status = logged_in.get("/api/status").json()
     now = status["now_ms"]
@@ -418,7 +418,7 @@ def test_today_counts_by_line_direction_and_class(logged_in: TestClient, store: 
 
 
 def test_series_buckets_and_validates_the_range(logged_in: TestClient, store: Store) -> None:
-    logged_in.put("/api/settings", json={"timezone": "UTC", "units": "mph"})
+    assert logged_in.put("/api/settings", json=settings()).status_code == 200
     base = 1_700_000_000_000 // 3_600_000 * 3_600_000  # the start of an hour
     count(store, "north", 1, "car", base + 5 * 60_000)
     count(store, "north", 1, "car", base + 7 * 60_000)
@@ -619,16 +619,69 @@ def test_a_reply_that_is_not_a_picture_is_not_kept_as_one(
     assert not (tmp_path / "reference.jpg").exists()
 
 
-def test_settings_default_save_and_validate(logged_in: TestClient) -> None:
-    assert logged_in.get("/api/settings").json()["units"] == "mph"
-    saved = logged_in.put("/api/settings", json={"timezone": "Europe/Paris", "units": "kmh"})
-    assert saved.json() == {"timezone": "Europe/Paris", "units": "kmh"}
-    assert logged_in.get("/api/settings").json() == {"timezone": "Europe/Paris", "units": "kmh"}
-    bad = logged_in.put("/api/settings", json={"timezone": "Mars/Olympus", "units": "mph"})
-    assert bad.status_code == 422
+def settings(**over: object) -> dict[str, object]:
+    return {
+        "timezone": "UTC",
+        "units": "mph",
+        "trails_enabled": True,
+        "trails_people": False,
+        "trails_keep_days": 365,
+        **over,
+    }
+
+
+def test_settings_default_save_and_validate(logged_in: TestClient, vision: FakeVision) -> None:
+    first = logged_in.get("/api/settings").json()
+    assert first["units"] == "mph"
+    # Vehicles' trails are saved for a year, and people's are not, until the owner says so.
+    assert (first["trails_enabled"], first["trails_people"], first["trails_keep_days"]) == (
+        True,
+        False,
+        365,
+    )
+    body = settings(timezone="Europe/Paris", units="kmh", trails_people=True, trails_keep_days=30)
+    saved = logged_in.put("/api/settings", json=body)
+    assert saved.json() == body
+    assert logged_in.get("/api/settings").json() == body
     assert (
-        logged_in.put("/api/settings", json={"timezone": "UTC", "units": "furlongs"}).status_code
-        == 422
+        vision.reloads == 1
+    )  # the vision service is told, so that it saves (or stops saving) at once
+    bad = logged_in.put("/api/settings", json=settings(timezone="Mars/Olympus"))
+    assert bad.status_code == 422
+    assert logged_in.put("/api/settings", json=settings(units="furlongs")).status_code == 422
+    assert logged_in.get("/api/settings").json() == body  # a refused change changes nothing
+
+
+@pytest.mark.parametrize("days", [0, -5, 3651, 1.5, "a year", None, True])
+def test_the_keep_time_for_trails_must_be_a_sensible_number_of_days(
+    logged_in: TestClient, days: object
+) -> None:
+    response = logged_in.put("/api/settings", json=settings(trails_keep_days=days))
+    assert response.status_code == 422
+    assert logged_in.get("/api/settings").json()["trails_keep_days"] == 365
+
+
+@pytest.mark.parametrize("member", ["trails_enabled", "trails_people"])
+@pytest.mark.parametrize("value", ["yes", "true", 1, 0, None])
+def test_the_trail_switches_must_be_true_or_false(
+    logged_in: TestClient, member: str, value: object
+) -> None:
+    assert logged_in.put("/api/settings", json=settings(**{member: value})).status_code == 422
+
+
+def test_settings_are_saved_even_when_the_vision_service_is_down(
+    logged_in: TestClient, vision: FakeVision
+) -> None:
+    vision.up = False
+    body = settings(trails_enabled=False)
+    assert logged_in.put("/api/settings", json=body).json() == body
+    assert logged_in.get("/api/settings").json()["trails_enabled"] is False
+
+
+def test_every_member_of_the_settings_must_be_given(logged_in: TestClient) -> None:
+    """A PUT replaces everything, so a body without the trail settings must not reset them."""
+    assert (
+        logged_in.put("/api/settings", json={"timezone": "UTC", "units": "mph"}).status_code == 422
     )
 
 
