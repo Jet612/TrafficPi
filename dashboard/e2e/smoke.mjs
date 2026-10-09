@@ -868,7 +868,9 @@ try {
       // and one is confirmed, which is a different button and a different state
       await page.getByRole("button", { name: "All", exact: true }).click();
       await eventually(async () => assert.ok((await rowsOf().count()) >= 1));
-      const second = rowsOf().first();
+      // pinned by its time: a review asks for the list again, and a newer pass may be on top of it by then
+      const confirmedWhen = await rowsOf().first().locator("time").innerText();
+      const second = rowsOf().filter({ has: page.locator("time", { hasText: confirmedWhen }) }).first();
       await second.getByRole("button", { name: /^Confirm: / }).click();
       await eventually(async () => assert.equal(await second.getAttribute("data-review"), "confirmed"));
       assert.equal(await second.getByRole("button", { name: /^False alarm: / }).getAttribute("aria-pressed"), "false");
