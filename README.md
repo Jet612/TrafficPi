@@ -98,7 +98,6 @@ Supported configuration elements are planned to include:
 | Counting Line | Count vehicles crossing a virtual line in a configured direction. |
 | Stop Line | Define where vehicles must stop for stop-sign monitoring. |
 | Lane Zone | Separate traffic into individual lanes and directions. |
-| Traffic Sign Marker | Identify a sign's location and associate it with a monitoring rule. |
 | Speed Calibration | Configure real-world measurements and perspective correction. |
 | Exclusion Zone | Ignore irrelevant areas, such as sidewalks or nearby parking lots. |
 
@@ -263,6 +262,8 @@ Cloudflare will be an optional deployment choice rather than a requirement for u
 TrafficPi is intended for traffic research, educational use, and general traffic monitoring.
 
 The project will prioritize local processing and configurable data retention. Aggregate statistics can be retained separately from identifiable footage, and video recording can be disabled.
+
+TrafficPi does not read license plates and does not recognize faces or identify individual people or vehicles. It classifies road users by kind (car, truck, bus, motorcycle, bicycle, person) so that it can count them.
 
 TrafficPi is not intended to function as a certified speed enforcement system or automatically issue traffic citations.
 
