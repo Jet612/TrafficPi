@@ -26,6 +26,19 @@ def default_data_dir(source: Path | None = None) -> Path:
     return backend / "data" if (backend / "pyproject.toml").is_file() else Path("data")
 
 
+def ensure_private_dir(path: Path) -> None:
+    """Create ``path`` if it is missing and keep it to its owner alone (mode 700).
+
+    The data directory holds the password hash, the session key, the database and pictures of the
+    street. Everything inside is as private as the folder is, so this one mode covers all of it,
+    whatever mode each file was given. Only the owner of a directory can change its mode, so a
+    directory that belongs to someone else is left as it is.
+    """
+    path.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if path.stat().st_uid == os.getuid():
+        path.chmod(0o700)
+
+
 def evidence_dir(data_dir: Path) -> Path:
     """Where the pictures and clips of stop-sign passes are kept. Paths in the database are
     relative to the data directory, so they begin with this folder's name."""

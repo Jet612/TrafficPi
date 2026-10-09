@@ -66,7 +66,7 @@ from trafficpi.api.static import DashboardFiles, content_security_policy
 from trafficpi.api.vision_client import VisionClient, VisionUnavailable
 from trafficpi.core.clock import WallClock, resolve_timezone
 from trafficpi.core.evidence_settings import EvidenceSettings
-from trafficpi.core.paths import evidence_dir
+from trafficpi.core.paths import ensure_private_dir, evidence_dir
 from trafficpi.core.profile import (
     Profile,
     ProfileError,
@@ -702,7 +702,7 @@ def create_app(
             raise HTTPException(status_code=503, detail="camera unavailable") from exc
         if not picture.startswith(b"\xff\xd8"):
             raise HTTPException(status_code=502, detail="the camera did not return a picture")
-        settings.data_dir.mkdir(parents=True, exist_ok=True)
+        ensure_private_dir(settings.data_dir)
         temporary = settings.reference_path.with_suffix(".jpg.tmp")
         temporary.write_bytes(picture)
         temporary.replace(settings.reference_path)  # readers never see half a picture

@@ -17,6 +17,8 @@ from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
+from trafficpi.core.paths import ensure_private_dir
+
 COOKIE_NAME = "trafficpi_session"
 MIN_PASSWORD_LENGTH = 10
 
@@ -58,7 +60,7 @@ def load_or_create_secret(path: Path) -> str:
     """The key that signs session cookies, created (readable by the owner only) on first use."""
     if path.exists():
         return path.read_text(encoding="utf-8").strip()
-    path.parent.mkdir(parents=True, exist_ok=True)
+    ensure_private_dir(path.parent)
     secret = secrets.token_urlsafe(48)
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(descriptor, "w", encoding="utf-8") as file:

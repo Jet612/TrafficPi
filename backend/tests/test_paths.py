@@ -60,3 +60,51 @@ def test_a_variable_set_for_the_services_reaches_all_three(
     assert ApiSettings().data_dir == tmp_path / "chosen"
     assert vision_cli._data_dir() == tmp_path / "chosen"
     assert admin_parser().parse_args(["set-password"]).data_dir == tmp_path / "chosen"
+
+
+# --- the data directory is private (plan.md D31) ----------------------------------------------
+
+
+def test_a_new_data_directory_is_private_from_the_start(tmp_path: Path) -> None:
+    from trafficpi.core.paths import ensure_private_dir
+
+    folder = tmp_path / "a" / "data"
+    ensure_private_dir(folder)
+    assert oct(folder.stat().st_mode & 0o777) == "0o700"
+
+
+def test_an_existing_data_directory_that_is_open_to_others_is_closed(tmp_path: Path) -> None:
+    """It holds the password hash, the session key and pictures of the street."""
+    from trafficpi.core.paths import ensure_private_dir
+
+    folder = tmp_path / "data"
+    folder.mkdir()
+    folder.chmod(0o775)
+    ensure_private_dir(folder)
+    assert oct(folder.stat().st_mode & 0o777) == "0o700"
+
+
+def test_opening_the_store_makes_the_directory_private(tmp_path: Path) -> None:
+    from trafficpi.db.store import open_store
+
+    folder = tmp_path / "data"
+    folder.mkdir()
+    folder.chmod(0o755)
+    open_store(folder)
+    assert oct(folder.stat().st_mode & 0o777) == "0o700"
+
+
+def test_a_directory_that_is_not_ours_is_left_as_it_is(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only the owner can change a directory's mode; trying to would just raise."""
+    import os
+
+    from trafficpi.core.paths import ensure_private_dir
+
+    folder = tmp_path / "data"
+    folder.mkdir()
+    folder.chmod(0o755)
+    monkeypatch.setattr(os, "getuid", lambda: folder.stat().st_uid + 1)
+    ensure_private_dir(folder)  # no error, and no change
+    assert oct(folder.stat().st_mode & 0o777) == "0o755"

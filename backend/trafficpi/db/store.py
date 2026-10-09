@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from trafficpi.core import evidence_settings as ev
 from trafficpi.core.clock import WallClock
 from trafficpi.core.evidence_settings import EvidenceSettings
+from trafficpi.core.paths import ensure_private_dir
 from trafficpi.core.trail_settings import (
     DEFAULT_KEEP_DAYS,
     ENABLED_KEY,
@@ -690,7 +691,7 @@ def open_store(data_dir: Path) -> Store:
 
     Both services call this at start-up; migrations take turns (see ``upgrade_to_head``).
     """
-    data_dir.mkdir(parents=True, exist_ok=True)
+    ensure_private_dir(data_dir)
     engine = create_db_engine(data_dir / "trafficpi.db")
     upgrade_to_head(engine)
     store = Store(engine)
