@@ -1,0 +1,71 @@
+[project]
+name = "trafficpi"
+version = "0.0.0"
+description = "AI-powered traffic monitoring and analytics on a Raspberry Pi"
+requires-python = ">=3.13"
+license = "MIT"
+dependencies = [
+    "alembic>=1.13",
+    "argon2-cffi>=23.1",
+    "fastapi>=0.115",
+    "httpx>=0.27",
+    "itsdangerous>=2.2",
+    "numpy>=2.2",
+    "opencv-python-headless>=4.11",
+    "psutil>=6.1",
+    "scipy>=1.14",
+    "sqlalchemy>=2.0",
+    "uvicorn[standard]>=0.32",
+]
+
+[project.scripts]
+trafficpi-vision = "trafficpi.vision.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pyright>=1.1.400",
+    "ruff>=0.12",
+    "httpx2>=2.13.1",
+]
+
+[build-system]
+requires = ["uv_build>=0.12,<0.13"]
+build-backend = "uv_build"
+
+[tool.uv]
+# Picamera2, libcamera and the HailoRT bindings are apt packages for the system Python,
+# so the project must use it (the virtualenv is created with --system-site-packages).
+python-preference = "only-system"
+
+[tool.uv.build-backend]
+module-name = "trafficpi"
+module-root = ""
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4", "PTH", "RUF"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+filterwarnings = [
+    # Picamera2's own null preview still calls the deprecated Thread.setDaemon.
+    "ignore:setDaemon\\(\\) is deprecated:DeprecationWarning",
+]
+markers = [
+    "hardware: needs the camera and the Hailo accelerator (run with --hardware)",
+]
+
+[tool.pyright]
+include = ["trafficpi", "tests"]
+pythonVersion = "3.13"
+typeCheckingMode = "standard"
+# The hardware libraries (Picamera2, libcamera) are described by stubs in typings/ and are not
+# installed on development laptops or CI, so their sources cannot be found there.
+reportMissingModuleSource = "none"
+venvPath = "."
+venv = ".venv"

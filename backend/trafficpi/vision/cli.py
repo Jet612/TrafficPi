@@ -1,0 +1,455 @@
+"""Command-line entry point: ``trafficpi-vision``."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+from dataclasses import asdict
+from datetime import datetime
+from pathlib import Path
+
+import numpy as np
+
+# Quiet libcamera's start-up chatter and HailoRT's per-inference file log before they initialise.
+os.environ.setdefault("LIBCAMERA_LOG_LEVELS", "*:WARN")
+os.environ.setdefault("HAILORT_LOGGER_PATH", "NONE")
+
+from trafficpi.core.coco import TRAFFIC_CLASS_IDS
+from trafficpi.core.types import Detection
+from trafficpi.vision import pipeline
+from trafficpi.vision.annotate import annotate_clip
+from trafficpi.vision.compare import compare_logs, format_comparison
+from trafficpi.vision.detector import (
+    DEFAULT_MODEL,
+    DEFAULT_SCORE_THRESHOLD,
+    HailoDetector,
+    find_hef,
+)
+from trafficpi.vision.lines import load_counting_lines
+from trafficpi.vision.metrics import decode_throttled
+from trafficpi.vision.recorder import DetectionLogWriter
+from trafficpi.vision.replay import replay_log
+from trafficpi.vision.shutdown import StopRequest
+from trafficpi.vision.sources import CameraSettings, PiCameraSource, VideoFileSource
+
+# Recordings feed the tracker, which makes use of weak detections, so keep them.
+RECORD_THRESHOLD = 0.1
+
+
+def _size(text: str) -> tuple[int, int]:
+    try:
+        width, height = text.lower().split("x")
+        return int(width), int(height)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"expected WIDTHxHEIGHT, got {text!r}") from None
+
+
+def _size_or_auto(text: str) -> tuple[int, int] | None:
+    return None if text.lower() == "auto" else _size(text)
+
+
+def _data_dir() -> Path:
+    return Path(os.environ.get("TRAFFICPI_DATA_DIR", "data"))
+
+
+def _add_camera_args(parser: argparse.ArgumentParser) -> None:
+    defaults = CameraSettings()
+    group = parser.add_argument_group("camera")
+    group.add_argument("--fps", type=float, default=defaults.frame_rate)
+    group.add_argument(
+        "--sensor-size", type=_size_or_auto, default=defaults.sensor_size,
+        help="sensor mode, e.g. 2304x1296 (full field of view); 'auto' lets libcamera choose",
+    )  # fmt: skip
+    group.add_argument("--main-size", type=_size, default=defaults.main_size)
+    group.add_argument("--lores-size", type=_size, default=defaults.lores_size)
+    group.add_argument(
+        "--lens-position",
+        default="0",
+        help="dioptres, 0 = infinity (default); 'auto' = continuous autofocus",
+    )
+    group.add_argument(
+        "--exposure-mode", choices=("normal", "short", "long"), default=defaults.exposure_mode
+    )
+    group.add_argument(
+        "--exposure-time-us", type=int, help="fixed exposure (turns auto exposure off)"
+    )
+    group.add_argument("--gain", type=float, help="fixed analogue gain (turns auto gain off)")
+    group.add_argument("--channel-order", choices=("rgb", "bgr"), default=defaults.channel_order)
+
+
+def _add_detector_args(
+    parser: argparse.ArgumentParser, threshold: float = DEFAULT_SCORE_THRESHOLD
+) -> None:
+    group = parser.add_argument_group("detector")
+    group.add_argument("--model", default=DEFAULT_MODEL, help="model in /usr/share/hailo-models")
+    group.add_argument("--hef", type=Path, help="explicit HEF path (overrides --model)")
+    group.add_argument("--threshold", type=float, default=threshold, help="minimum detection score")
+    group.add_argument(
+        "--all-classes", action="store_true", help="keep every COCO class, not just traffic"
+    )
+
+
+def _camera_settings(args: argparse.Namespace) -> CameraSettings:
+    lens = None if args.lens_position == "auto" else float(args.lens_position)
+    return CameraSettings(
+        sensor_size=args.sensor_size,
+        main_size=args.main_size,
+        lores_size=args.lores_size,
+        frame_rate=args.fps,
+        lens_position=lens,
+        exposure_mode=args.exposure_mode,
+        exposure_time_us=args.exposure_time_us,
+        analogue_gain=args.gain,
+        channel_order=args.channel_order,
+    )
+
+
+def _make_detector(args: argparse.Namespace) -> tuple[HailoDetector, Path]:
+    hef = args.hef or find_hef(args.model)
+    detector = HailoDetector(
+        hef,
+        score_threshold=args.threshold,
+        class_ids=None if args.all_classes else TRAFFIC_CLASS_IDS,
+    )
+    return detector, hef
+
+
+def _flags(value: int | None) -> str:
+    if value is None:
+        return "n/a"
+    now, since = decode_throttled(value)
+    parts = []
+    if now:
+        parts.append("NOW: " + ", ".join(now))
+    if since:
+        parts.append("since boot: " + ", ".join(since))
+    return "; ".join(parts) or "none"
+
+
+def _print_window(report: pipeline.WindowReport) -> None:
+    m, s = report.stage_means_ms, report.system
+    temp = f"{s.soc_temp_c:.1f}C" if s.soc_temp_c is not None else "n/a"
+    dets = " ".join(f"{k}:{v}" for k, v in report.detections.most_common(4)) or "-"
+    print(
+        f"t={report.run_elapsed_s:5.0f}s {report.fps:5.1f} fps skip {report.skipped:<3d}"
+        f" | wait {m.get(pipeline.CAPTURE, 0):4.1f} infer {m.get(pipeline.INFER, 0):4.1f}"
+        f" loop {m.get(pipeline.LOOP, 0):4.1f} latency {m.get(pipeline.LATENCY, 0):5.1f} ms"
+        f" | cpu {s.process_cores:3.1f} cores ({s.total_percent:3.0f}%)"
+        f" rss {s.rss_mb:4.0f} MB {temp}"
+        f" | {dets}",
+        flush=True,
+    )
+
+
+def _print_summary(report: pipeline.RunReport) -> None:
+    print("\n== summary ==")
+    print(
+        f"frames: {report.frames} in {report.elapsed_s:.1f} s = {report.fps:.1f} fps; "
+        f"skipped (estimated): {report.skipped}"
+    )
+    print(f"{'stage (ms)':16}{'mean':>8}{'p50':>8}{'p95':>8}{'max':>8}")
+    for stage in report.stats.stages():
+        x = report.stats.summary(stage)
+        print(f"{stage:16}{x.mean:8.1f}{x.p50:8.1f}{x.p95:8.1f}{x.max:8.1f}")
+    if report.samples:
+        n = len(report.samples)
+        temps = [s.soc_temp_c for s in report.samples if s.soc_temp_c is not None]
+        print(
+            f"cpu: process {sum(s.process_cores for s in report.samples) / n:.2f} cores avg, "
+            f"machine {sum(s.total_percent for s in report.samples) / n:.0f}% avg "
+            f"(peak {max(s.total_percent for s in report.samples):.0f}%); "
+            f"rss peak {max(s.rss_mb for s in report.samples):.0f} MB"
+        )
+        if temps:
+            print(
+                f"soc temperature: {temps[0]:.1f} C -> {temps[-1]:.1f} C (max {max(temps):.1f} C)"
+            )
+        print(f"throttle flags: {_flags(report.samples[-1].throttled)}")
+    print(f"detections: {dict(report.detections.most_common()) or 'none'}")
+
+
+def cmd_dry_run(args: argparse.Namespace) -> int:
+    """Run camera and detector for a while and report speed, latency and load. Stores nothing."""
+    settings = _camera_settings(args)
+    detector, hef = _make_detector(args)
+    with detector, PiCameraSource(settings) as camera:
+        print(f"model {hef.name}, input {detector.input_size}, camera {camera.describe()}")
+        report = pipeline.run(
+            camera,
+            detector,
+            seconds=args.seconds,
+            frame_rate=settings.frame_rate,
+            on_report=_print_window,
+            report_every=args.report_every,
+            stop=args.stop,
+        )
+    _print_summary(report)
+    return 0
+
+
+def _draw(image_rgb: np.ndarray, detections: list[Detection]) -> np.ndarray:
+    import cv2
+
+    img = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR)
+    h, w = img.shape[:2]
+    for d in detections:
+        p0, p1 = (round(d.x0 * w), round(d.y0 * h)), (round(d.x1 * w), round(d.y1 * h))
+        cv2.rectangle(img, p0, p1, (0, 255, 0), 2)
+        cv2.putText(img, f"{d.label} {d.score:.2f}", (p0[0], max(14, p0[1] - 5)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)  # fmt: skip
+    return img
+
+
+def cmd_snapshot(args: argparse.Namespace) -> int:
+    """Save one full-size frame with the detections drawn on it."""
+    import cv2
+
+    settings = _camera_settings(args)
+    detector, hef = _make_detector(args)
+    out = args.out or _data_dir() / "snapshots" / f"{datetime.now():%Y%m%d-%H%M%S}.jpg"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with detector, PiCameraSource(settings) as camera:
+        for _ in range(int(settings.frame_rate)):  # let auto exposure and white balance settle
+            camera.read()
+        frame = camera.read()
+        still = camera.capture_still()
+        detections = detector.detect(frame.image)
+    cv2.imwrite(str(out), _draw(still, detections), [cv2.IMWRITE_JPEG_QUALITY, 92])
+    if args.raw:
+        cv2.imwrite(
+            str(out.with_name(out.stem + "_raw.jpg")), cv2.cvtColor(still, cv2.COLOR_RGB2BGR)
+        )
+    print(
+        f"{hef.name}, channel order {settings.channel_order}: {len(detections)} detections -> {out}"
+    )
+    for d in detections:
+        print(f"  {d.label:12} {d.score:.2f}  x {d.x0:.3f}-{d.x1:.3f}  y {d.y0:.3f}-{d.y1:.3f}")
+    return 0
+
+
+def cmd_record(args: argparse.Namespace) -> int:
+    """Record a clip and the detections for it (test fixtures and offline model comparison)."""
+    settings = _camera_settings(args)
+    detector, hef = _make_detector(args)
+    name = args.name or f"{datetime.now():%Y%m%d-%H%M%S}"
+    folder = (args.out_dir or _data_dir() / "clips") / name
+    folder.mkdir(parents=True, exist_ok=True)
+    with detector, PiCameraSource(settings) as camera:
+        header = {
+            "started_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+            "model": hef.stem,
+            "hef": str(hef),
+            "score_threshold": args.threshold,
+            "classes": None if args.all_classes else sorted(TRAFFIC_CLASS_IDS),
+            "frame_size": list(camera.frame_size),
+            "camera_settings": asdict(settings),
+            "camera": camera.describe(),
+            "clip": None if args.no_video else "clip.mp4",
+        }
+        if not args.no_video:
+            camera.start_recording(folder / "clip.mp4", bitrate=args.bitrate)
+        with DetectionLogWriter(folder / "detections.jsonl", header) as log:
+            report = pipeline.run(
+                camera,
+                detector,
+                seconds=args.seconds,
+                frame_rate=settings.frame_rate,
+                on_frame=lambda frame, dets: log.write_frame(frame, dets),
+                on_report=_print_window,
+                report_every=5.0,
+                stop=args.stop,
+            )
+    _print_summary(report)
+    for f in sorted(folder.iterdir()):
+        print(f"  {f}  ({f.stat().st_size / 1e6:.1f} MB)")
+    return 0
+
+
+def cmd_redetect(args: argparse.Namespace) -> int:
+    """Run an accelerator over a recorded clip and write a detection log (to compare models)."""
+    detector, hef = _make_detector(args)
+    source = VideoFileSource(args.clip, size=args.lores_size, channel_order=args.channel_order)
+    out = args.out or args.clip.parent / f"detections-{hef.stem}.jsonl"
+    header = {
+        "started_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "model": hef.stem,
+        "hef": str(hef),
+        "score_threshold": args.threshold,
+        "classes": None if args.all_classes else sorted(TRAFFIC_CLASS_IDS),
+        "frame_size": list(args.lores_size),
+        "channel_order": args.channel_order,
+        "source_clip": str(args.clip),
+    }
+    with detector, source, DetectionLogWriter(out, header) as log:
+        report = pipeline.run(
+            source,
+            detector,
+            seconds=args.seconds,
+            frame_rate=source.fps,
+            on_frame=log.write_frame,
+            on_report=_print_window,
+            report_every=5.0,
+            stop=args.stop,
+            live=False,
+        )
+    _print_summary(report)
+    print(f"wrote {out}")
+    return 0
+
+
+def _print_replay(path: Path, replayed, lines) -> None:  # type: ignore[no-untyped-def]
+    header = replayed.header
+    print(
+        f"replay of {path}: model {header.get('model', '?')}, {len(replayed.results)} frames, "
+        f"{replayed.duration_s:.1f} s, {len(replayed.confirmed_tracks)} confirmed tracks"
+    )
+    if not lines:
+        print("no counting lines given (use --lines)")
+        return
+    print("counts (+1 is left to right of a -> b on screen, -1 the other way):")
+    for cfg in lines:
+        label = f"{cfg.id} ({cfg.name})" if cfg.name else cfg.id
+        for direction in (1, -1):
+            by_class = {
+                name: n
+                for (line_id, d, name), n in sorted(replayed.totals.counts.items())
+                if line_id == cfg.id and d == direction
+            }
+            total = replayed.totals.total(cfg.id, direction)
+            detail = ", ".join(f"{name} {n}" for name, n in by_class.items()) or "-"
+            print(f"  {label:32} {direction:+d}: {total:4d}   {detail}")
+    t0 = replayed.timestamps_ns[0] if replayed.timestamps_ns else 0
+    print("events (time since the first frame):")
+    for e in replayed.events:
+        seconds = (e.timestamp_ns - t0) / 1e9
+        print(
+            f"  {seconds:8.2f} s  {e.line_id:16} {e.direction:+d}  {e.label:10} track {e.track_id}"
+        )
+
+
+def cmd_replay(args: argparse.Namespace) -> int:
+    """Run the tracker and counting lines over a recorded detection log."""
+    lines = load_counting_lines(args.lines) if args.lines else []
+    replayed = replay_log(args.log, lines)
+    _print_replay(args.log, replayed, lines)
+    if args.events_json:
+        t0 = replayed.timestamps_ns[0] if replayed.timestamps_ns else 0
+        records = [
+            {
+                "t_s": round((e.timestamp_ns - t0) / 1e9, 3),
+                "line": e.line_id,
+                "direction": e.direction,
+                "class": e.label,
+                "track": e.track_id,
+            }
+            for e in replayed.events
+        ]
+        args.events_json.write_text(json.dumps(records, indent=1) + "\n", encoding="utf-8")
+        print(f"wrote {args.events_json}")
+    return 0
+
+
+def cmd_compare(args: argparse.Namespace) -> int:
+    """Compare two detection logs of the same footage, frame by frame."""
+    print(format_comparison(compare_logs(args.a, args.b, min_score=args.min_score)))
+    return 0
+
+
+def cmd_annotate(args: argparse.Namespace) -> int:
+    """Draw tracks and counts onto a recorded clip, with a still at every count event."""
+    folder: Path = args.folder
+    lines = load_counting_lines(args.lines) if args.lines else []
+    report = annotate_clip(
+        args.clip or folder / "clip.mp4",
+        args.log or folder / "detections.jsonl",
+        lines,
+        video_out=args.video or folder / "annotated.mp4",
+        stills_dir=args.stills or folder / "event-stills",
+    )
+    print(f"{report.frames_written} frames written, {len(report.events)} count events")
+    for still in report.stills:
+        print(f"  {still}")
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="trafficpi-vision", description=__doc__)
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    dry = sub.add_parser("dry-run", help="measure speed, latency and load; stores nothing")
+    _add_camera_args(dry)
+    _add_detector_args(dry)
+    dry.add_argument("--seconds", type=float, default=30)
+    dry.add_argument("--report-every", type=float, default=5)
+    dry.set_defaults(func=cmd_dry_run)
+
+    snap = sub.add_parser("snapshot", help="save one frame with detections drawn on it")
+    _add_camera_args(snap)
+    _add_detector_args(snap)
+    snap.add_argument("--out", type=Path, help="output JPEG (default: data/snapshots/<time>.jpg)")
+    snap.add_argument("--raw", action="store_true", help="also save the frame without boxes")
+    snap.set_defaults(func=cmd_snapshot)
+
+    rec = sub.add_parser("record", help="record a clip and its detections")
+    _add_camera_args(rec)
+    _add_detector_args(rec, threshold=RECORD_THRESHOLD)
+    rec.add_argument("--seconds", type=float, default=60)
+    rec.add_argument("--name", help="folder name (default: the start time)")
+    rec.add_argument("--out-dir", type=Path, help="parent folder (default: data/clips)")
+    rec.add_argument("--no-video", action="store_true", help="log detections only; no clip")
+    rec.add_argument(
+        "--bitrate", type=int, default=4_000_000, help="clip bitrate in bits per second"
+    )
+    rec.set_defaults(func=cmd_record)
+
+    redet = sub.add_parser("redetect", help="run the accelerator over a recorded clip")
+    _add_detector_args(redet, threshold=RECORD_THRESHOLD)
+    redet.add_argument("clip", type=Path)
+    redet.add_argument("--out", type=Path, help="detection log (default: next to the clip)")
+    redet.add_argument("--seconds", type=float, default=float("inf"), help="stop after this long")
+    redet.add_argument("--lores-size", type=_size, default=CameraSettings().lores_size)
+    redet.add_argument("--channel-order", choices=("rgb", "bgr"), default="rgb")
+    redet.set_defaults(func=cmd_redetect)
+
+    rep = sub.add_parser("replay", help="count over a recorded detection log (no hardware needed)")
+    rep.add_argument("log", type=Path, help="a detections.jsonl file")
+    rep.add_argument("--lines", type=Path, help="counting lines JSON (see trafficpi.vision.lines)")
+    rep.add_argument("--events-json", type=Path, help="also write the count events as JSON")
+    rep.set_defaults(func=cmd_replay)
+
+    cmp = sub.add_parser("compare", help="compare two detection logs of the same footage")
+    cmp.add_argument("a", type=Path)
+    cmp.add_argument("b", type=Path)
+    cmp.add_argument("--min-score", type=float, default=0.25)
+    cmp.set_defaults(func=cmd_compare)
+
+    ann = sub.add_parser("annotate", help="draw tracks and counts onto a recorded clip")
+    ann.add_argument(
+        "folder", type=Path, help="a folder made by `record` (clip.mp4, detections.jsonl)"
+    )
+    ann.add_argument("--lines", type=Path, help="counting lines JSON")
+    ann.add_argument("--clip", type=Path)
+    ann.add_argument("--log", type=Path)
+    ann.add_argument("--video", type=Path, help="annotated video (default: <folder>/annotated.mp4)")
+    ann.add_argument(
+        "--stills", type=Path, help="event stills folder (default: <folder>/event-stills)"
+    )
+    ann.set_defaults(func=cmd_annotate)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    args.stop = StopRequest()
+    args.stop.install()
+    try:
+        return args.func(args)
+    except RuntimeError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
