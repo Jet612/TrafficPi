@@ -165,6 +165,8 @@ The main dashboard will display important metrics, including:
 
 Interactive charts will allow users to analyze trends over selectable date ranges.
 
+The **Data** page does this for the stop signs and the traffic. Over today, 7, 30 or 90 days, or all time, it shows the share of vehicles that stopped, rolled through, did not stop or could not be told, and how far each share moved since the days before; the busiest hour and day, and the hours and kinds of vehicle with the lowest and highest stop rate; charts by hour of the day, day, day of the week, kind of vehicle and stop sign (each also as a table); how long a typical stop lasts and how slowly a typical roll goes; how many of the passes you have looked at were false alarms; and the vehicles counted, by hour, day, kind and counting line.
+
 ### Live Camera View
 
 The dashboard will provide a camera preview with optional overlays for:
