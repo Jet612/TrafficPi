@@ -470,10 +470,35 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AcceleratorStatus
+         * @description What the vision service knows about the accelerator chip (None where it does not know).
+         */
+        AcceleratorStatus: {
+            /** Architecture */
+            architecture?: string | null;
+            /** Firmware */
+            firmware?: string | null;
+            /** Inference Ms */
+            inference_ms?: number | null;
+            /** Inference P95 Ms */
+            inference_p95_ms?: number | null;
+            /** Model */
+            model?: string | null;
+        };
         /** AuthState */
         AuthState: {
             /** Configured */
             configured: boolean;
+        };
+        /** BackupInfo */
+        BackupInfo: {
+            /** At Ms */
+            at_ms: number;
+            /** Count */
+            count: number;
+            /** Size Mb */
+            size_mb: number;
         };
         /**
          * CountingLineConfig
@@ -512,6 +537,22 @@ export interface components {
              * @enum {string}
              */
             point: "ground" | "center";
+        };
+        /**
+         * DataUsage
+         * @description What the data directory holds, in megabytes (a thousand to the gigabyte).
+         */
+        DataUsage: {
+            /** Backup Files */
+            backup_files: number;
+            /** Backups Mb */
+            backups_mb: number;
+            /** Database Mb */
+            database_mb: number;
+            /** Evidence Files */
+            evidence_files: number;
+            /** Evidence Mb */
+            evidence_mb: number;
         };
         /** DayOutcomes */
         DayOutcomes: {
@@ -637,6 +678,19 @@ export interface components {
             remote: boolean;
             /** Username */
             username: string;
+        };
+        /**
+         * MemoryTest
+         * @description What the installer's memory test found; a bad result means the board's other results
+         *     cannot be trusted (plan.md R16).
+         */
+        MemoryTest: {
+            /** At Ms */
+            at_ms: number;
+            /** Mb */
+            mb: number;
+            /** Ok */
+            ok: boolean;
         };
         /**
          * OutcomeCounts
@@ -775,9 +829,14 @@ export interface components {
         };
         /** StatusResponse */
         StatusResponse: {
+            /** Api Uptime S */
+            api_uptime_s: number;
+            data: components["schemas"]["DataUsage"];
             disk: components["schemas"]["DiskStatus"];
             /** Events Total */
             events_total: number;
+            last_backup?: components["schemas"]["BackupInfo"] | null;
+            memory_test?: components["schemas"]["MemoryTest"] | null;
             /** Now Ms */
             now_ms: number;
             /** Timezone */
@@ -1135,6 +1194,8 @@ export interface components {
         };
         /** VisionStatus */
         VisionStatus: {
+            /** @default {} */
+            accelerator: components["schemas"]["AcceleratorStatus"];
             /** Camera Error */
             camera_error?: string | null;
             /** Detector */

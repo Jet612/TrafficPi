@@ -101,6 +101,7 @@ class LiveState:
         self._camera_error: str | None = None
         self._profile_version = 0
         self._detector: str = ""
+        self._accelerator: dict[str, Any] = {}
 
     # --- written by the vision loop ---------------------------------------------------------
 
@@ -197,6 +198,17 @@ class LiveState:
         with self._condition:
             self._detector = name
 
+    def set_accelerator(self, info: dict[str, Any]) -> None:
+        """What is known about the chip (architecture, firmware, model), told once at start."""
+        with self._condition:
+            self._accelerator = dict(info)
+
+    def update_accelerator(self, *, inference_ms: float, inference_p95_ms: float) -> None:
+        """How long inference has been taking lately, in milliseconds (tenths are enough)."""
+        with self._condition:
+            self._accelerator["inference_ms"] = round(inference_ms, 1)
+            self._accelerator["inference_p95_ms"] = round(inference_p95_ms, 1)
+
     # --- read by the web server -------------------------------------------------------------
 
     def snapshot(self) -> dict[str, Any]:
@@ -215,6 +227,7 @@ class LiveState:
                 "fps": round(fps, 1),
                 "camera": {"ok": camera_ok, "error": camera_error},
                 "detector": self._detector,
+                "accelerator": dict(self._accelerator),
                 "profile_version": self._profile_version,
                 "profile_error": self._profile_error,
                 "lines": list(self._lines),
@@ -309,6 +322,7 @@ class VisionService:
         self._stop_signs: dict[str, StopSign] = {}
         self._drift = drift  # None until the service runs, and always without a data directory
         self._last_beat = time.monotonic()  # when the loop last moved (see beat and alive)
+        self._inference_ms: deque[float] = deque(maxlen=300)  # the last ten seconds at 30 fps
 
     # --- is it moving? (plan.md D27) --------------------------------------------------------
 
@@ -454,6 +468,9 @@ class VisionService:
             if self._drift is not None:
                 self._drift.offer(frame.image)  # returns at once unless a check is due
             detections = self.detector.detect(frame.image)
+            timings = getattr(self.detector, "timings", None)  # a stand-in may not time itself
+            if timings is not None and timings.infer_ms > 0:  # the made-up street times nothing
+                self._inference_ms.append(timings.infer_ms)
             result = self._engine.update(frame.timestamp_ns, detections)
 
             now_ms = self._timestamp_ms(frame)
@@ -479,6 +496,12 @@ class VisionService:
 
             if time.monotonic() >= next_metrics:
                 self.live.set_system(sampler.sample())
+                if self._inference_ms:
+                    recent = sorted(self._inference_ms)
+                    self.live.update_accelerator(
+                        inference_ms=sum(recent) / len(recent),
+                        inference_p95_ms=recent[min(len(recent) - 1, int(0.95 * len(recent)))],
+                    )
                 next_metrics = time.monotonic() + self.config.metrics_every_s
             if time.monotonic() >= self._next_trail_cleanup:
                 self._clean_up_trails()

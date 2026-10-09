@@ -21,8 +21,9 @@ import websockets
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request, Response, WebSocket
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from starlette.concurrency import run_in_threadpool
 
-from trafficpi.api import analytics, stats, trail_views
+from trafficpi.api import analytics, machine, stats, trail_views
 from trafficpi.api.auth import (
     COOKIE_NAME,
     Busy,
@@ -38,11 +39,15 @@ from trafficpi.api.auth import (
 )
 from trafficpi.api.limits import DEFAULT_BODY_BYTES, PROFILE_BODY_BYTES, BodyLimit
 from trafficpi.api.schemas import (
+    AcceleratorStatus,
     AuthState,
+    BackupInfo,
+    DataUsage,
     DiskStatus,
     EventOut,
     LoginRequest,
     Me,
+    MemoryTest,
     ProfileCheck,
     ProfileOut,
     ProfileSaved,
@@ -113,6 +118,8 @@ class ApiContext:
     # Set when the server starts shutting down, so open streams end and shutdown need not wait.
     stopping: threading.Event = field(default_factory=threading.Event)
     busy_logged_at: float = float("-inf")  # time.monotonic() of the last "too busy to log in" line
+    started: float = field(default_factory=time.monotonic)  # for the API's own uptime
+    sizes: machine.TtlCache = field(default_factory=machine.TtlCache)
 
 
 def _ctx(request: Request) -> ApiContext:
@@ -452,13 +459,25 @@ def create_app(
                 camera_error=camera.get("error"),
                 profile_version=state.get("profile_version"),
                 detector=state.get("detector"),
+                accelerator=AcceleratorStatus(**(state.get("accelerator") or {})),
                 system=state.get("system", {}),
             )
         except VisionUnavailable:
             vision_status = VisionStatus(status="unreachable")
         usage = shutil.disk_usage(settings.data_dir if settings.data_dir.exists() else ".")
+        sizes, backup, memtest = await run_in_threadpool(
+            lambda: (
+                ctx.sizes.usage(settings.data_dir),
+                machine.newest_backup(settings.data_dir),
+                machine.memtest_result(settings.data_dir),
+            )
+        )
         return StatusResponse(
             vision=vision_status,
+            api_uptime_s=round(time.monotonic() - ctx.started, 1),
+            data=DataUsage(**sizes),
+            last_backup=BackupInfo(**backup) if backup else None,
+            memory_test=MemoryTest(**memtest) if memtest else None,
             disk=DiskStatus(
                 free_gb=round(usage.free / 1e9, 1),
                 total_gb=round(usage.total / 1e9, 1),

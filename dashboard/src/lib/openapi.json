@@ -1,6 +1,68 @@
 {
   "components": {
     "schemas": {
+      "AcceleratorStatus": {
+        "description": "What the vision service knows about the accelerator chip (None where it does not know).",
+        "properties": {
+          "architecture": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Architecture"
+          },
+          "firmware": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Firmware"
+          },
+          "inference_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inference Ms"
+          },
+          "inference_p95_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inference P95 Ms"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          }
+        },
+        "title": "AcceleratorStatus",
+        "type": "object"
+      },
       "AuthState": {
         "properties": {
           "configured": {
@@ -12,6 +74,29 @@
           "configured"
         ],
         "title": "AuthState",
+        "type": "object"
+      },
+      "BackupInfo": {
+        "properties": {
+          "at_ms": {
+            "title": "At Ms",
+            "type": "integer"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "size_mb": {
+            "title": "Size Mb",
+            "type": "number"
+          }
+        },
+        "required": [
+          "at_ms",
+          "size_mb",
+          "count"
+        ],
+        "title": "BackupInfo",
         "type": "object"
       },
       "CountingLineConfig": {
@@ -117,6 +202,40 @@
           "persistence"
         ],
         "title": "CountingLineConfig",
+        "type": "object"
+      },
+      "DataUsage": {
+        "description": "What the data directory holds, in megabytes (a thousand to the gigabyte).",
+        "properties": {
+          "backup_files": {
+            "title": "Backup Files",
+            "type": "integer"
+          },
+          "backups_mb": {
+            "title": "Backups Mb",
+            "type": "number"
+          },
+          "database_mb": {
+            "title": "Database Mb",
+            "type": "number"
+          },
+          "evidence_files": {
+            "title": "Evidence Files",
+            "type": "integer"
+          },
+          "evidence_mb": {
+            "title": "Evidence Mb",
+            "type": "number"
+          }
+        },
+        "required": [
+          "database_mb",
+          "evidence_mb",
+          "backups_mb",
+          "evidence_files",
+          "backup_files"
+        ],
+        "title": "DataUsage",
         "type": "object"
       },
       "DayOutcomes": {
@@ -450,6 +569,30 @@
           "username"
         ],
         "title": "Me",
+        "type": "object"
+      },
+      "MemoryTest": {
+        "description": "What the installer's memory test found; a bad result means the board's other results\ncannot be trusted (plan.md R16).",
+        "properties": {
+          "at_ms": {
+            "title": "At Ms",
+            "type": "integer"
+          },
+          "mb": {
+            "title": "Mb",
+            "type": "integer"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "at_ms",
+          "mb",
+          "ok"
+        ],
+        "title": "MemoryTest",
         "type": "object"
       },
       "OutcomeCounts": {
@@ -818,12 +961,39 @@
       },
       "StatusResponse": {
         "properties": {
+          "api_uptime_s": {
+            "title": "Api Uptime S",
+            "type": "number"
+          },
+          "data": {
+            "$ref": "#/components/schemas/DataUsage"
+          },
           "disk": {
             "$ref": "#/components/schemas/DiskStatus"
           },
           "events_total": {
             "title": "Events Total",
             "type": "integer"
+          },
+          "last_backup": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BackupInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "memory_test": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MemoryTest"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "now_ms": {
             "title": "Now Ms",
@@ -840,6 +1010,8 @@
         "required": [
           "vision",
           "disk",
+          "api_uptime_s",
+          "data",
           "events_total",
           "now_ms",
           "timezone"
@@ -1824,6 +1996,10 @@
       },
       "VisionStatus": {
         "properties": {
+          "accelerator": {
+            "$ref": "#/components/schemas/AcceleratorStatus",
+            "default": {}
+          },
           "camera_error": {
             "anyOf": [
               {

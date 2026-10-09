@@ -9,9 +9,38 @@ import { api } from "@/lib/api";
 import { formatCount, formatDuration, formatMegabytes, formatPercent } from "@/lib/format";
 import { usePoll } from "@/lib/hooks";
 import type { LiveSnapshot } from "@/lib/live";
+import type { StatusResponse } from "@/lib/types";
+import { backupLevel, backupText, chipName, chipNote, dataText, inferenceText, memoryTestText } from "@/lib/machine";
 import { cpuSeverity, describeThrottle, diskSeverity, temperatureSeverity } from "@/lib/severity";
 
 const selectFps = (snapshot: LiveSnapshot) => (snapshot.state?.camera.ok ? Math.round(snapshot.state.fps) : null);
+
+/** The accelerator, the data directory, the last backup and the memory test: what is around the numbers. */
+function MachineTiles({ data }: { data: StatusResponse }) {
+  const accelerator = data.vision.accelerator;
+  const inference = inferenceText(accelerator);
+  const backup = backupText(data.last_backup, data.timezone);
+  const level = backupLevel(data.last_backup, data.now_ms);
+  const memory = memoryTestText(data.memory_test, data.timezone);
+  return (
+    <dl className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4" aria-label="The machine">
+      <StatTile
+        label="Accelerator"
+        value={data.vision.status === "unreachable" ? "–" : chipName(accelerator.architecture)}
+        note={[chipNote(accelerator), inference].filter(Boolean).join(" · ") || "vision service not running"}
+        wrap
+      />
+      <StatTile label="Data on disk" value={formatMegabytes(data.data.database_mb + data.data.evidence_mb + data.data.backups_mb)} note={dataText(data.data)} wrap />
+      <StatTile label="Last backup" value={backup.value} note={backup.note} wrap>
+        {level === "warning" && <StatusBadge level="warning">older than a day and a half</StatusBadge>}
+        {level === "none" && <StatusBadge level="warning">not backed up</StatusBadge>}
+      </StatTile>
+      <StatTile label="Memory test" value={memory.value} note={memory.note} wrap>
+        {memory.ok === false && <StatusBadge level="critical">this board may have faulty RAM</StatusBadge>}
+      </StatTile>
+    </dl>
+  );
+}
 
 export function SystemCard() {
   const status = usePoll((signal) => api.status(signal), 5000);
@@ -60,9 +89,10 @@ export function SystemCard() {
           <StatTile
             label="Uptime"
             value={data?.vision.uptime_s != null ? formatDuration(data.vision.uptime_s) : "–"}
-            note="since the camera loop started"
+            note={data ? `camera loop; dashboard server ${formatDuration(data.api_uptime_s)}` : "since the camera loop started"}
           />
         </dl>
+        {data && <MachineTiles data={data} />}
         {now.length > 0 && (
           <ul className="mt-4 flex flex-wrap gap-2" aria-label="Problems right now">
             {now.map((flag) => (

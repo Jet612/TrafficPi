@@ -1,0 +1,80 @@
+import { describe, expect, it } from "vitest";
+import { BACKUP_STALE_MS, backupLevel, backupText, chipName, chipNote, dataText, inferenceText, memoryTestText } from "./machine";
+
+const accelerator = { architecture: "HAILO8L", firmware: "4.23.0", model: "yolov8s_h8l", inference_ms: 17.43, inference_p95_ms: 17.91 };
+
+describe("the accelerator on the status page", () => {
+  it("names the chip as people know it", () => {
+    expect(chipName("HAILO8L")).toBe("Hailo-8L");
+    expect(chipName("HAILO8")).toBe("Hailo-8");
+    expect(chipName("hailo10h")).toBe("hailo10h");
+    expect(chipName(null)).toBe("unknown");
+    expect(chipName(undefined)).toBe("unknown");
+  });
+
+  it("says what else is known of it, and nothing it does not know", () => {
+    expect(chipNote(accelerator)).toBe("firmware 4.23.0 · model yolov8s_h8l");
+    expect(chipNote({ ...accelerator, firmware: null })).toBe("model yolov8s_h8l");
+    expect(chipNote({})).toBe("");
+  });
+
+  it("gives how long a picture takes, if it has been timed", () => {
+    expect(inferenceText(accelerator)).toBe("17.4 ms a picture (95% under 17.9 ms)");
+    expect(inferenceText({ ...accelerator, inference_p95_ms: null })).toBe("17.4 ms a picture");
+    expect(inferenceText({ architecture: "HAILO8L" })).toBeNull();
+  });
+});
+
+describe("the data directory", () => {
+  it("adds up the database, the evidence and the backups", () => {
+    expect(dataText({ database_mb: 0.4, evidence_mb: 35.2, backups_mb: 3.2, evidence_files: 112, backup_files: 7 })).toBe(
+      "database 0.4 MB · pictures and clips 35 MB (112 files) · backups 3.2 MB (7)",
+    );
+    expect(dataText({ database_mb: 1234, evidence_mb: 0, backups_mb: 0, evidence_files: 1, backup_files: 0 })).toBe(
+      "database 1.2 GB · pictures and clips 0 MB (1 file) · backups 0 MB (0)",
+    );
+  });
+});
+
+describe("the last backup", () => {
+  const backup = { at_ms: Date.UTC(2026, 9, 10, 7, 30), size_mb: 0.437, count: 7 };
+
+  it("says when, how big and how many, in the camera's time zone", () => {
+    expect(backupText(backup, "America/New_York")).toEqual({ value: "2026-10-10 03:30", note: "0.4 MB · 7 kept" });
+  });
+
+  it("says there is none, and how to get one", () => {
+    expect(backupText(null, "UTC").value).toBe("none yet");
+    expect(backupText(undefined, "UTC").note).toContain("--backup-at");
+  });
+
+  it("is good while it is fresh, a warning once a night has been missed, and none without one", () => {
+    expect(backupLevel(backup, backup.at_ms + 60_000)).toBe("good");
+    expect(backupLevel(backup, backup.at_ms + BACKUP_STALE_MS)).toBe("good");
+    expect(backupLevel(backup, backup.at_ms + BACKUP_STALE_MS + 1)).toBe("warning");
+    expect(backupLevel(null, 0)).toBe("none");
+  });
+});
+
+describe("the memory test", () => {
+  const at = Date.UTC(2026, 9, 9, 19, 22);
+
+  it("reports a pass", () => {
+    expect(memoryTestText({ at_ms: at, mb: 512, ok: true }, "America/New_York")).toEqual({
+      value: "passed",
+      note: "512 MB tested once, 2026-10-09 15:22",
+      ok: true,
+    });
+  });
+
+  it("reports a failure as a reason not to trust the board", () => {
+    const failed = memoryTestText({ at_ms: at, mb: 64, ok: false }, "UTC");
+    expect(failed.ok).toBe(false);
+    expect(failed.value).toBe("problem found");
+    expect(failed.note).toContain("cannot be trusted");
+  });
+
+  it("says when it has not been run", () => {
+    expect(memoryTestText(null, "UTC")).toMatchObject({ value: "not run", ok: null });
+  });
+});

@@ -59,8 +59,10 @@ def _hailort_env() -> dict[str, str]:
 
 
 @lru_cache(maxsize=1)
-def hailo_architecture() -> str | None:
-    """The accelerator's architecture, e.g. ``HAILO8L``, or None if it cannot be determined."""
+def hailo_identity() -> dict[str, str]:
+    """What ``hailortcli fw-control identify`` says about the accelerator, asked for once:
+    ``architecture`` (``HAILO8L``), ``firmware`` (``4.23.0``) and ``board`` (``Hailo-8``; the
+    board's own name does not tell the 8 from the 8L). Empty if it does not answer."""
     try:
         out = subprocess.run(
             ["hailortcli", "fw-control", "identify"],
@@ -71,11 +73,25 @@ def hailo_architecture() -> str | None:
             env=_hailort_env(),
         ).stdout
     except (OSError, subprocess.SubprocessError):
-        return None
+        return {}
+    wanted = {
+        "Device Architecture": ("architecture", str.upper),
+        "Firmware Version": ("firmware", lambda text: text.split()[0] if text.split() else ""),
+        "Board Name": ("board", str),
+    }
+    found: dict[str, str] = {}
     for line in out.splitlines():
-        if "Device Architecture" in line:
-            return line.split(":", 1)[1].strip().upper()
-    return None
+        label, _, value = line.partition(":")
+        if label.strip() in wanted and value.strip():
+            key, convert = wanted[label.strip()]
+            found[key] = convert(value.strip())
+    return {key: value for key, value in found.items() if value}
+
+
+@lru_cache(maxsize=1)
+def hailo_architecture() -> str | None:
+    """The accelerator's architecture, e.g. ``HAILO8L``, or None if it cannot be determined."""
+    return hailo_identity().get("architecture")
 
 
 def find_hef(model: str = DEFAULT_MODEL, *, model_dir: Path = MODEL_DIR) -> Path:

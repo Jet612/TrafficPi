@@ -1643,6 +1643,22 @@ try {
     assert.deepEqual(await readSettings(), original);
   });
 
+  await step("the System page tells about the accelerator, the data on disk, the last backup and the memory test", async () => {
+    await goTo("System");
+    const tile = (label) => page.locator("dt", { hasText: label }).locator("xpath=..");
+    await tile("Accelerator").waitFor();
+    // the made-up street has no chip, and says so; the model it uses is named
+    assert.match(await tile("Accelerator").innerText(), /simulated/);
+    assert.match(await tile("Accelerator").innerText(), /model demo/);
+    assert.match(await tile("Data on disk").innerText(), /database .* MB · pictures and clips .* \(\d+ files?\) · backups .* \(\d+\)/);
+    // a fresh stack has no daily backup and no memory test on record, and says what to do or what that means
+    assert.match(await tile("Last backup").innerText(), /none yet/);
+    assert.match(await tile("Last backup").innerText(), /not backed up/);
+    assert.match(await tile("Memory test").innerText(), /not run/);
+    assert.match(await tile("Uptime").innerText(), /dashboard server/);
+    await shot("system-machine");
+  });
+
   await step("the pages are real addresses: links, deep links, a missing slash, reload and back all work", async () => {
     await goTo("Live");
     assert.equal(pagePath(), "/");

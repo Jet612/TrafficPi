@@ -325,6 +325,16 @@ class SystemMetrics(BaseModel):
     throttled_since_boot: list[str] = []
 
 
+class AcceleratorStatus(BaseModel):
+    """What the vision service knows about the accelerator chip (None where it does not know)."""
+
+    architecture: str | None = None  # HAILO8L
+    firmware: str | None = None  # 4.23.0
+    model: str | None = None  # the compiled model in use, yolov8s_h8l
+    inference_ms: float | None = None  # how long one picture takes on the chip, lately
+    inference_p95_ms: float | None = None
+
+
 class VisionStatus(BaseModel):
     status: Literal["ok", "camera-offline", "unreachable"]
     fps: float | None = None
@@ -332,12 +342,42 @@ class VisionStatus(BaseModel):
     camera_error: str | None = None
     profile_version: int | None = None
     detector: str | None = None
+    accelerator: AcceleratorStatus = AcceleratorStatus()
     system: SystemMetrics = SystemMetrics()
+
+
+class DataUsage(BaseModel):
+    """What the data directory holds, in megabytes (a thousand to the gigabyte)."""
+
+    database_mb: float
+    evidence_mb: float
+    backups_mb: float
+    evidence_files: int
+    backup_files: int
+
+
+class BackupInfo(BaseModel):
+    at_ms: int  # when the newest one was made
+    size_mb: float
+    count: int  # how many are kept in the usual folder
+
+
+class MemoryTest(BaseModel):
+    """What the installer's memory test found; a bad result means the board's other results
+    cannot be trusted (plan.md R16)."""
+
+    at_ms: int
+    mb: int
+    ok: bool
 
 
 class StatusResponse(BaseModel):
     vision: VisionStatus
     disk: DiskStatus
+    api_uptime_s: float
+    data: DataUsage
+    last_backup: BackupInfo | None = None
+    memory_test: MemoryTest | None = None
     events_total: int
     now_ms: int
     timezone: str

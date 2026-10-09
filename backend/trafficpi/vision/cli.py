@@ -37,6 +37,7 @@ from trafficpi.vision.detector import (
     Detector,
     HailoDetector,
     find_hef,
+    hailo_identity,
 )
 from trafficpi.vision.metrics import decode_throttled
 from trafficpi.vision.profile import CompiledProfile, load_compiled_profile
@@ -504,6 +505,12 @@ def cmd_run(args: argparse.Namespace) -> int:
             service = VisionService(camera, detector, store, data_dir=data_dir)
             snapshot = camera.capture_still
     service.live.set_detector(model)
+    # What the status page says about the chip: its own identity when there is one.
+    service.live.set_accelerator(
+        {"architecture": "simulated", "model": model}
+        if (args.demo or args.replay)
+        else {**hailo_identity(), "model": model}
+    )
     server = ServerThread(
         create_server_app(service, snapshot=snapshot), host=args.host, port=args.port
     )
