@@ -106,7 +106,7 @@ preflight() {
   [[ "$(uname -m)" == aarch64 ]] || die "this is $(uname -m), not a 64-bit Raspberry Pi OS (aarch64)"
   local os model
   os="$(. /etc/os-release && echo "${ID:-?} ${VERSION_ID:-?}")"
-  model="$(tr -d '\0' < /proc/device-tree/model 2>/dev/null || echo unknown)"
+  model="$({ tr -d '\0' < /proc/device-tree/model; } 2>/dev/null || echo unknown)"
   note "$os, $model"
   if [[ "$os" != "debian 13" || "$model" != *"Raspberry Pi 5"* ]]; then
     if (( ignore_os )); then warn "this is not Debian 13 on a Raspberry Pi 5; going on because of --ignore-os"
