@@ -683,6 +683,7 @@ def test_the_mail_is_made_from_the_passes_the_counts_and_the_camera_of_its_stret
     assert "2 vehicles did not stop" in message.text
     assert "Before: 1" in message.text
     assert "Rolled through:" in message.text and "Stopped:" in message.text
+    assert "Did not stop:" in message.text and "(40%)" in message.text  # 2 of the 5 judged
     assert "Vehicles counted:  3" in message.text
     assert "not counting for about 2 hours" in message.text
 
@@ -831,3 +832,27 @@ def test_the_preview_is_the_mail_as_it_would_be_made_now_and_sends_nothing(
     assert digest.subject.startswith("[Test] ")
     assert "Thursday 8 Oct, 7:00 pm to Friday 9 Oct, 7:00 pm" in digest.text
     assert mailer.attempts == [] and mail.sends() == []
+
+
+def test_the_fastest_estimate_in_the_mail_is_in_the_units_the_owner_chose(
+    store: Store, service: MailService, mail: MailStore, mailer: FakeMailer, clock: Clock
+) -> None:
+    def fast_pass(when: str) -> None:
+        store.record_stop(
+            StopEvent(
+                0, 1, 2, "car", "elm", "did_not_stop",  # type: ignore[arg-type]
+                hold_s=0.0, min_speed=2.0, observed_s=3.0, max_speed=5.4,
+            ),
+            at(when),
+        )  # fmt: skip
+
+    ready_to_send(mail, clock)
+    fast_pass("2026-10-09 17:42")  # 5.4 sizes a second of a car: 13.5 m/s
+    clock.to("2026-10-09 20:00:20")
+    service.tick()
+    assert "about 30 mph (a car, Fri 9 Oct 5:42 pm)" in mailer.sent[0].text
+    store.set_setting("units", "kmh")  # the owner changes the setting; the next mail follows it
+    fast_pass("2026-10-10 12:00")
+    clock.to("2026-10-10 20:00:20")
+    service.tick()
+    assert "about 50 km/h (a car, Sat 10 Oct 12:00 pm)" in mailer.sent[1].text

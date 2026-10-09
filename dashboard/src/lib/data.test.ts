@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   DATA_PERIODS,
@@ -105,6 +106,17 @@ describe("shares", () => {
   });
 });
 
+describe("shares across the two languages", () => {
+  it("are the ones the daily email says: every case in the shared file comes out the same here and in Python", () => {
+    const file = JSON.parse(readFileSync(new URL("../../../backend/tests/data/share_cases.json", import.meta.url), "utf8")) as {
+      cases: { counts: OutcomeCounts; shares: OutcomeCounts }[];
+    };
+    expect(file.cases.length).toBeGreaterThan(600);
+    const wrong = file.cases.filter((c) => JSON.stringify(sharesOf(c.counts)) !== JSON.stringify(c.shares));
+    expect(wrong.slice(0, 3)).toEqual([]);
+  });
+});
+
 describe("the change since the period before", () => {
   it("is the difference of the shares as they are shown", () => {
     expect(changeInPoints(counts(64, 20, 10, 6), counts(60, 25, 10, 5), "stopped")).toBe(4);
@@ -198,16 +210,16 @@ describe("the lowest and the highest stop rate", () => {
 });
 
 describe("a speed in words", () => {
-  it("follows the sizes a second and the units, for a car of about 4.5 m", () => {
-    expect(approximateSpeed(0.7, "mph")).toBe(7); // the default for a roll
-    expect(approximateSpeed(1, "mph")).toBe(10);
-    expect(approximateSpeed(1, "kmh")).toBe(16);
-    expect(approximateSpeed(2.5, "kmh")).toBe(41);
+  it("follows the sizes a second and the units, for a car whose size is about 2.5 m", () => {
+    expect(approximateSpeed(0.7, "mph")).toBe(4); // the default for a roll: 1.75 m a second
+    expect(approximateSpeed(1, "mph")).toBe(6);
+    expect(approximateSpeed(1, "kmh")).toBe(9);
+    expect(approximateSpeed(2.5, "kmh")).toBe(23); // 6.25 m a second is 22.5 km/h, and a half goes up
   });
 
   it("says about, and almost still for nothing", () => {
-    expect(speedText(0.7, "mph")).toBe("about 7 mph");
-    expect(speedText(1, "kmh")).toBe("about 16 km/h");
+    expect(speedText(0.7, "mph")).toBe("about 4 mph");
+    expect(speedText(1, "kmh")).toBe("about 9 km/h");
     expect(speedText(0.04, "mph")).toBe("almost still");
     expect(speedText(0, "kmh")).toBe("almost still");
   });
@@ -274,7 +286,7 @@ describe("rows for the charts", () => {
   });
 
   it("give a day its date on the axis and in full in the tooltip", () => {
-    const [row] = outcomeDayRows([{ date: "2026-10-09", t: 0, ...counts(1, 0, 4) }]);
+    const [row] = outcomeDayRows([{ date: "2026-10-09", t: 0, fastest: null, ...counts(1, 0, 4) }]);
     expect(row).toMatchObject({ id: "2026-10-09", label: "Oct 9", title: "Fri, Oct 9, 2026", total: 5 });
     expect(row?.values.did_not_stop).toBe(4);
   });

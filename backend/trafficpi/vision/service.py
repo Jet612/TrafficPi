@@ -619,12 +619,13 @@ class VisionService:
             if isinstance(queued, StopEvent):
                 self._ask_for_evidence(queued, stored_id, at_ms)
                 log.info(
-                    "%s at %s: %s (still %.1f s, slowest %.2f, watched %.1f s)",
+                    "%s at %s: %s (still %.1f s, slowest %.2f, fastest %.2f, watched %.1f s)",
                     queued.label,
                     queued.sign_id,
                     queued.outcome,
                     queued.hold_s,
                     queued.min_speed,
+                    queued.max_speed,
                     queued.observed_s,
                 )
 

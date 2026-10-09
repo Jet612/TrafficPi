@@ -338,13 +338,19 @@ def _load_profile(path: Path | None) -> CompiledProfile:
 def _print_stops(replayed) -> None:  # type: ignore[no-untyped-def]
     """What each vehicle did at each stop sign: the outcome and the numbers behind it."""
     t0 = replayed.timestamps_ns[0] if replayed.timestamps_ns else 0
-    print("stop signs (time since the first frame; still = the longest wait, slow = the slowest,")
-    print("in the vehicle's own sizes a second, watched = how long it was followed in the zone):")
+    print(
+        "stop signs (time since the first frame; still = the longest wait, slow = the slowest and"
+    )
+    print(
+        "fast = the fastest it went, in the vehicle's own sizes a second, watched = how long it was"
+    )
+    print("followed in the zone):")
     for e in replayed.stops:
         seconds = (e.timestamp_ns - t0) / 1e9
         print(
             f"  {seconds:8.2f} s  {e.sign_id:16} {e.outcome:13} {e.label:10} track {e.track_id}"
-            f"  still {e.hold_s:4.1f} s  slow {e.min_speed:5.2f}  watched {e.observed_s:4.1f} s"
+            f"  still {e.hold_s:4.1f} s  slow {e.min_speed:5.2f}  fast {e.max_speed:5.2f}"
+            f"  watched {e.observed_s:4.1f} s"
         )
 
 

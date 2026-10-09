@@ -33,6 +33,7 @@ import {
   type OutcomeCounts,
   type Tone,
 } from "@/lib/data";
+import { fastestText, speedShort } from "@/lib/speed";
 import { formatCount, hourRange } from "@/lib/format";
 import { OUTCOMES, OUTCOME_LABEL, signLabel } from "@/lib/stops";
 import type { Profile, StopOutcome, StopStats } from "@/lib/types";
@@ -55,6 +56,7 @@ export function StopStatsSection({ stats, period, profile, busy }: { stats: Stop
   const signs = stats.by_sign.map((row) => ({ ...row, key: row.sign, name: signLabel(profile, row.sign) }));
   const weekdays = stats.by_weekday.map((row) => ({ ...row, key: String(row.weekday), name: weekdayName(row.weekday) }));
   const busiest = peak(stats.by_hour, totalOf);
+  const fastestOn = new Map(stats.by_day.map((day) => [day.date, day.fastest]));
   return (
     <>
       <HowDriversDid stats={stats} period={period} busy={busy} />
@@ -87,8 +89,17 @@ export function StopStatsSection({ stats, period, profile, busy }: { stats: Stop
           interval={Math.max(0, Math.ceil(days / 10) - 1)}
           emptyText="No vehicle was judged in this time"
           firstColumn="Day"
-          extraColumns={[{ header: "Stop rate", cell: (row) => stopRateText(row.values) }]}
-          summary={`Vehicles judged at the stop signs on each of ${days} days, stacked by what they did.`}
+          extraColumns={[
+            { header: "Stop rate", cell: (row) => stopRateText(row.values) },
+            {
+              header: "Fastest (est.)",
+              cell: (row) => {
+                const fastest = fastestOn.get(row.id);
+                return fastest ? speedShort(fastest.speed_ms, stats.units) : "–";
+              },
+            },
+          ]}
+          summary={`Vehicles judged at the stop signs on each of ${days} days, stacked by what they did. The table also gives each day's fastest estimated speed.`}
           busy={busy}
           testId="data-stops-by-day"
         />
@@ -239,6 +250,10 @@ function Highlights({ stats }: { stats: StopStats }) {
   if (day) {
     facts.push({ key: "busiest-day", label: "Busiest day", value: dayTitle(day.item.date), note: plural(day.value, "vehicle") });
   }
+  if (stats.fastest) {
+    const fastest = fastestText(stats.fastest, stats.units, stats.timezone);
+    facts.push({ key: "fastest", label: "Fastest estimated speed", value: fastest.speed, note: `${fastest.note}. A rough estimate.` });
+  }
   const byKind = rateExtremes(stats.by_kind);
   if (byKind) {
     facts.push({
@@ -280,6 +295,7 @@ function Highlights({ stats }: { stats: StopStats }) {
         <p className="mt-4 text-sm text-ink-3">
           An hour or a kind is compared only when at least {MIN_SAMPLE} of its vehicles could be judged, so that one out of one is not &ldquo;100%&rdquo;. A stop rate is the
           share of those vehicles that stopped.
+          {stats.fastest && " A speed is an estimate: how fast a vehicle crossed the picture, compared with its own size, good to about 40%. Each day's fastest is in the table of the day-by-day card."}
         </p>
       </CardBody>
     </Card>
@@ -381,7 +397,8 @@ function HowTheyStop({ stats }: { stats: StopStats }) {
               })}
             </ul>
             <p className="mt-3 text-sm text-ink-3">
-              Speeds are rough: they are measured in the vehicle&rsquo;s own lengths a second, and here a length is taken to be a car&rsquo;s, about 4.5 m.
+              Speeds are rough: they are measured in the vehicle&rsquo;s own sizes a second (a size is the width and the height of its box in the picture, averaged), and here a
+              car&rsquo;s size is taken to be about 2.5 m. They are good to about 40%.
             </p>
           </>
         )}

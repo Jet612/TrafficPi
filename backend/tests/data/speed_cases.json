@@ -1,0 +1,28 @@
+{
+  "comment": "Read by backend/tests/test_speed.py and dashboard/src/lib/speed.test.ts: the server and the dashboard must put a speed in the same words. A speed is in metres a second.",
+  "rough": [
+    {"value": 0.2, "rough": 0},
+    {"value": 0.5, "rough": 1},
+    {"value": 4.4, "rough": 4},
+    {"value": 7.5, "rough": 8},
+    {"value": 9.49, "rough": 9},
+    {"value": 9.5, "rough": 10},
+    {"value": 12.4, "rough": 10},
+    {"value": 12.5, "rough": 15},
+    {"value": 29.9, "rough": 30},
+    {"value": 32.4, "rough": 30},
+    {"value": 32.5, "rough": 35},
+    {"value": 48.28, "rough": 50},
+    {"value": 101.0, "rough": 100}
+  ],
+  "phrases": [
+    {"speed_ms": 0.1, "units": "mph", "text": "almost still"},
+    {"speed_ms": 0.1, "units": "kmh", "text": "almost still"},
+    {"speed_ms": 3.0, "units": "mph", "text": "about 7 mph"},
+    {"speed_ms": 3.0, "units": "kmh", "text": "about 10 km/h"},
+    {"speed_ms": 13.411, "units": "mph", "text": "about 30 mph"},
+    {"speed_ms": 13.411, "units": "kmh", "text": "about 50 km/h"},
+    {"speed_ms": 17.9, "units": "mph", "text": "about 40 mph"},
+    {"speed_ms": 17.9, "units": "kmh", "text": "about 65 km/h"}
+  ]
+}

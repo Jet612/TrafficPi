@@ -61,6 +61,7 @@ def test_a_stop_is_an_event_with_its_outcome_and_changes_no_count(store: Store) 
         "hold_s": 0.4,
         "min_speed": 0.31,
         "observed_s": 4.2,
+        "max_speed": -1.0,  # this one was made without a fastest speed
     }
     assert event.evidence_path == "evidence/a.jpg" and event.occurred_at == minute(0) + 3_000
     assert store.minute_counts(0, 2**40) == []
@@ -347,6 +348,29 @@ def test_a_stop_event_with_missing_details_gets_plain_defaults(store: Store) -> 
     (row,) = store.stop_rows(minute(0), minute(1))
     assert (row.kind, row.sign, row.outcome, row.review) == ("", "", "rolling", None)
     assert (row.hold_s, row.min_speed, row.observed_s) == (0.0, -1.0, 0.0)
+    assert row.max_speed == -1.0  # passes from before the fastest speed was kept have none
+
+
+def test_the_fastest_speed_of_a_pass_is_kept_and_comes_back_with_the_rows(store: Store) -> None:
+    store.record_stop(
+        StopEvent(
+            0,
+            1,
+            2,
+            "car",
+            "elm",
+            "did_not_stop",
+            hold_s=0.0,
+            min_speed=1.2,
+            observed_s=3.0,
+            max_speed=2.75,
+        ),
+        minute(0),
+    )
+    store.record_stop(stop("rolling"), minute(1))  # one made without it: not measured
+    first, second = store.stop_rows(minute(0), minute(2))
+    assert first.max_speed == 2.75 and first.min_speed == 1.2
+    assert second.max_speed == -1.0
 
 
 def test_the_first_stop_and_the_first_count_are_found(store: Store) -> None:

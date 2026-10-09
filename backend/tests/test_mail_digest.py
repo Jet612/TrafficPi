@@ -32,9 +32,14 @@ BEFORE = START - (END - START)
 
 
 def stop(
-    outcome: str, when: str = "2026-10-09 08:15", *, review: str | None = None, kind: str = "car"
+    outcome: str,
+    when: str = "2026-10-09 08:15",
+    *,
+    review: str | None = None,
+    kind: str = "car",
+    max_speed: float = -1.0,
 ) -> StopStatRow:
-    return StopStatRow(at(when), kind, "elm", outcome, review, 0.0, -1.0, 4.0)
+    return StopStatRow(at(when), kind, "elm", outcome, review, 0.0, -1.0, 4.0, max_speed)
 
 
 def passes(**by_outcome: int) -> list[StopStatRow]:
@@ -109,7 +114,16 @@ def test_an_empty_period_says_zero_and_not_nothing() -> None:
 def test_the_other_outcomes_follow_in_the_order_of_the_plan() -> None:
     digest = build(passes(rolling=12, stopped=140, indeterminate=2, did_not_stop=3))
     text = digest.text
-    order = ["Rolled through", "Stopped", "Could not tell", "Stop rate", "Busiest hour", "Vehicles"]
+    order = [
+        "Stopped",
+        "Rolled through",
+        "Did not stop:",
+        "Could not tell",
+        "Stop rate",
+        "Busiest hour",
+        "Vehicles",
+        "Fastest estimate",
+    ]
     positions = [text.index(label) for label in order]
     assert positions == sorted(positions)
     assert digest.facts.rolling == 12 and digest.facts.stopped == 140
@@ -372,3 +386,142 @@ def test_what_has_its_own_colour_can_be_recoloured_for_a_dark_screen() -> None:
     assert '<a class="link"' in html
     assert 'class="headline"' in html
     assert 'class="good"' in build(passes(did_not_stop=0)).html  # the all-clear is recoloured too
+
+
+# --- a share for every outcome, as the Data page shows them ---------------------------------------
+
+
+def test_every_outcome_has_its_count_and_its_share_as_the_data_page_shows_it() -> None:
+    """95, 30, 15 and 8 of 148 judged: the Data page's tiles say 64%, 20%, 10% and 6% (its test)."""
+    digest = build(passes(stopped=95, rolling=30, did_not_stop=15, indeterminate=8))
+    assert digest.facts.shares == {
+        "stopped": 64,
+        "rolling": 20,
+        "did_not_stop": 10,
+        "indeterminate": 6,
+    }
+    for row in ("Stopped:", "Rolled through:", "Did not stop:", "Could not tell:"):
+        assert row in digest.text
+    for words in ("95 (64%)", "30 (20%)", "15 (10%)", "8 (6%)"):
+        assert words in digest.text and words in digest.html, words
+
+
+def test_the_shares_add_up_to_a_hundred_so_nothing_is_lost_to_rounding() -> None:
+    digest = build(passes(stopped=1, rolling=1, did_not_stop=1))
+    assert sum(digest.facts.shares.values()) == 100
+    assert "1 (34%)" in digest.text and digest.text.count("(33%)") == 2
+
+
+def test_the_stop_rate_stays_as_it_was_and_is_of_those_that_could_be_told() -> None:
+    digest = build(passes(stopped=140, rolling=12, did_not_stop=3, indeterminate=40))
+    assert digest.facts.stop_rate_percent == 90  # 140 of 155, not 140 of 195
+    assert digest.facts.shares["stopped"] == 72  # of all 195 judged, like the tile
+    assert (
+        "Stop rate" in digest.text and "90% (of the 155 passes that could be told)" in digest.text
+    )
+
+
+def test_with_nothing_judged_there_are_counts_and_no_shares() -> None:
+    digest = build([])
+    assert digest.facts.shares == {
+        "stopped": 0,
+        "rolling": 0,
+        "did_not_stop": 0,
+        "indeterminate": 0,
+    }
+    lines = digest.text.splitlines()
+    for label in ("Stopped:", "Rolled through:", "Did not stop:", "Could not tell:"):
+        line = next(line for line in lines if line.startswith(label))
+        assert line.split(":", 1)[1].strip() == "0", line  # a count, and no share of nothing
+    assert (
+        next(line for line in lines if line.startswith("Stop rate")).split(":", 1)[1].strip() == D
+    )
+
+
+def test_a_false_alarm_has_no_share_either() -> None:
+    rows = [*passes(stopped=3), stop("did_not_stop", review="false_positive")]
+    digest = build(rows)
+    assert digest.facts.shares["did_not_stop"] == 0 and digest.facts.shares["stopped"] == 100
+
+
+# --- the fastest estimated speed ------------------------------------------------------------------
+
+
+def test_the_fastest_estimate_says_how_fast_what_and_when() -> None:
+    rows = [
+        stop("did_not_stop", "2026-10-09 08:15", max_speed=2.0),  # a car: 2 x 2.5 = 5 m/s
+        stop("did_not_stop", "2026-10-09 17:42", max_speed=5.4),  # 13.5 m/s = 30.2 mph
+        stop("stopped", "2026-10-09 18:05", max_speed=1.5),
+    ]
+    digest = build(rows)
+    assert digest.facts.fastest_speed_ms == 13.5 and digest.facts.fastest_label == "car"
+    assert digest.facts.fastest_at_ms == at("2026-10-09 17:42")
+    assert "Fastest estimate:" in digest.text
+    for where in (digest.text, digest.html):
+        assert "about 30 mph (a car, Fri 9 Oct 5:42 pm)" in where
+
+
+def test_the_fastest_estimate_is_in_the_owners_units() -> None:
+    rows = [stop("did_not_stop", max_speed=5.4)]
+    assert "about 30 mph" in build(rows, units="mph").text
+    assert "about 50 km/h" in build(rows, units="kmh").text  # 48.6 km/h to the nearest 5
+
+
+def test_a_kind_is_sized_by_its_own_kind_in_the_fastest_estimate() -> None:
+    digest = build([stop("did_not_stop", kind="bus", max_speed=2.0)])  # 2 x 5.5 = 11 m/s
+    assert digest.facts.fastest_speed_ms == 11.0 and "a bus" in digest.text
+
+
+def test_with_no_speed_measured_the_row_says_so_instead_of_a_number() -> None:
+    digest = build(passes(did_not_stop=2))  # passes made before speeds were kept
+    assert digest.facts.fastest_speed_ms is None
+    assert "Fastest estimate:" in digest.text and "no speed was measured" in digest.text.lower()
+
+
+def test_with_no_stop_sign_there_is_no_speed_row() -> None:
+    digest = build([], has_stop_sign=False, counts=[count(8, 12)])
+    assert "Fastest estimate" not in digest.text
+
+
+def test_the_mail_says_that_a_speed_is_an_estimate_and_how_good_it_is() -> None:
+    digest = build([stop("did_not_stop", max_speed=3.0)])
+    text = digest.text.lower()
+    assert "estimate" in text and "own size" in text and "40%" in text
+    assert "estimate" in digest.html.lower()
+
+
+def test_a_mail_that_covers_several_days_gives_the_fastest_of_each() -> None:
+    start, end = at("2026-10-09 20:00"), at("2026-10-12 20:00")  # Friday evening to Monday evening
+    rows = [
+        stop("did_not_stop", "2026-10-09 21:00", max_speed=3.0),  # Fri: 7.5 m/s, 16.8 mph
+        stop("did_not_stop", "2026-10-10 12:00", max_speed=4.0),  # Sat: 10 m/s, 22.4 mph
+        stop("did_not_stop", "2026-10-12 08:00", max_speed=5.0),  # Mon: 12.5 m/s, 28 mph
+    ]
+    digest = build(rows, start_ms=start, end_ms=end)
+    assert [d for d, _ in digest.facts.fastest_by_day] == [
+        "2026-10-09",
+        "2026-10-10",
+        "2026-10-11",
+        "2026-10-12",
+    ]
+    line = next(line for line in digest.text.splitlines() if line.startswith("Fastest by day"))
+    assert line.split(":", 1)[1].strip() == (
+        f"Fri about 15 mph, Sat about 20 mph, Sun {D}, Mon about 30 mph"
+    )
+    assert "Fastest by day" in digest.html
+
+
+def test_a_day_long_mail_has_one_fastest_not_a_list() -> None:
+    digest = build([stop("did_not_stop", max_speed=3.0)])
+    assert "Fastest by day" not in digest.text
+
+
+def test_a_vehicle_that_never_moved_has_a_speed_of_almost_still() -> None:
+    digest = build([stop("stopped", max_speed=0.0)])  # stood still the whole time
+    assert digest.facts.fastest_speed_ms == 0.0
+    assert "almost still" in digest.text
+
+
+def test_the_caveat_about_estimates_is_there_only_when_a_speed_is_shown() -> None:
+    assert "not a measurement" not in build(passes(did_not_stop=2)).text
+    assert "not a measurement" in build([stop("did_not_stop", max_speed=3.0)]).text

@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import math
 from collections import deque
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
@@ -34,6 +34,13 @@ Outcome = Literal["stopped", "rolling", "did_not_stop", "indeterminate"]
 
 SAMPLE_SPACING_NS = 60_000_000  # points closer in time than this add nothing; this bounds the work
 MAX_SAMPLES = 2_000  # about two minutes at that spacing; the oldest are dropped
+# What the fastest speed trusts (a day's "fastest" is the extreme of many passes, so a glitch of the
+# tracker, two close cars swapping numbers say, would become the answer if it were let through):
+MAX_SIZE_CHANGE = 1.4  # the sizes at the two ends of a window may differ by this factor at most
+STEADY = (
+    0.4  # and, going faster than a size a second, each half of it covers this much of the other
+)
+MAX_SPEED = 12.0  # sizes a second: faster than this is no road vehicle, whatever the picture says
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,6 +52,9 @@ class StopEvent(Event):
     hold_s: float  # the longest it was still in the approach zone
     min_speed: float  # the slowest it went there: its own sizes per second, over ``window_s``
     observed_s: float  # how long it was watched in the zone before the line
+    # The fastest it went there, in the same units and over the same windows, among those that can
+    # be trusted (``fastest``): how fast it arrived. -1 if there was no window to trust.
+    max_speed: float = -1.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,15 +128,11 @@ def longest_still(samples: Sequence[_Sample], sign: StopSign) -> float:
     return best_ns / 1e9
 
 
-def slowest(samples: Sequence[_Sample], sign: StopSign) -> float | None:
-    """The slowest speed, in the vehicle's own sizes a second, over any ``window_s``.
-
-    None if the points never cover a whole window without a break (``max_gap_s``) in it.
-    """
+def _windows(samples: Sequence[_Sample], sign: StopSign) -> Iterator[tuple[int, int]]:
+    """The first and last point of every stretch of ``window_s`` that has no break in it."""
     window_ns = round(sign.window_s * 1e9)
     gap_ns = round(sign.max_gap_s * 1e9)
     n = len(samples)
-    best: float | None = None
     for i in range(n):
         k = i
         broken = False
@@ -135,13 +141,56 @@ def slowest(samples: Sequence[_Sample], sign: StopSign) -> float | None:
                 broken = True
                 break
             k += 1
-        elapsed_ns = samples[k].t_ns - samples[i].t_ns
-        if broken or elapsed_ns < window_ns:
+        if broken or samples[k].t_ns - samples[i].t_ns < window_ns:
             continue
-        size = (samples[i].size + samples[k].size) / 2
-        moved = math.hypot(samples[k].x - samples[i].x, samples[k].y - samples[i].y)
-        speed = moved / (elapsed_ns / 1e9 * size)
+        yield i, k
+
+
+def _speed(first: _Sample, last: _Sample) -> float:
+    """How fast the vehicle went between two points, in its own sizes a second."""
+    size = (first.size + last.size) / 2
+    moved = math.hypot(last.x - first.x, last.y - first.y)
+    return moved / ((last.t_ns - first.t_ns) / 1e9 * size)
+
+
+def slowest(samples: Sequence[_Sample], sign: StopSign) -> float | None:
+    """The slowest speed, in the vehicle's own sizes a second, over any ``window_s``.
+
+    None if the points never cover a whole window without a break (``max_gap_s``) in it.
+    """
+    best: float | None = None
+    for i, k in _windows(samples, sign):
+        speed = _speed(samples[i], samples[k])
         best = speed if best is None else min(best, speed)
+    return best
+
+
+def fastest(samples: Sequence[_Sample], sign: StopSign) -> float | None:
+    """The fastest speed, in the vehicle's own sizes a second, over any ``window_s`` that can be
+    trusted; None if there is none.
+
+    The windows are those of ``slowest``, less the ones a tracker's mistake could make look fast:
+    those whose two ends are of very different size (the box was of another vehicle, or half
+    hidden), those that go faster than a size a second with almost all of the way covered in one
+    half of the window (a leap of the track, not a drive), and those faster than any road vehicle.
+    """
+    best: float | None = None
+    for i, k in _windows(samples, sign):
+        first, last = samples[i], samples[k]
+        small, large = sorted((first.size, last.size))
+        if large > MAX_SIZE_CHANGE * small:
+            continue
+        speed = _speed(first, last)
+        if speed > MAX_SPEED:
+            continue
+        if speed >= 1.0:
+            middle_ns = (first.t_ns + last.t_ns) / 2
+            mid = min(samples[i : k + 1], key=lambda s: abs(s.t_ns - middle_ns))
+            before = math.hypot(mid.x - first.x, mid.y - first.y)
+            after = math.hypot(last.x - mid.x, last.y - mid.y)
+            if min(before, after) < STEADY * max(before, after):
+                continue
+        best = speed if best is None else max(best, speed)
     return best
 
 
@@ -198,6 +247,7 @@ def _judge(crossing: CountEvent, sign: StopSign, seen: list[_Sample]) -> StopEve
     observed = (crossing.timestamp_ns - seen[0].t_ns) / 1e9 if seen else 0.0
     hold = longest_still(seen, sign) if seen else 0.0
     speed = slowest(seen, sign) if seen else None
+    quickest = fastest(seen, sign) if seen else None
     if hold >= sign.hold_s:
         outcome: Outcome = "stopped"  # seen to stop: that needs no more watching than it took
     elif observed < sign.min_observed_s or speed is None:
@@ -216,4 +266,5 @@ def _judge(crossing: CountEvent, sign: StopSign, seen: list[_Sample]) -> StopEve
         hold_s=round(hold, 3),
         min_speed=round(speed, 3) if speed is not None else -1.0,
         observed_s=round(observed, 3),
+        max_speed=round(quickest, 3) if quickest is not None else -1.0,
     )

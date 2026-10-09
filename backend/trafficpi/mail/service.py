@@ -383,6 +383,7 @@ class MailService:
                 generated_ms=now,
                 link_url=schedule.link_url,
                 kind="test" if kind == "test" else "daily",
+                units="kmh" if store.get_setting("units", "mph") == "kmh" else "mph",
             )
         )
 

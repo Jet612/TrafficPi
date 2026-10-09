@@ -1,5 +1,6 @@
 import { classColor, classLabel, orderedClasses } from "./classes";
 import { hourLabel, hourRange } from "./format";
+import { SIZE_METRES, inUnits } from "./speed";
 import { OUTCOMES, OUTCOME_LABEL } from "./stops";
 import type { StopOutcome, StopStats, TrafficStats } from "./types";
 
@@ -143,16 +144,12 @@ export function rateExtremes<T extends OutcomeCounts>(items: readonly T[]): { lo
 
 // --- speed in words ------------------------------------------------------------------------------
 
-/** The length a vehicle's own size stands for when a speed in sizes a second is put in words (a car is about this long). */
-export const SIZE_METRES = 4.5;
-
-/** A speed in the vehicle's own sizes a second as a whole number of mph or km/h, for a car about 4.5 m long. */
+/** A speed in the vehicle's own sizes a second as a whole number of mph or km/h, for a car (`SIZE_METRES`, which is not a car's length). */
 export function approximateSpeed(sizesPerSecond: number, units: "mph" | "kmh"): number {
-  const metresPerSecond = sizesPerSecond * SIZE_METRES;
-  return Math.round(metresPerSecond * (units === "mph" ? 2.23694 : 3.6));
+  return Math.round(inUnits(sizesPerSecond * SIZE_METRES, units));
 }
 
-/** "about 7 mph", "about 11 km/h", "almost still". */
+/** "about 4 mph", "about 6 km/h", "almost still". */
 export function speedText(sizesPerSecond: number, units: "mph" | "kmh"): string {
   const speed = approximateSpeed(sizesPerSecond, units);
   return speed < 1 ? "almost still" : `about ${speed} ${units === "mph" ? "mph" : "km/h"}`;

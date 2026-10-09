@@ -1,6 +1,8 @@
 """The sums behind the Data page: periods of local days, stop-sign shares, traffic (D25, M7)."""
 
+import json
 from datetime import UTC, datetime, tzinfo
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -9,6 +11,7 @@ from trafficpi.api.analytics import (
     MAX_DAYS,
     local_midnight_ms,
     period_for,
+    shares_of,
     stop_stats,
     traffic_stats,
 )
@@ -32,9 +35,10 @@ def stop_row(
     review: str | None = None,
     hold_s: float = 0.0,
     min_speed: float = -1.0,
+    max_speed: float = -1.0,
     tz: tzinfo = NY,
 ) -> StopStatRow:
-    return StopStatRow(at(when, tz), kind, sign, outcome, review, hold_s, min_speed, 4.0)
+    return StopStatRow(at(when, tz), kind, sign, outcome, review, hold_s, min_speed, 4.0, max_speed)
 
 
 # --- the period ----------------------------------------------------------------------------------
@@ -335,3 +339,138 @@ def test_traffic_with_nothing_counted_is_zeros_everywhere() -> None:
     assert [line["id"] for line in stats["lines"]] == ["north"]
     assert all(h["total"] == 0 for h in stats["by_hour"])
     assert [d["total"] for d in stats["by_day"]] == [0, 0, 0]
+
+
+# --- the fastest estimated speed of each day ------------------------------------------------------
+
+
+def fast_rows() -> list[StopStatRow]:
+    return [
+        stop_row("2026-10-09 08:15", "did_not_stop", max_speed=2.0),  # a car: 2.0 x 2.5 m = 5 m/s
+        stop_row("2026-10-09 17:42", "did_not_stop", max_speed=4.0),  # a car: 10 m/s, the day's
+        stop_row("2026-10-09 18:05", "stopped", max_speed=1.5),
+        stop_row("2026-10-08 12:00", "rolling", kind="truck", max_speed=3.0),  # 3.0 x 3.5 = 10.5
+        stop_row("2026-10-08 12:30", "stopped", max_speed=-1.0),  # not measured: left out
+        # 2026-10-07 has no measured speed at all
+        stop_row("2026-10-07 09:00", "stopped", max_speed=-1.0),
+    ]
+
+
+def test_each_day_has_the_fastest_estimate_with_the_kind_and_the_time() -> None:
+    stats = stop_stats(fast_rows(), None, NY, PERIOD)
+    by_date = {d["date"]: d["fastest"] for d in stats["by_day"]}
+    assert by_date["2026-10-09"] == {
+        "speed_ms": 10.0,
+        "label": "car",
+        "at": at("2026-10-09 17:42", NY),
+    }
+    assert by_date["2026-10-08"] == {
+        "speed_ms": 10.5,
+        "label": "truck",
+        "at": at("2026-10-08 12:00", NY),
+    }
+    assert by_date["2026-10-07"] is None  # nothing there had a speed
+
+
+def test_the_fastest_of_the_period_is_the_fastest_of_its_days_and_says_which() -> None:
+    stats = stop_stats(fast_rows(), None, NY, PERIOD)
+    assert stats["fastest"] == {
+        "speed_ms": 10.5,
+        "label": "truck",
+        "at": at("2026-10-08 12:00", NY),
+    }
+
+
+def test_a_kind_is_converted_by_its_own_size_so_a_bus_is_faster_than_a_car_at_the_same_pace() -> (
+    None
+):
+    rows = [
+        stop_row("2026-10-09 10:00", "did_not_stop", kind="car", max_speed=2.0),
+        stop_row("2026-10-09 11:00", "did_not_stop", kind="bus", max_speed=2.0),
+        stop_row("2026-10-09 12:00", "did_not_stop", kind="motorcycle", max_speed=2.0),
+    ]
+    fastest = stop_stats(rows, None, NY, PERIOD)["fastest"]
+    assert fastest == {
+        "speed_ms": 11.0,
+        "label": "bus",
+        "at": at("2026-10-09 11:00", NY),
+    }  # 2 x 5.5
+
+
+def test_a_pass_with_no_measured_speed_is_never_the_fastest_and_nothing_is_made_up() -> None:
+    rows = [stop_row("2026-10-09 10:00", "did_not_stop", max_speed=-1.0)]
+    stats = stop_stats(rows, None, NY, PERIOD)
+    assert stats["fastest"] is None
+    assert all(d["fastest"] is None for d in stats["by_day"])
+    assert stop_stats([], None, NY, PERIOD)["fastest"] is None
+
+
+def test_a_pass_that_a_person_called_a_false_alarm_is_not_the_fastest() -> None:
+    rows = [
+        stop_row("2026-10-09 10:00", "did_not_stop", max_speed=5.0, review="false_positive"),
+        stop_row("2026-10-09 11:00", "did_not_stop", max_speed=2.0),
+    ]
+    assert stop_stats(rows, None, NY, PERIOD)["fastest"]["speed_ms"] == 5.0  # type: ignore[index]
+
+
+def test_a_vehicle_that_stood_still_has_a_speed_of_nothing_not_no_speed() -> None:
+    rows = [stop_row("2026-10-09 10:00", "stopped", max_speed=0.0)]
+    assert stop_stats(rows, None, NY, PERIOD)["fastest"] == {
+        "speed_ms": 0.0,
+        "label": "car",
+        "at": at("2026-10-09 10:00", NY),
+    }
+
+
+def test_two_equally_fast_passes_give_the_earlier_one() -> None:
+    rows = [
+        stop_row("2026-10-09 11:00", "did_not_stop", max_speed=2.0),
+        stop_row("2026-10-09 10:00", "did_not_stop", max_speed=2.0),
+    ]
+    rows.sort(key=lambda r: r.occurred_at)  # the store gives them oldest first
+    assert stop_stats(rows, None, NY, PERIOD)["fastest"]["at"] == at("2026-10-09 10:00", NY)  # type: ignore[index]
+
+
+def test_the_day_is_the_one_in_the_zone_not_the_one_in_utc_for_the_fastest_too() -> None:
+    late = stop_row("2026-10-09 22:30", "did_not_stop", max_speed=2.0)  # 02:30 UTC on the 10th
+    stats = stop_stats([late], None, NY, PERIOD)
+    assert [d["date"] for d in stats["by_day"] if d["fastest"]] == ["2026-10-09"]
+
+
+def test_a_speed_is_rounded_to_a_tenth_of_a_metre_a_second() -> None:
+    rows = [stop_row("2026-10-09 10:00", "did_not_stop", max_speed=2.3333)]  # 5.83325 m/s
+    assert stop_stats(rows, None, NY, PERIOD)["fastest"]["speed_ms"] == 5.8  # type: ignore[index]
+
+
+# --- the shares, as the Data page rounds them --------------------------------------------------
+
+SHARE_CASES = json.loads((Path(__file__).parent / "data" / "share_cases.json").read_text())["cases"]
+
+
+def test_the_shares_are_the_ones_the_data_page_shows_in_every_case_it_was_asked() -> None:
+    """The cases were made by running the dashboard's own `sharesOf` (dashboard/src/lib/data.ts),
+    so that the email, which says the same numbers, cannot round differently."""
+    assert len(SHARE_CASES) > 600
+    wrong = [c for c in SHARE_CASES if shares_of(c["counts"]) != c["shares"]]
+    assert wrong[:3] == []
+
+
+def test_the_shares_add_up_to_a_hundred_unless_nothing_was_judged() -> None:
+    assert sum(shares_of({"stopped": 1, "rolling": 1, "did_not_stop": 1}).values()) == 100
+    assert shares_of({"stopped": 1, "rolling": 1, "did_not_stop": 1}) == {
+        "stopped": 34,
+        "rolling": 33,
+        "did_not_stop": 33,
+        "indeterminate": 0,
+    }
+    assert shares_of({}) == {"stopped": 0, "rolling": 0, "did_not_stop": 0, "indeterminate": 0}
+
+
+def test_an_outcome_that_did_not_happen_has_no_share_and_a_missing_one_is_none() -> None:
+    assert shares_of({"stopped": 2, "rolling": 1})["did_not_stop"] == 0
+    assert shares_of({"stopped": 5}) == {
+        "stopped": 100,
+        "rolling": 0,
+        "did_not_stop": 0,
+        "indeterminate": 0,
+    }

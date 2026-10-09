@@ -8,7 +8,7 @@ from tests.fakes import drive as positions
 from trafficpi.core.coco import class_name
 from trafficpi.core.geometry import Line, Polygon
 from trafficpi.vision.rules import StopEvent, StopSign, StopSignRule
-from trafficpi.vision.rules.stop_sign import _Sample, longest_still, slowest
+from trafficpi.vision.rules.stop_sign import _Sample, fastest, longest_still, slowest
 from trafficpi.vision.tracker import TrackUpdate
 
 FRAME_NS = 33_333_333  # a 30 fps camera
@@ -367,3 +367,107 @@ def test_a_speed_needs_a_whole_window_of_points() -> None:
     assert slowest([], SIGN) is None
     broken = samples([(0.0, 0.1, 0.8), (0.1, 0.11, 0.8), (1.5, 0.3, 0.8), (1.6, 0.31, 0.8)])
     assert slowest(broken, SIGN) is None  # no half second without a break in it
+
+
+# --- the fastest speed: the same windows, but only those that can be trusted ---------------------
+
+
+def test_the_fastest_speed_is_in_the_vehicles_own_sizes_a_second_like_the_slowest() -> None:
+    steady = [(i * 0.1, 0.17 * i * 0.1, 0.8) for i in range(30)]  # one size a second throughout
+    assert fastest(samples(steady), SIGN) == pytest.approx(1.0)
+    assert slowest(samples(steady), SIGN) == pytest.approx(1.0)
+
+
+def test_the_fastest_speed_is_where_the_vehicle_went_fastest() -> None:
+    slow = [(i * 0.1, 0.17 * i * 0.1, 0.8) for i in range(15)]  # a size a second for 1.5 s ...
+    x0 = slow[-1][1]
+    fast = [(1.5 + i * 0.1, x0 + 0.17 * 3 * i * 0.1, 0.8) for i in range(1, 16)]  # ... then three
+    pts = samples(slow + fast)
+    assert fastest(pts, SIGN) == pytest.approx(3.0)
+    assert slowest(pts, SIGN) == pytest.approx(1.0)
+
+
+def test_a_fastest_speed_needs_a_whole_window_of_points_like_a_slowest() -> None:
+    assert fastest(samples([(0.0, 0.1, 0.8), (0.2, 0.2, 0.8)]), SIGN) is None
+    assert fastest([], SIGN) is None
+    broken = samples([(0.0, 0.1, 0.8), (0.1, 0.11, 0.8), (1.5, 0.3, 0.8), (1.6, 0.31, 0.8)])
+    assert fastest(broken, SIGN) is None
+
+
+def test_the_fastest_is_never_less_than_the_slowest() -> None:
+    rng = random.Random(7)
+    for _ in range(40):
+        x, pts = 0.1, []
+        for i in range(40):
+            x += rng.uniform(0.0, 0.03)
+            pts.append((i * 0.1, x, 0.8))
+        quick, slow = fastest(samples(pts), SIGN), slowest(samples(pts), SIGN)
+        assert slow is not None
+        assert quick is None or quick >= slow - 1e-9
+
+
+def test_a_jump_of_the_track_is_not_a_speed() -> None:
+    """Two cars close together swap numbers, and the track leaps across the gap between them in
+    one frame. That is not a car doing 5 sizes a second: the motion is all in one half of the
+    window, and a speed counts only if it is steady through it."""
+    pts = [
+        (i * 0.1, 0.3 + 0.017 * i * 0.1 * 0.5, 0.8) for i in range(30)
+    ]  # a creep: 0.1 a size a s
+    jumped = [(t, x + (0.35 if t >= 1.5 else 0.0), y) for t, x, y in pts]  # one leap of 0.35
+    assert fastest(samples(jumped), SIGN) == pytest.approx(0.05, abs=0.02)
+    # the same leap gives the slowest nothing to worry about, but the windows that hold it would
+    # have made the fastest 0.35 / 0.5 s / 0.17 = 4.1 sizes a second
+    assert 0.35 / 0.5 / 0.17 > 4.0
+
+
+def test_a_window_whose_two_ends_are_very_different_in_size_is_not_trusted() -> None:
+    """The box is of another vehicle at one end, or half hidden: a speed in sizes means nothing."""
+    steady = [_Sample(round(i * 0.1 * 1e9), 0.17 * i * 0.1, 0.8, 0.17) for i in range(30)]
+    swapped = [
+        _Sample(s.t_ns, s.x, s.y, s.size * (2.0 if s.t_ns >= 1.5e9 else 1.0)) for s in steady
+    ]
+    # windows that end in the other size are left out; windows wholly inside either are not
+    assert fastest(swapped, SIGN) == pytest.approx(1.0, abs=0.1)
+    only_mixed = [steady[0], steady[3], steady[6]]
+    only_mixed = [
+        _Sample(s.t_ns, s.x, s.y, s.size * (2.0 if i else 1.0)) for i, s in enumerate(only_mixed)
+    ]
+    assert fastest(only_mixed, SIGN) is None
+
+
+def test_a_speed_faster_than_any_road_vehicle_is_a_glitch_and_left_out() -> None:
+    pts = [(i * 0.1, 0.05 + 0.17 * 30 * i * 0.1, 0.8) for i in range(8)]  # 30 sizes a second
+    assert fastest(samples(pts), SIGN) is None
+    assert slowest(samples(pts), SIGN) == pytest.approx(30.0)  # the slowest is not filtered
+
+
+def test_a_pass_records_the_fastest_it_went_and_the_slowest() -> None:
+    (miss,) = run(StopSignRule([SIGN]), positions([(5.0, 0.15, 0.15)]))
+    assert miss.outcome == "did_not_stop"
+    assert miss.max_speed == pytest.approx(1.54, abs=0.02)  # 0.15 a second of the width
+    assert miss.max_speed == pytest.approx(miss.min_speed, abs=0.02)  # at one speed throughout
+    (roll,) = run(StopSignRule([SIGN]), positions(ROLLING_STOP))
+    assert roll.outcome == "rolling"
+    assert roll.max_speed == pytest.approx(1.54, abs=0.05)  # it arrived at the same speed
+    assert roll.min_speed < 0.5 < roll.max_speed
+
+
+def test_a_stop_records_how_fast_the_vehicle_arrived() -> None:
+    (stop,) = run(StopSignRule([SIGN]), positions(FULL_STOP))
+    assert stop.outcome == "stopped"
+    assert stop.max_speed == pytest.approx(1.54, abs=0.05)
+
+
+def test_a_pass_with_no_whole_window_has_no_fastest_speed() -> None:
+    first_seen_at_the_line = positions([(1.0, 0.15, 0.15)], x0=0.46)
+    (event,) = run(StopSignRule([SIGN]), first_seen_at_the_line)
+    assert event.outcome == "indeterminate" and event.max_speed == -1.0
+
+
+def test_a_slow_jerky_crawl_still_has_a_fastest_speed() -> None:
+    """The steady test is for fast windows, where a leap could pass for a speed. A crawl that
+    moves in the first half of a window and not in the second is slow, whatever its rhythm: it is
+    measured, or every slow, shaky pass would be recorded as "not measured"."""
+    pts = [(0.0, 0.300, 0.8), (0.1, 0.316, 0.8), (0.2, 0.332, 0.8)]
+    pts += [(0.3, 0.332, 0.8), (0.4, 0.332, 0.8), (0.5, 0.332, 0.8)]
+    assert fastest(samples(pts), SIGN) == pytest.approx(0.032 / (0.5 * 0.17))

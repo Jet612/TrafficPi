@@ -64,7 +64,7 @@ def test_what_a_car_does_at_a_stop_sign_is_stored_as_an_event(
     assert stops(store) == [("elm", outcome, "car")]
     (row,) = store.recent_events(type="stop")
     assert row.type == "stop" and row.direction is None and row.track_id is not None
-    assert set(row.details or {}) == {"outcome", "hold_s", "min_speed", "observed_s"}
+    assert set(row.details or {}) == {"outcome", "hold_s", "min_speed", "observed_s", "max_speed"}
     assert service.events_recorded == 1
     assert store.minute_counts(0, 2**40) == []  # a stop is not a count
 
@@ -75,6 +75,7 @@ def test_the_numbers_behind_the_outcome_are_kept(store: Store) -> None:
     (row,) = store.recent_events(type="stop")
     details = row.details or {}
     assert details["hold_s"] >= 1.5 and details["min_speed"] < 0.1 and details["observed_s"] > 3
+    assert details["max_speed"] > 1.0  # it arrived at about 1.5 sizes a second, then stopped
 
 
 def test_stop_signs_and_counting_lines_work_side_by_side(store: Store) -> None:

@@ -43,7 +43,9 @@ If you installed with `--reboot-at 03:00` the Pi reboots at that local time ever
 
 ## The daily email
 
-TrafficPi can email a short report every day: how many vehicles **did not stop**, rolled through and stopped at the stop signs since the last report, the stop rate, the busiest hour and the vehicles counted, with a line when the camera was away for part of the time (so that a quiet day is not read as a safe one). The did-not-stop number is the headline, with the figure for the same length of time before it beside it. The numbers are the Data page's, so the two cannot disagree. **It is off until you set it up**: Setup page, "Daily email".
+TrafficPi can email a short report every day: how many vehicles **did not stop**, rolled through, stopped and could not be told at the stop signs since the last report, **each with its percentage** of all the passes judged, the stop rate (of those that could be told), the busiest hour, the vehicles counted and **the fastest estimated speed**, with a line when the camera was away for part of the time (so that a quiet day is not read as a safe one). The did-not-stop number is the headline, with the figure for the same length of time before it beside it. The numbers, and the way the percentages are rounded, are the Data page's, so the two cannot disagree.
+
+**A speed is an estimate.** It is how fast a vehicle crossed the picture compared with its own size, turned into miles or kilometres an hour (the units in Settings) by what a car of that size is in metres. It is good to about 40%, it is rounded (to the nearest 5 above 10), it says what kind of vehicle it was and when, and it is not a measurement: a real one needs the calibration of plan.md M6. The fastest of a day is the fastest *steady* half-second of any pass that day: a jump of the tracker is not counted. Passes made before the speed was added (the evening of 2026-10-09) have none. A mail that covers three days or more (the Monday mail of a weekdays-only schedule) gives each day's fastest. **It is off until you set it up**: Setup page, "Daily email".
 
 ### Setting it up
 

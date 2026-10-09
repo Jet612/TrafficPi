@@ -323,7 +323,7 @@ function StopSignProperties({
           <NumberField
             label="Rolling when slower than"
             unit="sizes a second"
-            hint="Below this, but never still, is a roll; a car is about 4.5 m, so 0.7 is about 7 mph."
+            hint="Below this, but never still, is a roll. A size is about 2.5 m for a car, so 0.7 is about 1.75 m a second, or 4 mph."
             value={sign.roll_speed}
             min={STOP_NUMBERS.roll_speed.min}
             max={STOP_NUMBERS.roll_speed.max}

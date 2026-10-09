@@ -1042,6 +1042,13 @@ try {
 
       // the highlights, the kinds and the reviews
       await page.getByTestId("fact-busiest-hour").waitFor();
+      // the fastest estimated speed: in the owner's units, with when and what, and said to be an estimate
+      assert.ok(stops.fastest, "the made-up street's passes were given a fastest speed");
+      const fastestFact = await page.getByTestId("fact-fastest").innerText();
+      assert.match(fastestFact, /Fastest estimated speed/);
+      assert.match(fastestFact, /about \d+ mph|almost still/);
+      assert.match(fastestFact, /rough estimate/);
+      assert.match(fastestFact, /a (car|truck|bus|bicycle|motorcycle|vehicle), \w{3} \d+ \w{3}, \d\d:\d\d/);
       const kinds = page.getByTestId("data-stops-by-kind");
       await kinds.getByRole("row", { name: /^Cars / }).waitFor();
       await page.getByTestId("data-stops-reviews").waitFor();
@@ -1063,6 +1070,15 @@ try {
       await hours.getByRole("button", { name: "Chart", exact: true }).click();
       assert.ok(answer("stops", 7).by_hour.length === 24);
       assert.equal(await page.getByTestId("data-stops-by-day").count(), 1, "7 days have a day-by-day chart");
+      // the day-by-day table has a column for each day's fastest estimate, and today's is the server's
+      const dayCard = page.getByTestId("data-stops-by-day");
+      await dayCard.getByRole("button", { name: "Table", exact: true }).click();
+      await dayCard.getByRole("columnheader", { name: "Fastest (est.)" }).waitFor();
+      assert.ok(stops.by_day.at(-1).fastest, "today has a fastest estimate");
+      const todayCells = await dayCard.getByRole("row").last().locator("td").allInnerTexts();
+      assert.match(todayCells.at(-1), /^(\d+ (mph|km\/h)|almost still)$/, `today's fastest is a speed (${todayCells.at(-1)})`);
+      assert.equal(await dayCard.getByRole("row").first().locator("th").count() > 3, true);
+      await dayCard.getByRole("button", { name: "Chart", exact: true }).click();
 
       // the traffic, from the same period
       const traffic = answer("traffic", 7);
@@ -1108,7 +1124,7 @@ try {
     const nothing = {
       timezone: "UTC", units: "mph", from_ms: 0, to_ms: 1, days: 7, all_time: false, sign: null, totals: zero, previous: zero,
       by_hour: Array.from({ length: 24 }, (_, hour) => ({ hour, ...zero })),
-      by_day: [], by_weekday: [], by_kind: [], by_sign: [],
+      by_day: [], fastest: null, by_weekday: [], by_kind: [], by_sign: [],
       timing: { stopped_hold_s: null, rolling_min_speed: null, did_not_stop_min_speed: null },
       review: { confirmed: 0, false_alarms: 0, waiting: 0 },
     };
@@ -1683,7 +1699,14 @@ try {
       assert.equal(await frame.getAttribute("sandbox"), "", "every sandbox restriction is on");
       await page.frameLocator('iframe[title="Preview of the daily email"]').getByText("TrafficPi daily report").first().waitFor();
       await mailCard.getByRole("button", { name: "Plain text" }).click();
-      await mailCard.locator("pre").filter({ hasText: "TrafficPi daily report" }).waitFor();
+      const plain = mailCard.locator("pre").filter({ hasText: "TrafficPi daily report" });
+      await plain.waitFor();
+      // every outcome has its count and its share, and there is a fastest estimate
+      const mailText = await plain.innerText();
+      for (const label of ["Stopped:", "Rolled through:", "Did not stop:", "Could not tell:"]) {
+        assert.match(mailText, new RegExp(`${label}\\s+\\d+( \\(\\d+%\\))?\\n`), `${label} has a count and a share`);
+      }
+      assert.match(mailText, /Fastest estimate:\s+(about \d+ (mph|km\/h)|almost still|–)/);
       await mailCard.getByRole("button", { name: "Close the preview" }).click();
       assert.equal(await mailCard.locator("iframe").count(), 0);
       await shot("mail");

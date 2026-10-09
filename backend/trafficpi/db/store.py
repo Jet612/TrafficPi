@@ -87,6 +87,7 @@ class StopStatRow:
     hold_s: float
     min_speed: float  # in the vehicle's own sizes a second; -1 if it was not measured
     observed_s: float
+    max_speed: float = -1.0  # the fastest it went, the same units; -1 if it was not measured
 
 
 @dataclass(frozen=True, slots=True)
@@ -224,6 +225,7 @@ class Store:
                     "hold_s": event.hold_s,
                     "min_speed": event.min_speed,
                     "observed_s": event.observed_s,
+                    "max_speed": event.max_speed,
                 },
                 evidence_path=evidence_path,
             )
@@ -349,6 +351,7 @@ class Store:
                 details["hold_s"].as_float(),
                 details["min_speed"].as_float(),
                 details["observed_s"].as_float(),
+                details["max_speed"].as_float(),
             )
             .where(
                 Event.camera_id == self.camera_id,
@@ -371,8 +374,11 @@ class Store:
                     hold_s=0.0 if hold is None else float(hold),
                     min_speed=-1.0 if speed is None else float(speed),
                     observed_s=0.0 if watched is None else float(watched),
+                    max_speed=-1.0 if quickest is None else float(quickest),
                 )
-                for at, kind, line, outcome, review, hold, speed, watched in s.execute(query)
+                for at, kind, line, outcome, review, hold, speed, watched, quickest in s.execute(
+                    query
+                )
             ]
 
     def first_stop_ms(self, *, sign: str | None = None) -> int | None:

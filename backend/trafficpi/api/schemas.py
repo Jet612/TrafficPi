@@ -128,9 +128,18 @@ class HourOutcomes(OutcomeCounts):
     hour: int  # local hour of the day, 0 to 23, over every day of the period
 
 
+class SpeedEstimate(BaseModel):
+    """The fastest estimated speed in some time: an estimate, not a measurement (plan.md D41)."""
+
+    speed_ms: float  # metres a second, to a tenth
+    label: str  # the kind of vehicle it was
+    at: int  # when it passed, ms since the epoch
+
+
 class DayOutcomes(OutcomeCounts):
     date: str  # the local day, YYYY-MM-DD
     t: int  # when that local day began, ms since the epoch
+    fastest: SpeedEstimate | None  # the fastest that day; None if no pass of it had a speed
 
 
 class WeekdayOutcomes(OutcomeCounts):
@@ -175,6 +184,7 @@ class StopStats(BaseModel):
     previous: OutcomeCounts | None  # the same number of days before it; None for all time
     by_hour: list[HourOutcomes]  # all 24
     by_day: list[DayOutcomes]  # every day of the period, oldest first, empty ones included
+    fastest: SpeedEstimate | None  # the fastest of the period (the earlier day on a tie)
     by_weekday: list[WeekdayOutcomes]  # all 7, Monday first
     by_kind: list[KindOutcomes]  # kinds with passes, most passes first
     by_sign: list[SignOutcomes]  # stop signs with passes, most passes first

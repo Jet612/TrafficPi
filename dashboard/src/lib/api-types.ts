@@ -697,6 +697,7 @@ export interface components {
             date: string;
             /** Did Not Stop */
             did_not_stop: number;
+            fastest: components["schemas"]["SpeedEstimate"] | null;
             /** Indeterminate */
             indeterminate: number;
             /** Rolling */
@@ -1148,6 +1149,18 @@ export interface components {
             /** Stopped */
             stopped: number;
         };
+        /**
+         * SpeedEstimate
+         * @description The fastest estimated speed in some time: an estimate, not a measurement (plan.md D41).
+         */
+        SpeedEstimate: {
+            /** At */
+            at: number;
+            /** Label */
+            label: string;
+            /** Speed Ms */
+            speed_ms: number;
+        };
         /** StatusResponse */
         StatusResponse: {
             /** Api Uptime S */
@@ -1273,6 +1286,7 @@ export interface components {
             by_weekday: components["schemas"]["WeekdayOutcomes"][];
             /** Days */
             days: number;
+            fastest: components["schemas"]["SpeedEstimate"] | null;
             /** From Ms */
             from_ms: number;
             previous: components["schemas"]["OutcomeCounts"] | null;

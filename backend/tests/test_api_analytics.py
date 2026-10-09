@@ -260,3 +260,43 @@ def test_with_nothing_counted_traffic_is_zero_with_every_hour_and_day(client: Te
     body = client.get("/api/stats/traffic", params={"days": 3}).json()
     assert (body["total"], body["by_class"], body["lines"]) == (0, {}, [])
     assert (len(body["by_hour"]), len(body["by_day"]), len(body["by_weekday"])) == (24, 3, 7)
+
+
+def quick(label: str, max_speed: float) -> StopEvent:
+    return StopEvent(
+        0, 7, 2, label, "elm", "did_not_stop",  # type: ignore[arg-type]
+        hold_s=0.0, min_speed=1.0, observed_s=3.0, max_speed=max_speed,
+    )  # fmt: skip
+
+
+def test_each_days_fastest_estimate_and_the_periods_come_with_the_stats(
+    client: TestClient, store: Store
+) -> None:
+    store.record_stop(quick("car", 4.0), ms("2026-10-09 17:42"))
+    store.record_stop(quick("truck", 3.0), ms("2026-10-08 12:00"))
+    body = client.get("/api/stats/stops", params={"days": 3}).json()
+    by_date = {d["date"]: d["fastest"] for d in body["by_day"]}
+    assert by_date == {
+        "2026-10-07": None,
+        "2026-10-08": {"speed_ms": 10.5, "label": "truck", "at": ms("2026-10-08 12:00")},
+        "2026-10-09": {"speed_ms": 10.0, "label": "car", "at": ms("2026-10-09 17:42")},
+    }
+    assert body["fastest"] == {"speed_ms": 10.5, "label": "truck", "at": ms("2026-10-08 12:00")}
+
+
+def test_passes_from_before_the_fastest_speed_was_kept_give_no_speed_and_no_error(
+    client: TestClient, store: Store
+) -> None:
+    seed_week(store)  # these were made without one
+    body = client.get("/api/stats/stops", params={"days": 7}).json()
+    assert body["fastest"] is None
+    assert all(day["fastest"] is None for day in body["by_day"])
+
+
+def test_the_estimate_is_in_metres_a_second_whatever_units_the_owner_chose(
+    client: TestClient, store: Store
+) -> None:
+    store.record_stop(quick("car", 4.0), ms("2026-10-09 10:00"))
+    store.set_setting("units", "kmh")
+    body = client.get("/api/stats/stops", params={"days": 1}).json()
+    assert body["units"] == "kmh" and body["fastest"]["speed_ms"] == 10.0

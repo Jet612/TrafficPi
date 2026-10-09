@@ -8,6 +8,7 @@ that it can be tested without a database.
 
 from __future__ import annotations
 
+import math
 import statistics
 from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
@@ -17,6 +18,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from trafficpi.api.stats import summarize
+from trafficpi.core.speed import estimated_speed_ms
 from trafficpi.db.store import STOP_OUTCOMES, CountRow, StopStatRow
 
 MAX_DAYS = 366  # the most a request may cover (days=0, "all time", stops here too)
@@ -115,6 +117,41 @@ def _outcomes(counter: Mapping[str, int]) -> dict[str, int]:
     return {name: counter.get(name, 0) for name in STOP_OUTCOMES}
 
 
+def shares_of(counts: Mapping[str, int]) -> dict[str, int]:
+    """Whole-number percentages of the passes judged, one for each outcome, that add up to 100.
+
+    The Data page's own rule (``sharesOf`` in dashboard/src/lib/data.ts, which the cases in
+    tests/data/share_cases.json were made with): each share is rounded down, and the points left
+    over go to the largest remainders (the earlier outcome first on a tie), never to an outcome
+    that did not happen. All 0 when nothing was judged. The daily email says these numbers, so
+    that it and the Data page cannot disagree.
+    """
+    total = sum(counts.get(o, 0) for o in STOP_OUTCOMES)
+    shares = dict.fromkeys(STOP_OUTCOMES, 0)
+    if total == 0:
+        return shares
+    exact = {o: counts.get(o, 0) / total * 100 for o in STOP_OUTCOMES}
+    for outcome, value in exact.items():
+        shares[outcome] = math.floor(value + 1e-9)
+    left = 100 - sum(shares.values())
+    for outcome in sorted(STOP_OUTCOMES, key=lambda o: -(exact[o] - math.floor(exact[o] + 1e-9))):
+        if left <= 0:
+            break
+        if counts.get(outcome, 0) > 0:
+            shares[outcome] += 1
+            left -= 1
+    return shares
+
+
+def _fastest(best: tuple[float, str, int] | None) -> dict[str, Any] | None:
+    """A day's fastest estimated speed as the API gives it: metres a second to a tenth, the kind of
+    vehicle and when it passed (ms since the epoch); None if no pass of the day had a speed."""
+    if best is None:
+        return None
+    speed, label, at = best
+    return {"speed_ms": round(speed, 1), "label": label, "at": at}
+
+
 def _median(values: Sequence[float], digits: int) -> float | None:
     return round(statistics.median(values), digits) if values else None
 
@@ -146,6 +183,8 @@ def stop_stats(
     holds: list[float] = []
     roll_speeds: list[float] = []
     miss_speeds: list[float] = []
+    # The fastest estimated speed of each local day: the speed, the kind of vehicle, when it passed.
+    fastest_by_day: dict[date, tuple[float, str, int]] = {}
     confirmed = false_alarms = waiting = 0
 
     for row in rows:
@@ -165,12 +204,22 @@ def stop_stats(
         by_weekday[weekday][row.outcome] += 1
         by_kind.setdefault(row.kind or "unknown", Counter())[row.outcome] += 1
         by_sign.setdefault(row.sign, Counter())[row.outcome] += 1
+        if row.max_speed >= 0:  # -1 is "not measured": passes from before it was kept, or too short
+            speed = estimated_speed_ms(row.max_speed, row.kind)
+            if day not in fastest_by_day or speed > fastest_by_day[day][0]:  # the earlier on a tie
+                fastest_by_day[day] = (speed, row.kind or "unknown", row.occurred_at)
         if row.outcome == "stopped":
             holds.append(row.hold_s)
         elif row.min_speed >= 0 and row.outcome == "rolling":
             roll_speeds.append(row.min_speed)
         elif row.min_speed >= 0 and row.outcome == "did_not_stop":
             miss_speeds.append(row.min_speed)
+
+    fastest_overall: tuple[float, str, int] | None = None
+    for day in _days_of(period):
+        found = fastest_by_day.get(day)
+        if found is not None and (fastest_overall is None or found[0] > fastest_overall[0]):
+            fastest_overall = found
 
     def ranked(groups: Mapping[str, Counter[str]]) -> list[tuple[str, Counter[str]]]:
         return sorted(groups.items(), key=lambda item: (-item[1].total(), item[0]))
@@ -194,9 +243,11 @@ def stop_stats(
                 "date": day.isoformat(),
                 "t": local_midnight_ms(day, tz),
                 **_outcomes(by_day.get(day, Counter())),
+                "fastest": _fastest(fastest_by_day.get(day)),
             }
             for day in _days_of(period)
         ],
+        "fastest": _fastest(fastest_overall),
         "by_weekday": [{"weekday": n, **_outcomes(c)} for n, c in enumerate(by_weekday)],
         "by_kind": [{"label": name, **_outcomes(c)} for name, c in ranked(by_kind)],
         "by_sign": [{"sign": name, **_outcomes(c)} for name, c in ranked(by_sign)],

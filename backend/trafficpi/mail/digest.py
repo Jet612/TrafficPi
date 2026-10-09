@@ -17,13 +17,14 @@ from __future__ import annotations
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from html import escape
 from typing import Literal
 from zoneinfo import ZoneInfo
 
 from trafficpi.api import analytics
 from trafficpi.api.system_history import MIN_SAMPLES_FOR_OUTAGE
+from trafficpi.core.speed import speed_phrase
 from trafficpi.db.store import CountRow, StopStatRow
 from trafficpi.vision.health import HealthRow
 
@@ -50,6 +51,7 @@ class DigestInput:
     generated_ms: int  # when the mail was made
     link_url: str = ""
     kind: Literal["daily", "test"] = "daily"
+    units: str = "mph"  # "mph" or "kmh": how a speed is told
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,6 +74,13 @@ class DigestFacts:
     busiest_hour: int | None
     busiest_hour_vehicles: int
     down_minutes: int
+    shares: dict[str, int]  # of all the passes judged, as the Data page rounds them (add up to 100)
+    fastest_speed_ms: float | None  # the fastest estimated speed in the stretch, in metres a second
+    fastest_label: str | None  # of what kind of vehicle
+    fastest_at_ms: int | None  # and when it passed
+    # For a stretch that touches three days or more: each local day and its fastest estimate (None
+    # if no pass of that day had a speed); empty for a stretch of a day or so.
+    fastest_by_day: tuple[tuple[str, float | None], ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,6 +165,26 @@ def _vehicles(n: int) -> str:
     return f"{n} vehicle" if n == 1 else f"{n} vehicles"
 
 
+def _a(label: str | None) -> str:
+    kinds = {
+        "car": "a car",
+        "truck": "a truck",
+        "bus": "a bus",
+        "motorcycle": "a motorcycle",
+        "bicycle": "a bicycle",
+    }
+    return kinds.get(label or "", "a vehicle")
+
+
+def _by_day_text(days: tuple[tuple[str, float | None], ...], units: str) -> str:
+    """Each day of a long stretch, with its fastest estimate (a dash for a day with none)."""
+    return ", ".join(
+        f"{_DAYS[date.fromisoformat(day).weekday()][:3]} "
+        f"{_DASH if speed is None else speed_phrase(speed, units)}"
+        for day, speed in days
+    )
+
+
 def _change_text(now: int, before: int) -> str:
     if now == before:
         return "the same as before"
@@ -181,6 +210,8 @@ def _facts(data: DigestInput) -> DigestFacts:
     rate = math.floor(100 * totals["stopped"] / told + 0.5) if told else None
     hours = traffic["by_hour"]
     busiest = max(hours, key=lambda h: (h["total"], -h["hour"]))
+    fastest = stops["fastest"]
+    days = stops["by_day"]
     return DigestFacts(
         start_ms=data.start_ms,
         end_ms=data.end_ms,
@@ -200,6 +231,18 @@ def _facts(data: DigestInput) -> DigestFacts:
         busiest_hour=busiest["hour"] if busiest["total"] else None,
         busiest_hour_vehicles=busiest["total"],
         down_minutes=data.down_minutes,
+        shares=analytics.shares_of(totals),
+        fastest_speed_ms=None if fastest is None else fastest["speed_ms"],
+        fastest_label=None if fastest is None else fastest["label"],
+        fastest_at_ms=None if fastest is None else fastest["at"],
+        fastest_by_day=(
+            tuple(
+                (d["date"], None if d["fastest"] is None else d["fastest"]["speed_ms"])
+                for d in days
+            )
+            if len(days) >= 3
+            else ()
+        ),
     )
 
 
@@ -249,13 +292,31 @@ def build_digest(data: DigestInput) -> Digest:
         )
     rows: list[tuple[str, str]] = []
     if data.has_stop_sign:
+
+        def counted(key: str, count: int) -> str:
+            # a share of nothing is not shown: the count is, as 0
+            return f"{count} ({facts.shares[key]}%)" if facts.judged else str(count)
+
         rows += [
-            ("Rolled through", str(facts.rolling)),
-            ("Stopped", str(facts.stopped)),
-            ("Could not tell", str(facts.could_not_tell)),
+            ("Stopped", counted("stopped", facts.stopped)),
+            ("Rolled through", counted("rolling", facts.rolling)),
+            ("Did not stop", counted("did_not_stop", facts.did_not_stop)),
+            ("Could not tell", counted("indeterminate", facts.could_not_tell)),
             ("Stop rate", rate_text),
         ]
     rows += [("Busiest hour", busiest_text), ("Vehicles counted", str(facts.vehicles))]
+    if data.has_stop_sign:
+        if facts.fastest_speed_ms is None:
+            fastest_text = f"{_DASH} (no speed was measured in this time)"
+        else:
+            passed = datetime.fromtimestamp((facts.fastest_at_ms or 0) / 1000, data.tz)
+            fastest_text = (
+                f"{speed_phrase(facts.fastest_speed_ms, data.units)} "
+                f"({_a(facts.fastest_label)}, {_short_day(passed)} {_clock(passed)})"
+            )
+        rows.append(("Fastest estimate", fastest_text))
+        if facts.fastest_by_day:
+            rows.append(("Fastest by day", _by_day_text(facts.fastest_by_day, data.units)))
 
     # The notes: what makes the numbers less than they look.
     notes: list[str] = []
@@ -282,7 +343,13 @@ def build_digest(data: DigestInput) -> Digest:
     elif facts.judged == 0 and data.down_minutes < 0.95 * period_minutes:
         notes.append("No pass was judged at a stop sign in this period.")
 
-    footer = (
+    caveat = (
+        "A speed is an estimate: how fast a vehicle crossed the picture, compared with its own "
+        "size. It is good to about 40% and is not a measurement. "
+        if facts.fastest_speed_ms is not None
+        else ""
+    )
+    footer = caveat + (
         "This email holds numbers only: no pictures or clips. You get it because the owner of "
         "this TrafficPi added your address in Settings, under Daily email; to stop it, ask them to "
         f"remove it. Made {_when(made)}."

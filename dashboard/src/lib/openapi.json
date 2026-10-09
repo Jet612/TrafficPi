@@ -248,6 +248,16 @@
             "title": "Did Not Stop",
             "type": "integer"
           },
+          "fastest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SpeedEstimate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "indeterminate": {
             "title": "Indeterminate",
             "type": "integer"
@@ -271,7 +281,8 @@
           "did_not_stop",
           "indeterminate",
           "date",
-          "t"
+          "t",
+          "fastest"
         ],
         "title": "DayOutcomes",
         "type": "object"
@@ -1490,6 +1501,30 @@
         "title": "SignOutcomes",
         "type": "object"
       },
+      "SpeedEstimate": {
+        "description": "The fastest estimated speed in some time: an estimate, not a measurement (plan.md D41).",
+        "properties": {
+          "at": {
+            "title": "At",
+            "type": "integer"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "speed_ms": {
+            "title": "Speed Ms",
+            "type": "number"
+          }
+        },
+        "required": [
+          "speed_ms",
+          "label",
+          "at"
+        ],
+        "title": "SpeedEstimate",
+        "type": "object"
+      },
       "StatusResponse": {
         "properties": {
           "api_uptime_s": {
@@ -1847,6 +1882,16 @@
             "title": "Days",
             "type": "integer"
           },
+          "fastest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SpeedEstimate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "from_ms": {
             "title": "From Ms",
             "type": "integer"
@@ -1910,6 +1955,7 @@
           "previous",
           "by_hour",
           "by_day",
+          "fastest",
           "by_weekday",
           "by_kind",
           "by_sign",
