@@ -1081,7 +1081,8 @@ try {
         await eventually(async () => assert.equal(await page.getByRole("button", { name: label, exact: true }).getAttribute("aria-pressed"), "true"));
         await eventually(async () => assert.equal(answer("stops", days)?.days >= 1, true));
       }
-      assert.match(await page.getByTestId("data-stops-headline").innerText(), /since /, "all time says since when");
+      // the answer has arrived, but the page may not have drawn it yet (a slow machine, a busy board)
+      await eventually(async () => assert.match(await page.getByTestId("data-stops-headline").innerText(), /since /), "all time says since when");
       assert.equal(answer("stops", 0).previous, null, "all time has nothing before it");
       assert.equal(await page.getByText(/^Nothing to compare with/).count(), 0, "and does not say that there is nothing to compare with");
       await reload();
@@ -1705,9 +1706,11 @@ try {
     assert.match(await table.locator("tbody").innerText(), /the CPU is being slowed down/, "the Pi's flags are in words");
     await card.getByRole("button", { name: "Chart", exact: true }).click();
 
-    // a shorter period has less to tell, and the choice is kept
+    // a shorter period has less to tell: the made-up troubles are hours back (a real slowdown of this very board may be in the last hour, since the demo
+    // records the machine it runs on, so "nothing to report" cannot be asked for), and the choice is kept
     await card.getByRole("button", { name: "1 hour", exact: true }).click();
-    await episodes.getByText("Nothing to report").waitFor();
+    await episodes.getByText("Power supply too weak").waitFor({ state: "detached" });
+    for (const title of ["Camera not working", "Nothing recorded"]) assert.equal(await episodes.getByText(title).count(), 0, `${title} was hours ago`);
     assert.equal(await card.getByRole("button", { name: "1 hour", exact: true }).getAttribute("aria-pressed"), "true");
     await page.reload();
     await card.waitFor();

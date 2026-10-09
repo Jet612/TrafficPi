@@ -83,21 +83,46 @@ export function healthRows(history: SystemHistory): HealthRow[] {
   }));
 }
 
-/** How many axis labels to skip between two that are shown, for about seven labels along the chart. */
-export function axisInterval(count: number): number {
-  return Math.max(0, Math.ceil(count / 7) - 1);
-}
-
-/** The temperature axis: from 30 degrees to above both the hottest reading and the 85 degrees at which the Pi throttles hard. */
+/** The temperature axis: from 30 degrees to above both the hottest reading and the 85 degrees at which the Pi throttles hard, in tens. */
 export function temperatureDomain(rows: readonly HealthRow[]): [number, number] {
   const hottest = Math.max(0, ...rows.map((row) => row.temp ?? 0));
-  return [30, Math.max(90, Math.ceil((hottest + 2) / 5) * 5)];
+  return [30, Math.max(90, Math.ceil((hottest + 2) / 10) * 10)];
 }
 
-/** The frame-rate axis: from nothing to above the best reading, at least 35. */
+/** The frame-rate axis: from nothing to above the best reading, in tens, at least 40. */
 export function frameRateDomain(rows: readonly HealthRow[]): [number, number] {
   const best = Math.max(0, ...rows.map((row) => Math.max(row.fps ?? 0, row.fpsMin ?? 0)));
-  return [0, Math.max(35, Math.ceil((best + 1) / 5) * 5)];
+  return [0, Math.max(40, Math.ceil((best + 1) / 10) * 10)];
+}
+
+/** The marks along a value axis: every ten, from the bottom to the top. */
+export function valueTicks([low, high]: readonly [number, number]): number[] {
+  const ticks: number[] = [];
+  for (let value = low; value <= high; value += 10) ticks.push(value);
+  return ticks;
+}
+
+/**
+ * The labels to show along the time axis, at round times instead of wherever a fixed number of stretches happens to land: every ten
+ * minutes for an hour, every hour for six, every four hours for a day, and the start of each day (of every few days, for a month)
+ * for longer. "Round" is by the clock of the camera's zone, so it is the same in a zone that is not a whole number of hours from UTC.
+ */
+export function axisTicks(rows: readonly HealthRow[], timeZone: string): string[] {
+  const first = rows[0];
+  const last = rows.at(-1);
+  if (first === undefined || last === undefined || rows.length < 2) return [];
+  const spanHours = (last.t - first.t) / 3600;
+  const local = rows.map((row) => {
+    const text = formatDateTime(row.t * 1000, timeZone); // "2026-10-09 14:05"
+    return { label: row.label, date: text.slice(0, 10), minuteOfDay: Number(text.slice(11, 13)) * 60 + Number(text.slice(14, 16)) };
+  });
+  if (spanHours > 36) {
+    const starts = local.filter((row, i) => (i === 0 ? row.minuteOfDay === 0 : row.date !== local[i - 1]?.date));
+    const every = Math.max(1, Math.ceil(starts.length / 8));
+    return starts.filter((_, i) => i % every === 0).map((row) => row.label);
+  }
+  const step = spanHours <= 2 ? 10 : spanHours <= 12 ? 60 : 240; // minutes
+  return local.filter((row, i) => (i === 0 ? row.minuteOfDay % step === 0 : Math.floor(row.minuteOfDay / step) !== Math.floor((local[i - 1]?.minuteOfDay ?? 0) / step))).map((row) => row.label);
 }
 
 /** Whether anything was recorded in the period at all. */

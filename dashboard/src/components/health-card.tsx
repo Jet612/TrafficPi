@@ -11,7 +11,7 @@ import { cn } from "@/lib/cn";
 import {
   DEFAULT_HEALTH_PERIOD,
   HEALTH_PERIODS,
-  axisInterval,
+  axisTicks,
   describeEpisode,
   flagNames,
   frameRateDomain,
@@ -20,6 +20,7 @@ import {
   periodHours,
   summaryTiles,
   temperatureDomain,
+  valueTicks,
   type HealthPeriod,
   type HealthRow,
 } from "@/lib/health";
@@ -95,7 +96,7 @@ export function HealthCard() {
                 </StatTile>
               ))}
             </dl>
-            {view === "chart" ? <Charts rows={rows} /> : <HistoryTable rows={rows} />}
+            {view === "chart" ? <Charts rows={rows} timeZone={data.timezone} /> : <HistoryTable rows={rows} />}
             <Episodes data={data} />
           </>
         )}
@@ -104,15 +105,15 @@ export function HealthCard() {
   );
 }
 
-function Charts({ rows }: { rows: HealthRow[] }) {
-  const interval = axisInterval(rows.length);
+function Charts({ rows, timeZone }: { rows: HealthRow[]; timeZone: string }) {
+  const ticks = axisTicks(rows, timeZone);
   return (
     <div className="grid gap-5">
       <TrendChart
         title="Temperature"
         unit="°C"
         rows={rows}
-        interval={interval}
+        ticks={ticks}
         domain={temperatureDomain(rows)}
         lines={[{ key: "temp", label: "Hottest minute", color: "var(--series-2)" }]}
         limits={[
@@ -124,7 +125,7 @@ function Charts({ rows }: { rows: HealthRow[] }) {
         title="Frame rate"
         unit="fps"
         rows={rows}
-        interval={interval}
+        ticks={ticks}
         domain={frameRateDomain(rows)}
         lines={[
           { key: "fps", label: "Average", color: "var(--series-1)" },
@@ -141,7 +142,7 @@ function TrendChart({
   rows,
   lines,
   domain,
-  interval,
+  ticks,
   limits = [],
 }: {
   title: string;
@@ -149,7 +150,8 @@ function TrendChart({
   rows: HealthRow[];
   lines: readonly TrendLine[];
   domain: [number, number];
-  interval: number;
+  /** The labels to show along the bottom: round times. */
+  ticks: string[];
   limits?: readonly { y: number; label: string; color: string }[];
 }) {
   const describedBy = useId();
@@ -184,8 +186,8 @@ function TrendChart({
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={rows} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
             <CartesianGrid vertical={false} stroke="var(--grid)" strokeWidth={1} />
-            <XAxis dataKey="label" interval={interval} tickLine={false} tick={TICK} stroke="var(--baseline)" tickMargin={6} />
-            <YAxis width={36} domain={domain} allowDecimals={false} tickLine={false} axisLine={false} tick={TICK} />
+            <XAxis dataKey="label" ticks={ticks} interval={0} tickLine={false} tick={TICK} stroke="var(--baseline)" tickMargin={6} />
+            <YAxis width={36} domain={domain} ticks={valueTicks(domain)} interval={0} allowDecimals={false} tickLine={false} axisLine={false} tick={TICK} />
             <Tooltip isAnimationActive={false} cursor={{ stroke: "var(--ink-3)", strokeDasharray: "3 3" }} content={(props) => <HistoryTooltip {...props} />} />
             {limits.map((limit) => (
               <ReferenceLine
@@ -193,7 +195,7 @@ function TrendChart({
                 y={limit.y}
                 stroke={limit.color}
                 strokeDasharray="4 4"
-                label={{ value: `${limit.y} ${unit}, ${limit.label}`, position: "insideTopRight", fill: "var(--ink-2)", fontSize: 11 }}
+                label={{ value: `${limit.y} ${unit}, ${limit.label}`, position: "insideTopLeft", fill: "var(--ink-2)", fontSize: 11 }}
               />
             ))}
             {lines.map((line) => (

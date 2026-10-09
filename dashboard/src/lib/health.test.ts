@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_HEALTH_PERIOD,
   HEALTH_PERIODS,
-  axisInterval,
+  axisTicks,
   describeEpisode,
   flagNames,
   frameRateDomain,
@@ -12,6 +12,7 @@ import {
   periodHours,
   summaryTiles,
   temperatureDomain,
+  valueTicks,
 } from "./health";
 import type { HealthEpisode, HealthPoint, SystemHistory } from "./types";
 
@@ -87,25 +88,83 @@ describe("the rows of the chart", () => {
 });
 
 describe("the axes", () => {
-  it("skip labels to leave about seven", () => {
-    expect(axisInterval(0)).toBe(0);
-    expect(axisInterval(7)).toBe(0);
-    expect(axisInterval(60)).toBe(8); // 60 minutes: a label every ninth
-    expect(axisInterval(144)).toBe(20);
-    expect(axisInterval(180)).toBe(25);
-  });
-
-  it("make room for the hard limit of 85 degrees and for a hotter reading", () => {
+  it("make room for the hard limit of 85 degrees and for a hotter reading, in tens", () => {
     const rows = healthRows(history());
     expect(temperatureDomain(rows)).toEqual([30, 90]);
-    expect(temperatureDomain(healthRows(history({ points: [point(T0, { temp_c: 88.4 })] })))).toEqual([30, 95]);
+    expect(temperatureDomain(healthRows(history({ points: [point(T0, { temp_c: 88.4 })] })))).toEqual([30, 100]);
+    expect(temperatureDomain(healthRows(history({ points: [point(T0, { temp_c: 87.9 })] })))).toEqual([30, 90]);
     expect(temperatureDomain([])).toEqual([30, 90]);
   });
 
-  it("make room for the frame rate, at least to 35", () => {
-    expect(frameRateDomain(healthRows(history()))).toEqual([0, 35]);
-    expect(frameRateDomain(healthRows(history({ points: [point(T0, { fps: 52 })] })))).toEqual([0, 55]);
-    expect(frameRateDomain([])).toEqual([0, 35]);
+  it("make room for the frame rate, in tens and at least to 40", () => {
+    expect(frameRateDomain(healthRows(history()))).toEqual([0, 40]);
+    expect(frameRateDomain(healthRows(history({ points: [point(T0, { fps: 52 })] })))).toEqual([0, 60]);
+    expect(frameRateDomain(healthRows(history({ points: [point(T0, { fps: 39.5, fps_min: 12 })] })))).toEqual([0, 50]);
+    expect(frameRateDomain([])).toEqual([0, 40]);
+  });
+
+  it("mark every ten", () => {
+    expect(valueTicks([30, 90])).toEqual([30, 40, 50, 60, 70, 80, 90]);
+    expect(valueTicks([0, 40])).toEqual([0, 10, 20, 30, 40]);
+    expect(valueTicks([30, 100]).at(-1)).toBe(100);
+  });
+});
+
+/** Rows of a history that begins at `fromSeconds` and goes on in stretches of `bucket` seconds. */
+function stretches(fromSeconds: number, count: number, bucket: number, timezone: string) {
+  const points = Array.from({ length: count }, (_, i) => point(fromSeconds + i * bucket));
+  return healthRows(history({ timezone, from_s: fromSeconds, to_s: fromSeconds + count * bucket, bucket_s: bucket, points }));
+}
+
+describe("the time axis", () => {
+  it("is marked every ten minutes for an hour, on the round minutes", () => {
+    const rows = stretches(T0 + 5 * 60, 60, 60, "America/New_York"); // 14:05 to 15:04
+    expect(axisTicks(rows, "America/New_York")).toEqual(["14:10", "14:20", "14:30", "14:40", "14:50", "15:00"]);
+  });
+
+  it("is marked every hour for six hours", () => {
+    const rows = stretches(T0 + 20 * 60, 180, 120, "America/New_York"); // 14:20 to 20:19
+    expect(axisTicks(rows, "America/New_York")).toEqual(["15:00", "16:00", "17:00", "18:00", "19:00", "20:00"]);
+  });
+
+  it("is marked every four hours for a day, however the day begins", () => {
+    const rows = stretches(T0 - 130 * 60, 144, 600, "America/New_York"); // 11:50 to 11:49 the next day
+    expect(axisTicks(rows, "America/New_York")).toEqual(["12:00", "16:00", "20:00", "00:00", "04:00", "08:00"]);
+  });
+
+  it("includes the first stretch when it falls on a round time", () => {
+    const rows = stretches(T0 + 2 * 3600, 144, 600, "America/New_York"); // 16:00 to 15:50
+    expect(axisTicks(rows, "America/New_York")[0]).toBe("16:00");
+  });
+
+  it("is marked at the start of each day for a week, with the date, thinned for a month", () => {
+    const week = stretches(T0 - 14 * 3600 + 3600, 168, 3600, "America/New_York"); // 01:00 on the 9th, a week of hours
+    expect(axisTicks(week, "America/New_York")).toEqual(["10-10 00:00", "10-11 00:00", "10-12 00:00", "10-13 00:00", "10-14 00:00", "10-15 00:00", "10-16 00:00"]);
+    const month = stretches(T0 - 14 * 3600 + 3600, 180, 4 * 3600, "America/New_York"); // 30 days in four-hour stretches
+    const ticks = axisTicks(month, "America/New_York");
+    expect(ticks.length).toBeLessThanOrEqual(8);
+    expect(ticks.length).toBeGreaterThanOrEqual(4);
+    expect(ticks.every((tick) => Number(tick.slice(6, 8)) < 4)).toBe(true); // each is the first four-hour stretch of its day
+    expect(new Set(ticks.map((tick) => tick.slice(0, 5))).size).toBe(ticks.length); // on different days
+  });
+
+  it("follows the camera's clock: the same instants give other labels in another zone", () => {
+    const rows = stretches(T0 - 130 * 60, 144, 600, "UTC");
+    expect(axisTicks(rows, "UTC")).toEqual(["16:00", "20:00", "00:00", "04:00", "08:00", "12:00"].map((hour) => hour));
+  });
+
+  it("finds the start of each day in a zone that is not a whole number of hours from UTC", () => {
+    const rows = stretches(Date.UTC(2026, 9, 9, 0, 0) / 1000, 168, 3600, "Asia/Kolkata"); // a week of hours, which begin at :30 there
+    const ticks = axisTicks(rows, "Asia/Kolkata");
+    expect(ticks.length).toBeGreaterThanOrEqual(6);
+    expect(ticks.every((tick) => tick.endsWith("00:30"))).toBe(true); // the first stretch of each local day
+  });
+
+  it("has nothing to mark with fewer than two stretches, and never repeats a label", () => {
+    expect(axisTicks([], "UTC")).toEqual([]);
+    expect(axisTicks(stretches(T0, 1, 60, "UTC"), "UTC")).toEqual([]);
+    const ticks = axisTicks(stretches(T0, 144, 600, "UTC"), "UTC");
+    expect(new Set(ticks).size).toBe(ticks.length);
   });
 });
 
