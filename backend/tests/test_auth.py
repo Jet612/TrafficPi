@@ -3,6 +3,8 @@ from pathlib import Path
 import pytest
 
 from trafficpi.api.auth import (
+    Busy,
+    HashingSlots,
     LoginThrottle,
     Session,
     SessionSigner,
@@ -96,3 +98,58 @@ def test_a_success_clears_the_failures() -> None:
     assert throttle.blocked("ip:1")
     throttle.clear("ip:1", "user:a")
     assert not throttle.blocked("ip:1", "user:a")
+
+
+def test_asking_about_a_client_remembers_nothing() -> None:
+    throttle = LoginThrottle(8, 600, clock=lambda: 0.0)
+    for i in range(1_000):
+        throttle.blocked(f"ip:10.0.0.{i}", f"user:name-{i}")
+        throttle.retry_after_s(f"user:name-{i}")
+    assert len(throttle) == 0  # it used to hold two entries per question, for ever
+
+
+def test_failures_that_have_aged_out_are_forgotten() -> None:
+    now = [0.0]
+    throttle = LoginThrottle(3, 600, clock=lambda: now[0])
+    for i in range(50):
+        throttle.record_failure(f"user:name-{i}")
+    assert len(throttle) == 50
+    now[0] = 601
+    throttle.record_failure("user:later")  # the next failure sweeps what has expired
+    assert len(throttle) == 1
+
+
+def test_a_name_that_is_asked_about_after_its_failures_expired_is_dropped() -> None:
+    now = [0.0]
+    throttle = LoginThrottle(3, 600, clock=lambda: now[0])
+    throttle.record_failure("user:once")
+    now[0] = 601
+    assert not throttle.blocked("user:once")
+    assert len(throttle) == 0
+
+
+def test_the_throttle_has_a_size_limit_and_keeps_a_lockout_over_one_off_failures() -> None:
+    throttle = LoginThrottle(3, 600, max_keys=20, clock=lambda: 0.0)
+    for _ in range(3):
+        throttle.record_failure("user:admin")  # locked out
+    for i in range(500):
+        throttle.record_failure(f"user:junk-{i}")  # one failure each, 500 different names
+    assert len(throttle) <= 20
+    assert throttle.blocked("user:admin")  # junk did not push the real lockout out
+
+
+def test_only_a_few_hashes_run_at_once_and_the_next_is_turned_away() -> None:
+    slots = HashingSlots(2)
+    with slots.take(), slots.take(), pytest.raises(Busy), slots.take():
+        pass
+    with slots.take():  # a slot that was given back can be taken again
+        pass
+
+
+def test_recording_a_failure_says_which_keys_have_just_reached_the_limit() -> None:
+    throttle = LoginThrottle(3, 600, clock=lambda: 0.0)
+    assert throttle.record_failure("ip:1", "user:a") == ()
+    assert throttle.record_failure("ip:1", "user:a") == ()
+    assert throttle.record_failure("ip:1", "user:a") == ("ip:1", "user:a")
+    # A key that is already past the limit has not "just" reached it, and a fresh one has not.
+    assert throttle.record_failure("ip:2", "user:a") == ()

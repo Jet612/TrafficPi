@@ -48,7 +48,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--trust-proxy-headers",
         action="store_true",
         help="take the client address from CF-Connecting-IP / X-Forwarded-For; only behind a "
-        "trusted proxy such as a Cloudflare Tunnel",
+        "trusted proxy such as a Cloudflare Tunnel, and only for connections from 127.0.0.1 and "
+        "::1 (cloudflared runs on this machine) or from an address given with --trusted-proxy",
+    )
+    parser.add_argument(
+        "--trusted-proxy",
+        action="append",
+        default=[],
+        metavar="ADDRESS",
+        help="also believe the proxy headers of connections from this address (with "
+        "--trust-proxy-headers); for a proxy on another machine. May be repeated.",
     )
     return parser
 
@@ -75,6 +84,7 @@ def settings_from(args: argparse.Namespace) -> ApiSettings:
         "vision_url": args.vision_url,
         "dashboard_dir": args.dashboard_dir,
         "trust_proxy_headers": True if args.trust_proxy_headers else None,
+        "trusted_proxies": (*ApiSettings().trusted_proxies, *args.trusted_proxy) or None,
         "allowed_origins": tuple(normalize_origin(o) for o in args.allow_origin) or None,
     }
     return dataclasses.replace(

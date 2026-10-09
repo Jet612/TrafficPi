@@ -5,8 +5,11 @@ from __future__ import annotations
 import hashlib
 import os
 import secrets
+import threading
 import time
-from collections import defaultdict, deque
+from collections import deque
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import NamedTuple
 
@@ -99,37 +102,118 @@ class LoginThrottle:
 
     A failure counts against both the client address and the username. Behind a tunnel every
     client can arrive from the same address, which is why the username is limited as well.
+
+    Only failures are remembered, and only for the window. Asking about a client records nothing
+    (it once did, so a flood of made-up names grew this without limit), keys whose failures have
+    all aged out are dropped, and there are never more than ``max_keys`` of them: when it is full
+    the keys with the fewest failures go first, so a real lockout outlives one-off junk.
     """
 
-    def __init__(self, attempts: int, window_s: float, clock=time.monotonic) -> None:  # type: ignore[no-untyped-def]
+    def __init__(
+        self,
+        attempts: int,
+        window_s: float,
+        clock=time.monotonic,  # type: ignore[no-untyped-def]
+        *,
+        max_keys: int = 4096,
+    ) -> None:
         self._attempts = attempts
         self._window = window_s
         self._clock = clock
-        self._failures: dict[str, deque[float]] = defaultdict(deque)
+        self._max_keys = max_keys
+        self._failures: dict[str, deque[float]] = {}
+        self._next_sweep = 0.0
+        self._lock = threading.Lock()  # logins are handled in a pool of threads
 
-    def _recent(self, key: str) -> deque[float]:
-        failures = self._failures[key]
+    def __len__(self) -> int:
+        with self._lock:
+            return len(self._failures)
+
+    def _recent(self, key: str) -> deque[float] | None:
+        """The key's failures within the window; None (and the key is forgotten) if none are."""
+        failures = self._failures.get(key)
+        if failures is None:
+            return None
         cutoff = self._clock() - self._window
         while failures and failures[0] < cutoff:
             failures.popleft()
+        if not failures:
+            del self._failures[key]
+            return None
         return failures
 
+    def _count(self, key: str) -> int:
+        recent = self._recent(key)
+        return len(recent) if recent else 0
+
     def blocked(self, *keys: str) -> bool:
-        return any(len(self._recent(key)) >= self._attempts for key in keys)
+        with self._lock:
+            return any(self._count(key) >= self._attempts for key in keys)
 
     def retry_after_s(self, *keys: str) -> int:
-        waits = [
-            self._window - (self._clock() - self._recent(key)[0])
-            for key in keys
-            if len(self._recent(key)) >= self._attempts
-        ]
-        return max(1, int(max(waits, default=0)) + 1)
+        with self._lock:
+            waits = []
+            for key in keys:
+                recent = self._recent(key)
+                if recent and len(recent) >= self._attempts:
+                    waits.append(self._window - (self._clock() - recent[0]))
+            return max(1, int(max(waits, default=0)) + 1)
 
-    def record_failure(self, *keys: str) -> None:
-        now = self._clock()
-        for key in keys:
-            self._recent(key).append(now)
+    def record_failure(self, *keys: str) -> tuple[str, ...]:
+        """Note a failure against each key; returns the keys that have just reached the limit."""
+        with self._lock:
+            now = self._clock()
+            reached = []
+            for key in keys:
+                failures = self._failures.setdefault(key, deque())
+                failures.append(now)
+                if len(self._recent(key) or ()) == self._attempts:
+                    reached.append(key)
+            if now >= self._next_sweep or len(self._failures) > self._max_keys:
+                self._sweep(now)
+            return tuple(reached)
+
+    def _sweep(self, now: float) -> None:
+        """Drop the keys whose failures have all expired; if still over the limit, make room."""
+        cutoff = now - self._window
+        for key in [k for k, failures in self._failures.items() if failures[-1] < cutoff]:
+            del self._failures[key]
+        self._next_sweep = now + self._window / 4
+        if len(self._failures) > self._max_keys:
+            # Make room for a tenth of the limit at once, so that this does not run on every
+            # failure: the fewest failures go first, the least recent among those.
+            excess = len(self._failures) - int(self._max_keys * 0.9)
+            ranked = sorted(self._failures.items(), key=lambda item: (len(item[1]), item[1][-1]))
+            for key, _ in ranked[:excess]:
+                del self._failures[key]
 
     def clear(self, *keys: str) -> None:
-        for key in keys:
-            self._failures.pop(key, None)
+        with self._lock:
+            for key in keys:
+                self._failures.pop(key, None)
+
+
+class Busy(Exception):
+    """Every password-hashing slot is taken."""
+
+
+class HashingSlots:
+    """Limits how many password hashes run at once; asking for one more is refused at once.
+
+    A hash takes 64 MiB and about 0.15 s of a core (measured on the Pi 5). Logins are handled in
+    a pool of up to 40 threads, so without a limit a burst of them, right or wrong, holds
+    gigabytes that the vision service needs, and each waiting thread would be one the rest of the
+    API cannot use. Refusing the surplus keeps both in check.
+    """
+
+    def __init__(self, slots: int = 2) -> None:
+        self._free = threading.BoundedSemaphore(slots)
+
+    @contextmanager
+    def take(self) -> Iterator[None]:
+        if not self._free.acquire(blocking=False):
+            raise Busy
+        try:
+            yield
+        finally:
+            self._free.release()

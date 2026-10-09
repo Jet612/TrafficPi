@@ -256,7 +256,14 @@ def test_repeated_failures_are_throttled_then_cleared_by_success(
 def test_the_throttle_follows_the_username_across_addresses_when_proxied(
     tmp_path: Path, store: Store, vision: FakeVision
 ) -> None:
-    with make_client(tmp_path, store, vision, login_attempts=2, trust_proxy_headers=True) as c:
+    with make_client(
+        tmp_path,
+        store,
+        vision,
+        login_attempts=2,
+        trust_proxy_headers=True,
+        trusted_proxies=("testclient",),  # the test client is the proxy here
+    ) as c:
         bad = {"username": "admin", "password": "wrong password!"}
         for ip in ("1.1.1.1", "2.2.2.2"):
             assert (

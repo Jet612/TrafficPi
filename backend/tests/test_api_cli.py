@@ -146,3 +146,43 @@ def test_a_shutdown_signal_tells_the_app_to_end_its_streams(tmp_path: Path) -> N
     assert not app.state.ctx.stopping.is_set() and not server.should_exit
     server.handle_exit(signal.SIGTERM, None)
     assert app.state.ctx.stopping.is_set() and server.should_exit
+
+
+# --- who is believed about the client's address (plan.md D31) -------------------------------------
+
+
+def settings_for(*argv: str) -> ApiSettings:
+    return cli.settings_from(cli.build_parser().parse_args(list(argv)))
+
+
+def test_proxy_headers_are_off_and_loopback_is_the_only_proxy_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("TRAFFICPI_TRUST_PROXY_HEADERS", raising=False)
+    monkeypatch.delenv("TRAFFICPI_TRUSTED_PROXIES", raising=False)
+    settings = settings_for()
+    assert settings.trust_proxy_headers is False
+    assert settings.trusted_proxies == ("127.0.0.1", "::1")
+
+
+def test_the_flags_switch_proxy_headers_on_and_add_proxies(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("TRAFFICPI_TRUSTED_PROXIES", raising=False)
+    settings = settings_for(
+        "--trust-proxy-headers", "--trusted-proxy", "10.0.0.5", "--trusted-proxy", "10.0.0.6"
+    )
+    assert settings.trust_proxy_headers is True
+    assert settings.trusted_proxies == ("127.0.0.1", "::1", "10.0.0.5", "10.0.0.6")
+
+
+def test_the_environment_can_do_the_same_so_that_a_unit_needs_no_new_command_line(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TRAFFICPI_TRUST_PROXY_HEADERS", "1")
+    monkeypatch.setenv("TRAFFICPI_TRUSTED_PROXIES", "10.1.1.1, 10.2.2.2")
+    settings = settings_for()
+    assert settings.trust_proxy_headers is True
+    assert settings.trusted_proxies == ("127.0.0.1", "::1", "10.1.1.1", "10.2.2.2")
+    monkeypatch.setenv("TRAFFICPI_TRUST_PROXY_HEADERS", "yes")  # only "1" switches it on
+    assert settings_for().trust_proxy_headers is False

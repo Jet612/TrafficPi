@@ -39,8 +39,17 @@ class ApiSettings:
     )
     session_max_age_s: int = 7 * 24 * 3600
     # Behind a tunnel every request arrives from localhost; with this on, the client address comes
-    # from CF-Connecting-IP / X-Forwarded-For. Leave it off unless a trusted proxy sets them.
-    trust_proxy_headers: bool = False
+    # from CF-Connecting-IP / X-Forwarded-For, but only when the connection itself comes from one
+    # of `trusted_proxies` (a client on the LAN could write those headers too). Leave it off unless
+    # a trusted proxy sets them. `--trust-proxy-headers` or TRAFFICPI_TRUST_PROXY_HEADERS=1.
+    trust_proxy_headers: bool = field(
+        default_factory=lambda: os.environ.get("TRAFFICPI_TRUST_PROXY_HEADERS") == "1"
+    )
+    # Whose word about the client address is taken: cloudflared runs on this machine, so the
+    # loopback addresses; `--trusted-proxy` or TRAFFICPI_TRUSTED_PROXIES add others.
+    trusted_proxies: tuple[str, ...] = field(
+        default_factory=lambda: ("127.0.0.1", "::1", *_env_list("TRAFFICPI_TRUSTED_PROXIES"))
+    )
     # Page origins, besides the API's own, whose requests are accepted (the Origin check refuses
     # all others). For development only: the dashboard's dev server runs on another port, so
     # `--allow-origin http://127.0.0.1:3100`. Anything listed here can act as a logged-in user.
@@ -52,6 +61,9 @@ class ApiSettings:
     # Failed logins allowed per window, per client address and per username.
     login_attempts: int = 8
     login_window_s: int = 600
+    # Password hashes that may run at once (each takes 64 MiB); a login that finds all slots taken
+    # is turned away with a 503 instead of waiting.
+    hashing_slots: int = 2
 
     @property
     def db_path(self) -> Path:

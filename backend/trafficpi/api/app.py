@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
+import logging
 import shutil
 import threading
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -23,6 +26,8 @@ from fastapi.staticfiles import StaticFiles
 from trafficpi.api import analytics, stats, trail_views
 from trafficpi.api.auth import (
     COOKIE_NAME,
+    Busy,
+    HashingSlots,
     LoginThrottle,
     SessionSigner,
     hash_password,
@@ -32,6 +37,7 @@ from trafficpi.api.auth import (
     password_stamp,
     verify_password,
 )
+from trafficpi.api.limits import DEFAULT_BODY_BYTES, PROFILE_BODY_BYTES, BodyLimit
 from trafficpi.api.schemas import (
     AuthState,
     DiskStatus,
@@ -72,7 +78,10 @@ from trafficpi.core.trail_settings import TrailSettings
 from trafficpi.db.store import STOP_OUTCOMES, EventRow, Store, open_store
 from trafficpi.vision.trails import trail_classes
 
+log = logging.getLogger("trafficpi.api")
+
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+BUSY_LOG_EVERY_S = 60.0  # a login flood is said to be one once a minute, not once a request
 WHERE_FROM = {"body", "query", "path", "header", "cookie"}  # the first part of a FastAPI error path
 SERIES_LIMITS_S = {"minute": 2 * 86400, "hour": 62 * 86400, "day": 1100 * 86400}
 MAX_STOP_RANGE_S = 366 * 86400
@@ -95,25 +104,52 @@ class ApiContext:
     store: Store
     signer: SessionSigner
     throttle: LoginThrottle
+    hashing: HashingSlots  # how many password hashes may run at once
     vision: VisionClient
     clock: WallClock
     dummy_hash: str  # verified against when a username does not exist, so timing does not tell
     # Set when the server starts shutting down, so open streams end and shutdown need not wait.
     stopping: threading.Event = field(default_factory=threading.Event)
+    busy_logged_at: float = float("-inf")  # time.monotonic() of the last "too busy to log in" line
 
 
 def _ctx(request: Request) -> ApiContext:
     return request.app.state.ctx  # type: ignore[no-any-return]
 
 
-def _client_address(request: Request, trust_proxy: bool) -> str:
-    if trust_proxy:
-        forwarded = request.headers.get("cf-connecting-ip") or request.headers.get(
-            "x-forwarded-for"
-        )
-        if forwarded:
-            return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
+def _address(text: str) -> str | None:
+    """The address a header names, in its usual spelling, or None if it names none."""
+    try:
+        return str(ipaddress.ip_address(text.strip()))
+    except ValueError:
+        return None
+
+
+def _same_host(peer: str, trusted: tuple[str, ...]) -> bool:
+    """Whether a connection's address is one of the trusted proxies (IPv4-in-IPv6 included)."""
+    if peer in trusted:
+        return True
+    try:
+        address = ipaddress.ip_address(peer)
+    except ValueError:
+        return False
+    address = getattr(address, "ipv4_mapped", None) or address
+    return any(_address(name) == str(address) for name in trusted)
+
+
+def _client_address(request: Request, settings: ApiSettings) -> str:
+    """Who is asking. The connection's own address, unless it comes from a trusted proxy that says
+    otherwise: Cloudflare's header, else the last address in X-Forwarded-For (what the proxy itself
+    saw; a client can write anything before it). A header that is not an address is not believed."""
+    peer = request.client.host if request.client else "unknown"
+    if settings.trust_proxy_headers and _same_host(peer, settings.trusted_proxies):
+        claimed = _address(request.headers.get("cf-connecting-ip", ""))
+        if claimed is None:
+            forwarded = request.headers.get("x-forwarded-for", "")
+            claimed = _address(forwarded.split(",")[-1]) if forwarded else None
+        if claimed is not None:
+            return claimed
+    return peer
 
 
 def _same_origin(origin: str | None, host: str | None, allowed: tuple[str, ...] = ()) -> bool:
@@ -234,6 +270,7 @@ def create_app(
             load_or_create_secret(settings.secret_path), settings.session_max_age_s
         ),
         throttle=LoginThrottle(settings.login_attempts, settings.login_window_s),
+        hashing=HashingSlots(settings.hashing_slots),
         vision=vision or VisionClient(settings.vision_url),
         clock=WallClock(),
         dummy_hash=hash_password("a password that nobody uses"),
@@ -278,6 +315,17 @@ def create_app(
             response.headers.setdefault("Cache-Control", "no-store")
         return response
 
+    # Added last, so it is the outermost layer: a body that is too large is refused before the
+    # layers inside it (or the application) have read any of it (plan.md D31).
+    app.add_middleware(
+        BodyLimit,
+        default=DEFAULT_BODY_BYTES,
+        larger={
+            ("PUT", "/api/profile"): PROFILE_BODY_BYTES,
+            ("POST", "/api/profile/check"): PROFILE_BODY_BYTES,
+        },
+    )
+
     # --- public ----------------------------------------------------------------------------------
 
     @app.get("/api/health")
@@ -291,10 +339,8 @@ def create_app(
     @app.post("/api/auth/login", status_code=204)
     def login(body: LoginRequest, request: Request) -> Response:
         username = normalize_username(body.username)
-        keys = (
-            f"ip:{_client_address(request, settings.trust_proxy_headers)}",
-            f"user:{username}",
-        )
+        address = _client_address(request, settings)
+        keys = (f"ip:{address}", f"user:{username}")
         if ctx.throttle.blocked(*keys):
             raise HTTPException(
                 status_code=429,
@@ -302,14 +348,49 @@ def create_app(
                 headers={"Retry-After": str(ctx.throttle.retry_after_s(*keys))},
             )
         user = ctx.store.get_user(username)
-        verified = verify_password(user.password_hash if user else ctx.dummy_hash, body.password)
+        try:
+            with ctx.hashing.take():
+                verified = verify_password(
+                    user.password_hash if user else ctx.dummy_hash, body.password
+                )
+                upgraded = (
+                    hash_password(body.password)
+                    if verified and user is not None and needs_rehash(user.password_hash)
+                    else None
+                )
+        except Busy:
+            now = time.monotonic()
+            if now - ctx.busy_logged_at >= BUSY_LOG_EVERY_S:
+                ctx.busy_logged_at = now
+                log.warning(
+                    "busy: logins are turned away, all hashing slots are taken (%s)", address
+                )
+            raise HTTPException(
+                status_code=503,
+                detail="the server is busy checking other logins; try again in a moment",
+                headers={"Retry-After": "2"},
+            ) from None
         if user is None or not verified:
-            ctx.throttle.record_failure(*keys)
+            # A name that is not a user's is not logged: it may well be a password typed in the
+            # wrong field.
+            who = repr(user.username) if user else "an unknown user"
+            log.warning("failed login for %s from %s", who, address)
+            reached = ctx.throttle.record_failure(*keys)
+            if reached:
+                names = [f"address {address}"] if keys[0] in reached else []
+                if keys[1] in reached:
+                    names.append(f"user {user.username!r}" if user else "an unknown user name")
+                log.warning(
+                    "locked out %s for %d s: too many failed logins",
+                    " and ".join(names),
+                    ctx.throttle.retry_after_s(*keys),
+                )
             raise HTTPException(status_code=401, detail="invalid username or password")
         ctx.throttle.clear(*keys)
+        log.info("login of %r from %s", user.username, address)
         password_hash = user.password_hash
-        if needs_rehash(password_hash):
-            password_hash = hash_password(body.password)
+        if upgraded is not None:
+            password_hash = upgraded
             ctx.store.set_password_hash(user.username, password_hash)
         response = Response(status_code=204)
         secure = (
