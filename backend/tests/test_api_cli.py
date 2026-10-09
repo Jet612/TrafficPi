@@ -275,3 +275,86 @@ def test_an_exhausted_thread_pool_stops_the_pings_though_the_event_loop_runs(
         server.should_exit = True
         thread.join(20)
         systemd.close()
+
+
+# --- backup and restore from the command line (plan.md D29) ---------------------------------------
+
+
+def a_data_dir_with_something_in_it(path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    assert set_password(path, monkeypatch, PASSWORD) == 0
+    return path
+
+
+def test_backup_writes_a_file_and_says_where_and_how_big(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    data = a_data_dir_with_something_in_it(tmp_path / "data", monkeypatch)
+    capsys.readouterr()
+    out = tmp_path / "out"
+    assert admin.main(["--data-dir", str(data), "backup", "--to", str(out)]) == 0
+    said = capsys.readouterr().out
+    written = list(out.glob("trafficpi-backup-*.tar.gz"))
+    assert len(written) == 1 and str(written[0]) in said
+    assert "password" in said  # it says that the file is sensitive
+
+
+def test_backup_goes_to_the_backups_folder_in_the_data_directory_by_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data = a_data_dir_with_something_in_it(tmp_path / "data", monkeypatch)
+    assert admin.main(["--data-dir", str(data), "backup"]) == 0
+    assert len(list((data / "backups").glob("trafficpi-backup-*.tar.gz"))) == 1
+
+
+def test_backup_options_are_passed_on(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import json
+    import tarfile
+
+    data = a_data_dir_with_something_in_it(tmp_path / "data", monkeypatch)
+    (data / "evidence").mkdir()
+    (data / "evidence" / "a.jpg").write_bytes(b"x")
+    out = tmp_path / "out"
+    argv = ["--data-dir", str(data), "backup", "--to", str(out)]
+    assert admin.main([*argv, "--config-only", "--with-evidence"]) == 0
+    with tarfile.open(next(out.glob("*.tar.gz"))) as tar:
+        manifest = json.load(tar.extractfile("manifest.json"))  # type: ignore[arg-type]
+        assert manifest["config_only"] and manifest["with_evidence"]
+        assert "evidence/a.jpg" in tar.getnames()
+
+
+def test_backup_keeps_only_the_newest_few(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    data = a_data_dir_with_something_in_it(tmp_path / "data", monkeypatch)
+    out = tmp_path / "out"
+    for _ in range(4):
+        assert admin.main(["--data-dir", str(data), "backup", "--to", str(out), "--keep", "2"]) == 0
+    assert len(list(out.glob("trafficpi-backup-*.tar.gz"))) == 2
+
+
+def test_restore_puts_a_backup_back_and_says_what_to_do_next(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    data = a_data_dir_with_something_in_it(tmp_path / "data", monkeypatch)
+    out = tmp_path / "out"
+    assert admin.main(["--data-dir", str(data), "backup", "--to", str(out)]) == 0
+    archive = next(out.glob("*.tar.gz"))
+    capsys.readouterr()
+    fresh = tmp_path / "fresh"
+    assert admin.main(["--data-dir", str(fresh), "restore", str(archive)]) == 0
+    said = capsys.readouterr().out
+    assert "restored" in said and "systemctl start" in said
+    user = open_store(fresh).get_user("admin")
+    assert user is not None and verify_password(user.password_hash, PASSWORD)
+
+
+def test_restore_refuses_with_a_reason_while_the_database_is_in_use(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from trafficpi.api import backup
+
+    data = a_data_dir_with_something_in_it(tmp_path / "data", monkeypatch)
+    assert admin.main(["--data-dir", str(data), "backup", "--to", str(tmp_path / "out")]) == 0
+    archive = next((tmp_path / "out").glob("*.tar.gz"))
+    capsys.readouterr()
+    monkeypatch.setattr(backup, "holders_of", lambda path: [(77, "trafficpi-vision run")])
+    assert admin.main(["--data-dir", str(data), "restore", str(archive)]) == 1
+    assert "in use" in capsys.readouterr().err

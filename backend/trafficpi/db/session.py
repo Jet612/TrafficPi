@@ -10,6 +10,7 @@ from typing import Any
 
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.engine.interfaces import DBAPIConnection
 from sqlalchemy.pool import ConnectionPoolEntry, StaticPool
@@ -67,6 +68,16 @@ def _migration_lock(engine: Engine) -> Iterator[None]:
     with Path(f"{database}.migrate-lock").open("w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)  # released when the file is closed
         yield
+
+
+def known_schema(revision: str) -> bool:
+    """Whether this version of TrafficPi knows the database schema ``revision``.
+
+    It does not when the database comes from a newer one: such a database must not be opened by
+    older code, which would not know what the newer migrations changed.
+    """
+    script = ScriptDirectory.from_config(_alembic_config())
+    return revision in {known.revision for known in script.walk_revisions()}
 
 
 def upgrade_to_head(engine: Engine) -> None:
