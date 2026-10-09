@@ -11,6 +11,10 @@
 #                       (with --enable it is switched on too; a Pi that came up less than ten
 #                       minutes before is left alone). Example: --enable --reboot-at 03:00
 #   --reboot-off        take the daily reboot out again and do nothing else
+#   --persistent-journal  also keep the journal across reboots, at most 256 MB and a month of it.
+#                       Raspberry Pi OS keeps it in RAM, so the log of a reboot (the nightly one
+#                       included) is gone afterwards and `journalctl -b -1` shows nothing
+#   --journal-off       put Raspberry Pi OS's own setting (a journal in RAM) back, and do nothing else
 # Uses sudo. Once the services run, they own the camera and the accelerator: stop them first
 # (sudo systemctl stop trafficpi-vision) before running dry-run, snapshot or record by hand.
 set -euo pipefail
@@ -22,6 +26,8 @@ action=install
 units=(trafficpi-vision.service trafficpi-api.service)
 reboot_units=(trafficpi-reboot.service trafficpi-reboot.timer)
 reboot_at=""
+journal=0
+journal_conf=/etc/systemd/journald.conf.d/50-trafficpi.conf
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -29,9 +35,11 @@ while [[ $# -gt 0 ]]; do
     --remove) action=remove ;;
     --reboot-at) reboot_at="$2"; shift ;;
     --reboot-off) action=reboot-off ;;
+    --persistent-journal) journal=1 ;;
+    --journal-off) action=journal-off ;;
     --user) user="$2"; shift ;;
     --data-dir) data_dir="$(realpath -m "$2")"; shift ;;
-    -h|--help) sed -n '2,15p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
   shift
@@ -49,10 +57,24 @@ remove_reboot_units() {
   done
 }
 
+remove_journal_conf() { # what was written to the journal stays on disk until it ages out
+  if [[ -e "$journal_conf" ]]; then
+    sudo rm -f "$journal_conf"
+    sudo rmdir --ignore-fail-on-non-empty "$(dirname "$journal_conf")"
+    sudo systemctl restart systemd-journald
+    echo "removed $journal_conf: the journal is kept in RAM again, as Raspberry Pi OS has it"
+  fi
+}
+
 if [[ "$action" == reboot-off ]]; then
   remove_reboot_units
   sudo systemctl daemon-reload
   echo "removed ${reboot_units[*]}: the Pi is not rebooted every day any more"
+  exit 0
+fi
+
+if [[ "$action" == journal-off ]]; then
+  remove_journal_conf
   exit 0
 fi
 
@@ -63,6 +85,7 @@ if [[ "$action" == remove ]]; then
   done
   remove_reboot_units
   sudo systemctl daemon-reload
+  remove_journal_conf
   echo "removed ${units[*]} ${reboot_units[*]}"
   exit 0
 fi
@@ -93,6 +116,13 @@ fi
 sudo systemctl daemon-reload
 echo "installed ${units[*]} (user $user, data in $data_dir)"
 [[ -z "$reboot_at" ]] || echo "installed ${reboot_units[*]} (every day at $reboot_at, local time)"
+
+if (( journal )); then
+  sudo install -D -m 644 "$root/deploy/journald/50-trafficpi.conf" "$journal_conf"
+  sudo systemctl restart systemd-journald # the services' log streams are kept across this
+  sudo journalctl --flush                 # and what this boot has said so far moves to the disk
+  echo "installed $journal_conf: the journal survives reboots now ($(journalctl --disk-usage | sed 's/^Archived and active journals take up //; s/ in the file system.//') so far)"
+fi
 
 if [[ "$action" == enable ]]; then
   sudo systemctl enable --now "${units[@]}"
