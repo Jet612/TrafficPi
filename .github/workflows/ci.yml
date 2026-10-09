@@ -46,3 +46,142 @@ jobs:
       # Tests that need the camera or the accelerator are skipped automatically (see --hardware).
       - name: Tests
         run: uv run pytest
+
+  dashboard:
+    name: Dashboard (lint, types, tests, build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: dashboard
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      # Corepack fetches the pnpm version that package.json pins.
+      - name: Enable pnpm
+        run: corepack enable
+
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: ESLint
+        run: pnpm lint
+
+      - name: TypeScript
+        run: pnpm typecheck
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Build (static export)
+        run: pnpm build
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dashboard
+          path: dashboard/out
+          retention-days: 7
+
+  api-types:
+    name: Dashboard types match the API
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - uses: astral-sh/setup-uv@v10
+        with:
+          version: "0.12.24"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - run: corepack enable
+
+      - name: Install dependencies
+        run: |
+          (cd backend && uv sync --locked)
+          (cd dashboard && pnpm install --frozen-lockfile)
+
+      # The TypeScript types are generated from the API's OpenAPI schema and committed. If this
+      # fails, run scripts/gen_api_types.sh and commit the result.
+      - name: Regenerate and compare
+        run: |
+          scripts/gen_api_types.sh
+          git diff --exit-code -- dashboard/src/lib/openapi.json dashboard/src/lib/api-types.ts
+
+  e2e:
+    name: Browser test (dashboard on a made-up street)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      E2E_PASSWORD: a password for the browser test
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - uses: astral-sh/setup-uv@v10
+        with:
+          version: "0.12.24"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - run: corepack enable
+
+      - name: Install dependencies and build the dashboard
+        run: |
+          (cd backend && uv sync --locked)
+          (cd dashboard && pnpm install --frozen-lockfile && pnpm build)
+
+      # No camera or accelerator here: `run --demo` plays a drawn street through the real tracker,
+      # counting lines and database, and the API serves the built dashboard.
+      - name: Start the services
+        working-directory: backend
+        run: |
+          data="$RUNNER_TEMP/trafficpi"
+          printf '%s\n' "$E2E_PASSWORD" | uv run trafficpi-admin --data-dir "$data" set-password --password-stdin
+          nohup uv run trafficpi-vision run --demo --data-dir "$data" > "$RUNNER_TEMP/vision.log" 2>&1 &
+          nohup uv run trafficpi-api --data-dir "$data" --host 127.0.0.1 > "$RUNNER_TEMP/api.log" 2>&1 &
+          for _ in $(seq 1 60); do
+            curl -fsS http://127.0.0.1:8000/api/health && break
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8001/health
+
+      # GitHub's Ubuntu runners come with Google Chrome; playwright-core drives it.
+      - name: Run the browser test
+        working-directory: dashboard
+        env:
+          E2E_DEMO: "1"
+          E2E_EXPECT_LIVE: "1"
+          CHROMIUM: /usr/bin/google-chrome
+          E2E_SHOTS: ${{ runner.temp }}/shots
+        run: node e2e/smoke.mjs
+
+      - name: Show the service logs if something failed
+        if: failure()
+        run: |
+          echo "--- vision"; cat "$RUNNER_TEMP/vision.log" || true
+          echo "--- api"; cat "$RUNNER_TEMP/api.log" || true
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: browser-test-screenshots
+          path: ${{ runner.temp }}/shots
+          if-no-files-found: ignore
+          retention-days: 7

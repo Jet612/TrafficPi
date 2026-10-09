@@ -14,6 +14,8 @@ build/
 node_modules/
 .next/
 dashboard/out/
+dashboard/next-env.d.ts
+*.tsbuildinfo
 .pnpm-store/
 
 # Runtime data and local artifacts: database, clips, snapshots, recordings, logs

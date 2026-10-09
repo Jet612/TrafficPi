@@ -1,0 +1,28 @@
+# TrafficPi dashboard and API on port 8000. It needs neither the camera nor the accelerator, and
+# starts (and shows "camera offline") when the vision service is not running. @NAME@
+# placeholders are filled in by scripts/install_services.sh.
+[Unit]
+Description=TrafficPi dashboard and API
+After=network.target
+
+[Service]
+Type=simple
+User=@USER@
+WorkingDirectory=@INSTALL_DIR@/backend
+Environment=TRAFFICPI_DATA_DIR=@DATA_DIR@
+ExecStart=@INSTALL_DIR@/backend/.venv/bin/trafficpi-api
+Restart=always
+RestartSec=5
+TimeoutStopSec=20
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=@DATA_DIR@
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target

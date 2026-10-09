@@ -1,0 +1,32 @@
+# TrafficPi vision service: owns the camera and the Hailo accelerator, counts traffic into the
+# database and serves the live view on 127.0.0.1:8001. @NAME@ placeholders are filled in by
+# scripts/install_services.sh.
+[Unit]
+Description=TrafficPi vision service (camera, detection, counting)
+# Counts are stored with wall-clock times, so let the clock be set first when a time service runs.
+After=time-sync.target
+Wants=time-sync.target
+
+[Service]
+Type=simple
+User=@USER@
+# The camera devices belong to this group; /dev/hailo0 is open to everyone.
+SupplementaryGroups=video
+WorkingDirectory=@INSTALL_DIR@/backend
+Environment=TRAFFICPI_DATA_DIR=@DATA_DIR@
+ExecStart=@INSTALL_DIR@/backend/.venv/bin/trafficpi-vision run
+# The service retries a broken camera by itself and exits with an error after five minutes
+# without one (plan.md D17); this starts it again with libcamera in a clean state. A stop
+# (SIGTERM) ends in a second or two and is not restarted.
+Restart=always
+RestartSec=5
+TimeoutStopSec=20
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=@DATA_DIR@
+
+[Install]
+WantedBy=multi-user.target
