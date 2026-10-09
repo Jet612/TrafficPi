@@ -685,6 +685,11 @@ class Store:
         with self._session() as s:
             return len(s.execute(select(User.id)).all())
 
+    def usernames(self) -> list[str]:
+        """Who can log in, in alphabetical order (never their password hashes)."""
+        with self._session() as s:
+            return list(s.execute(select(User.username).order_by(User.username)).scalars())
+
 
 def open_store(data_dir: Path) -> Store:
     """The store for the database in ``data_dir``, created and migrated as needed.

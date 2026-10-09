@@ -358,3 +358,16 @@ def test_restore_refuses_with_a_reason_while_the_database_is_in_use(
     monkeypatch.setattr(backup, "holders_of", lambda path: [(77, "trafficpi-vision run")])
     assert admin.main(["--data-dir", str(data), "restore", str(archive)]) == 1
     assert "in use" in capsys.readouterr().err
+
+
+def test_users_lists_who_can_log_in_and_nothing_before_anyone_can(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The installer asks this to tell a first install (set a password) from a second run."""
+    assert admin.main(["--data-dir", str(tmp_path), "users"]) == 0
+    assert capsys.readouterr().out == ""
+    assert set_password(tmp_path, monkeypatch, PASSWORD, "--username", "Zed") == 0
+    assert set_password(tmp_path, monkeypatch, PASSWORD, "--username", "amy") == 0
+    capsys.readouterr()
+    assert admin.main(["--data-dir", str(tmp_path), "users"]) == 0
+    assert capsys.readouterr().out == "amy\nzed\n"  # sorted, lower case, no hashes

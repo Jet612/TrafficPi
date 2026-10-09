@@ -43,6 +43,13 @@ def cmd_set_password(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_users(args: argparse.Namespace) -> int:
+    """List who can log in, one name to a line (nothing at all when there is no user yet)."""
+    for name in open_store(args.data_dir).usernames():
+        print(name)
+    return 0
+
+
 def cmd_backup(args: argparse.Namespace) -> int:
     """Write a backup of the database and the files beside it."""
     archive = backup.create_backup(
@@ -99,6 +106,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="read the password from the first line of standard input instead of asking",
     )
     pw.set_defaults(func=cmd_set_password)
+
+    us = sub.add_parser("users", help="list who can log in (one name to a line)")
+    us.set_defaults(func=cmd_users)
 
     bk = sub.add_parser(
         "backup",
