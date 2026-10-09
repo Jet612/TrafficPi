@@ -322,12 +322,17 @@ def test_frames_are_thinned_to_the_clips_rate_and_dropped_not_waited_for(tmp_pat
 
 
 def test_the_recorder_does_its_work_on_a_thread_of_its_own(tmp_path: Path) -> None:
-    recorder = EvidenceRecorder(tmp_path, encoder=FakeEncoder())  # threaded
+    # Twelve seconds of frames arrive in an instant, which the camera never does (it feeds 15 a
+    # second): the queue must have room for all of them, or the thread's pace decides which frames
+    # are dropped, the last ones among them, and the job then waits for seconds that never come.
+    # That happened on a busy machine (100 to 150 of the 180 frames dropped, one run in two).
+    recorder = EvidenceRecorder(tmp_path, encoder=FakeEncoder(), max_waiting=2_000)  # threaded
     try:
         feed_seconds(recorder, 0, 12)
+        assert recorder.frames_dropped == 0
         recorder.request(job(8.0))
         done: list[EvidenceFiles] = []
-        deadline = time.monotonic() + 5
+        deadline = time.monotonic() + 30  # a thread starved of the CPU is slow, not wrong
         while not done and time.monotonic() < deadline:
             done = recorder.poll()
             time.sleep(0.02)
