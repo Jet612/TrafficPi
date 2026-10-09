@@ -8,8 +8,9 @@ export function CardHeader({ className, ...props }: React.ComponentProps<"div">)
   return <div className={cn("flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 pt-4", className)} {...props} />;
 }
 
-export function CardTitle({ className, ...props }: React.ComponentProps<"h2">) {
-  return <h2 className={cn("text-sm font-semibold text-ink", className)} {...props} />;
+/** A card's heading: an h2, or an h3 where the card sits under a heading of its own. */
+export function CardTitle({ className, as: Heading = "h2", ...props }: React.ComponentProps<"h2"> & { as?: "h2" | "h3" }) {
+  return <Heading className={cn("text-sm font-semibold text-ink", className)} {...props} />;
 }
 
 export function CardBody({ className, ...props }: React.ComponentProps<"div">) {

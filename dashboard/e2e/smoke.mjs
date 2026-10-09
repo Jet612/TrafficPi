@@ -975,6 +975,136 @@ try {
     });
   }
 
+  if (demo) {
+    await step("the Data page says what share of the vehicles stopped, rolled through and did not stop, and agrees with the server", async () => {
+      // Freeze what the server says per request, so that the passes the made-up street keeps adding cannot move the numbers under the checks.
+      const frozen = new Map();
+      await page.route(/\/api\/stats\/(stops|traffic)\?/, async (route) => {
+        const url = route.request().url();
+        const response = await route.fetch();
+        if (!frozen.has(url)) frozen.set(url, await response.json());
+        await route.fulfill({ response, json: frozen.get(url) });
+      });
+      const answer = (kind, days) => [...frozen].find(([url]) => url.includes(`/api/stats/${kind}?days=${days}`))?.[1];
+      const sum = (counts) => counts.stopped + counts.rolling + counts.did_not_stop + counts.indeterminate;
+      const OUTCOMES = ["stopped", "rolling", "did_not_stop", "indeterminate"];
+
+      await goTo("Data");
+      await page.reload();
+      await page.getByTestId("data-stops-headline").waitFor();
+      await eventually(async () => assert.ok(answer("stops", 7), "the first request is for the 7 days"));
+      assert.equal(await page.getByRole("button", { name: "7 days", exact: true }).getAttribute("aria-pressed"), "true", "7 days is the first choice");
+      const stops = answer("stops", 7);
+      const total = sum(stops.totals);
+      assert.ok(total > 0, "the made-up street's passes at the stop sign are in the numbers");
+      assert.match(await page.getByTestId("data-stops-headline").innerText(), new RegExp(`${total.toLocaleString("en-US")} vehicles? (was|were) judged`));
+
+      // four tiles that add up: the counts are the server's, the percentages whole numbers that make 100
+      let shares = 0;
+      for (const outcome of OUTCOMES) {
+        assert.equal(await page.getByTestId(`count-${outcome}`).innerText(), `${stops.totals[outcome].toLocaleString("en-US")} of ${total.toLocaleString("en-US")}`);
+        const share = Number.parseInt(await page.getByTestId(`share-${outcome}`).innerText(), 10);
+        near(share, (stops.totals[outcome] / total) * 100, 0.999, `the share that ${outcome}`);
+        shares += share;
+      }
+      assert.equal(shares, 100, "the four percentages make 100");
+      assert.equal(await page.getByRole("img", { name: /^(Stopped|Rolled through|Did not stop|Could not tell) \d+%/ }).count(), 1, "the share bar says the same in words");
+
+      // nothing was judged in the days before, and the page says so instead of showing a change
+      assert.equal(sum(stops.previous), 0);
+      await page.getByText("Nothing to compare with: the 7 days before had no vehicle judged.").waitFor();
+      assert.equal(await page.getByTestId("change-stopped").count(), 0);
+
+      // the highlights, the kinds and the reviews
+      await page.getByTestId("fact-busiest-hour").waitFor();
+      const kinds = page.getByTestId("data-stops-by-kind");
+      await kinds.getByRole("row", { name: /^Cars / }).waitFor();
+      await page.getByTestId("data-stops-reviews").waitFor();
+      await page.getByTestId("data-stops-timing").waitFor();
+
+      // the hours: a chart with columns, the same numbers as a table, and the shares of each column
+      const hours = page.getByTestId("data-stops-by-hour");
+      await eventually(async () => assert.ok((await hours.locator(".recharts-bar-rectangle").count()) > 0, "the chart has columns"));
+      await hours.getByRole("button", { name: "Share", exact: true }).click();
+      await hours.getByText("100%", { exact: true }).first().waitFor();
+      await hours.getByRole("button", { name: "Count", exact: true }).click();
+      await hours.getByRole("button", { name: "Table", exact: true }).click();
+      const rows = hours.getByRole("row");
+      assert.equal(await rows.count(), 25, "a header and the 24 hours");
+      const tableTotal = await hours.getByRole("row").evaluateAll((trs) =>
+        trs.slice(1).reduce((sum, tr) => sum + Number(tr.querySelectorAll("td")[4].textContent.replaceAll(",", "")), 0),
+      );
+      assert.equal(tableTotal, total, "the hours add up to the vehicles judged");
+      await hours.getByRole("button", { name: "Chart", exact: true }).click();
+      assert.ok(answer("stops", 7).by_hour.length === 24);
+      assert.equal(await page.getByTestId("data-stops-by-day").count(), 1, "7 days have a day-by-day chart");
+
+      // the traffic, from the same period
+      const traffic = answer("traffic", 7);
+      await page.getByTestId("data-traffic-total").waitFor();
+      assert.equal(await page.getByTestId("data-traffic-total").innerText(), traffic.total.toLocaleString("en-US"));
+      await page.getByTestId("data-traffic-by-hour").waitFor();
+
+      // a period is picked once for all of it, asked of the server in days, and remembered
+      const picks = [["Today", 1], ["30 days", 30], ["90 days", 90], ["All time", 0]];
+      for (const [label, days] of picks) {
+        const asked = page.waitForResponse((response) => response.url().includes(`/api/stats/stops?days=${days}`));
+        const askedTraffic = page.waitForResponse((response) => response.url().includes(`/api/stats/traffic?days=${days}`));
+        await page.getByRole("button", { name: label, exact: true }).click();
+        await asked;
+        await askedTraffic;
+        await eventually(async () => assert.equal(await page.getByRole("button", { name: label, exact: true }).getAttribute("aria-pressed"), "true"));
+        await eventually(async () => assert.equal(answer("stops", days)?.days >= 1, true));
+      }
+      assert.match(await page.getByTestId("data-stops-headline").innerText(), /since /, "all time says since when");
+      assert.equal(answer("stops", 0).previous, null, "all time has nothing before it");
+      assert.equal(await page.getByText(/^Nothing to compare with/).count(), 0, "and does not say that there is nothing to compare with");
+      await reload();
+      await page.getByTestId("data-stops-headline").waitFor();
+      assert.equal(await page.getByRole("button", { name: "All time", exact: true }).getAttribute("aria-pressed"), "true", "the period is remembered");
+      await page.getByRole("button", { name: "Today", exact: true }).click();
+      await eventually(async () => assert.equal(await page.getByTestId("data-stops-by-day").count(), 0, "one day has no day-by-day chart"));
+      await page.getByRole("button", { name: "7 days", exact: true }).click(); // leave things as they were
+      await eventually(async () => assert.equal(await page.getByRole("button", { name: "7 days", exact: true }).getAttribute("aria-pressed"), "true"));
+      await shot("data");
+
+      // the link to the passes that need a look goes to the History page
+      await page.getByRole("link", { name: "Review passes on the History page" }).click();
+      await page.getByRole("heading", { level: 1, name: "History" }).waitFor({ state: "attached" });
+      await page.unroute(/\/api\/stats\/(stops|traffic)\?/);
+    });
+  }
+
+  await step("with no stop sign set up the Data page says how to add one, and a request that failed is said, with a way to try again", async () => {
+    await goTo("Data");
+    const json = (body, status = 200) => ({ status, contentType: "application/json", body: JSON.stringify(body) });
+    const zero = { stopped: 0, rolling: 0, did_not_stop: 0, indeterminate: 0 };
+    const nothing = {
+      timezone: "UTC", units: "mph", from_ms: 0, to_ms: 1, days: 7, all_time: false, sign: null, totals: zero, previous: zero,
+      by_hour: Array.from({ length: 24 }, (_, hour) => ({ hour, ...zero })),
+      by_day: [], by_weekday: [], by_kind: [], by_sign: [],
+      timing: { stopped_hold_s: null, rolling_min_speed: null, did_not_stop_min_speed: null },
+      review: { confirmed: 0, false_alarms: 0, waiting: 0 },
+    };
+    const profileRoute = "**/api/profile";
+    const stopsRoute = "**/api/stats/stops**";
+    const trafficRoute = "**/api/stats/traffic**";
+    await page.route(profileRoute, (route) => route.fulfill(json({ version: 1, problem: null, reference_at: null, profile: { schema_version: 2, lines: [], detection_zones: [], exclusion_zones: [], stop_signs: [] } })));
+    await page.route(stopsRoute, (route) => route.fulfill(json(nothing)));
+    await page.route(trafficRoute, (route) => route.fulfill(json({ detail: "broken" }, 503))); // one of the refusals that the end of the test expects
+    await page.reload();
+    await page.getByText("No stop sign is set up yet.").waitFor();
+    await page.getByText("The traffic numbers could not be loaded.").waitFor();
+    await page.unroute(trafficRoute);
+    await page.getByRole("button", { name: "Try again" }).click();
+    await page.getByTestId("data-traffic-counted").waitFor();
+    assert.equal(await page.getByText("The traffic numbers could not be loaded.").count(), 0, "the failure is gone once it works");
+    await page.unroute(profileRoute);
+    await page.unroute(stopsRoute);
+    await page.reload();
+    await page.getByTestId("data-traffic-counted").waitFor();
+  });
+
   await step("with no stop sign set up the card says how to add one, and a failed request is said", async () => {
     await goTo("History");
     const json = (body, status = 200) => ({ status, contentType: "application/json", body: JSON.stringify(body) });
@@ -1420,6 +1550,10 @@ try {
     await page.goto(`${base}/history`); // no trailing slash: the server sends it to the page
     await page.getByRole("heading", { level: 1, name: "History" }).waitFor({ state: "attached" });
     assert.equal(pagePath(), "/history/");
+    await page.goto(`${base}/data`);
+    await page.getByRole("heading", { level: 1, name: "Data" }).waitFor({ state: "attached" });
+    assert.equal(pagePath(), "/data/");
+    assert.equal(await page.title(), "Data · TrafficPi");
     await page.goto(`${base}/setup/`); // a page opened directly, as from a bookmark
     await page.getByRole("heading", { level: 1, name: "Setup" }).waitFor({ state: "attached" });
     assert.equal(await page.title(), "Setup · TrafficPi");

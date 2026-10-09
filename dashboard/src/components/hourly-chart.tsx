@@ -20,7 +20,7 @@ import { useStats } from "@/components/stats-provider";
 import { useNow } from "@/lib/hooks";
 import { classColor, classLabel } from "@/lib/classes";
 import { formatCount, hourRange } from "@/lib/format";
-import { axisTicks, buildHourlyRows, countFor, niceMax, peakRow, stackKeys, type HourRow } from "@/lib/hourly";
+import { axisTicks, axisWidth, buildHourlyRows, countFor, niceMax, peakRow, stackKeys, type HourRow } from "@/lib/hourly";
 
 /** One column of the chart: the hour's own fields, then one count per stack key, as `n:<key>`. */
 type ChartRow = Omit<HourRow, "byClass"> & { [count: `n:${string}`]: number };
@@ -90,7 +90,7 @@ export function HourlyChart() {
                   {model.current && <ReferenceArea x1={model.current.label} x2={model.current.label} fill="var(--ink)" fillOpacity={0.06} stroke="none" />}
                   <XAxis dataKey="label" interval={2} tickLine={false} tick={TICK} stroke="var(--baseline)" tickMargin={6} />
                   <YAxis
-                    width={36}
+                    width={axisWidth(model.max)}
                     domain={[0, model.max]}
                     ticks={axisTicks(model.max)}
                     allowDecimals={false}

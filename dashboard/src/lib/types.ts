@@ -27,6 +27,8 @@ export type Settings = Schemas["Settings"];
 export type StopOut = Schemas["StopOut"];
 export type StopSummary = Schemas["StopSummary"];
 export type StopTotals = Schemas["StopTotals"];
+export type StopStats = Schemas["StopStats"];
+export type TrafficStats = Schemas["TrafficStats"];
 export type StopOutcome = StopOut["outcome"];
 export type ReviewState = NonNullable<StopOut["review"]>;
 

@@ -8,6 +8,7 @@ export interface PageInfo {
 export const PAGES: readonly PageInfo[] = [
   { href: "/", label: "Live" },
   { href: "/history/", label: "History" },
+  { href: "/data/", label: "Data" },
   { href: "/setup/", label: "Setup" },
   { href: "/system/", label: "System" },
 ];

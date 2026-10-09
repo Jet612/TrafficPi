@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { axisTicks, buildHourlyRows, countFor, niceMax, peakRow, stackKeys } from "./hourly";
+import { axisTicks, axisWidth, buildHourlyRows, countFor, niceMax, peakRow, stackKeys } from "./hourly";
 import type { SeriesPoint, TodaySummary } from "./types";
 
 const HOUR = 3_600_000;
@@ -108,5 +108,20 @@ describe("axisTicks", () => {
       expect(ticks[ticks.length - 1]).toBe(max);
       expect(ticks.length).toBeLessThanOrEqual(6);
     }
+  });
+});
+
+describe("the width of an axis", () => {
+  it("grows with its widest label, so that 1,000 is not cut to ,000", () => {
+    expect(axisWidth(25)).toBe(36);
+    expect(axisWidth(500)).toBe(37); // "500": three characters, a little over the least
+    expect(axisWidth(1000)).toBe(52); // "1,000"
+    expect(axisWidth(25_000)).toBe(59); // "25,000"
+    expect(axisWidth(1_000_000)).toBe(82); // "1,000,000"
+  });
+
+  it("makes room for 100% on a share axis, whatever the counts", () => {
+    expect(axisWidth(4, true)).toBe(44);
+    expect(axisWidth(1_000_000, true)).toBe(44);
   });
 });

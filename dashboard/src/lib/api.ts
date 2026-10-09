@@ -11,8 +11,10 @@ import type {
   Settings,
   StatusResponse,
   StopOut,
+  StopStats,
   StopSummary,
   TodaySummary,
+  TrafficStats,
   TrailDay,
   TrailPaths,
 } from "./types";
@@ -132,6 +134,11 @@ export const api = {
   stops: (query: StopsQuery, signal?: AbortSignal) => request<StopOut[]>("GET", `/api/stops?${stopsQuery(query)}`, undefined, signal),
   stopSummary: (fromMs: number, toMs: number, signal?: AbortSignal) =>
     request<StopSummary>("GET", `/api/stops/summary?from_ms=${fromMs}&to_ms=${toMs}`, undefined, signal),
+  /** How vehicles did at the stop signs over the last `days` local days, today included (0: since the first pass), at one sign if named. */
+  stopStats: (days: number, sign?: string, signal?: AbortSignal) =>
+    request<StopStats>("GET", `/api/stats/stops?days=${days}${sign === undefined ? "" : `&sign=${encodeURIComponent(sign)}`}`, undefined, signal),
+  /** Vehicles counted over the last `days` local days, today included (0: since the first count). */
+  trafficStats: (days: number, signal?: AbortSignal) => request<TrafficStats>("GET", `/api/stats/traffic?days=${days}`, undefined, signal),
   /** What a person made of a stop event; null takes it back. */
   reviewStop: (id: number, state: ReviewState | null) => request<StopOut>("PUT", `/api/stops/${id}/review`, { state }),
   profile: (signal?: AbortSignal) => request<ProfileOut>("GET", "/api/profile", undefined, signal),

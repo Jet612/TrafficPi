@@ -27,7 +27,7 @@ describe("which page an address belongs to", () => {
   });
 
   it("lists the pages the owner asked for, in order, each with a folder-style address", () => {
-    expect(PAGES.map((page) => page.label)).toEqual(["Live", "History", "Setup", "System"]);
+    expect(PAGES.map((page) => page.label)).toEqual(["Live", "History", "Data", "Setup", "System"]);
     expect(PAGES.every((page) => page.href.startsWith("/") && page.href.endsWith("/"))).toBe(true);
   });
 });

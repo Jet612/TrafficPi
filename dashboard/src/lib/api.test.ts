@@ -104,6 +104,19 @@ describe("api", () => {
     expect(fetchMock.mock.calls[4]?.[0]).toBe("/api/stops?from_ms=1&to_ms=2&limit=5");
   });
 
+  it("asks for the data of some local days, at one stop sign if one is named", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(respond(200, {})));
+    vi.stubGlobal("fetch", fetchMock);
+    await api.stopStats(7);
+    await api.stopStats(0, "elm street/1");
+    await api.trafficStats(30);
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      "/api/stats/stops?days=7",
+      "/api/stats/stops?days=0&sign=elm%20street%2F1",
+      "/api/stats/traffic?days=30",
+    ]);
+  });
+
   it("asks for a day by the hour, today if none is named", async () => {
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(respond(200, { day: "2026-10-09", hours: [] })));
     vi.stubGlobal("fetch", fetchMock);

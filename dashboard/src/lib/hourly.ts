@@ -1,5 +1,5 @@
 import { CLASS_ORDER, classSlot } from "./classes";
-import { hourLabel } from "./format";
+import { formatCount, hourLabel } from "./format";
 import type { SeriesPoint, TodaySummary } from "./types";
 
 export interface HourRow {
@@ -72,6 +72,12 @@ export function niceMax(value: number): number {
     if (candidate >= value) return candidate;
   }
   return 10 * magnitude;
+}
+
+/** Room in pixels for the widest label of a vertical axis that goes up to `max` (or to 100%): "25", "1,000" and "100%" each need their own. */
+export function axisWidth(max: number, percent = false): number {
+  const widest = percent ? "100%" : formatCount(max);
+  return Math.max(36, Math.ceil(14 + widest.length * 7.5));
 }
 
 /** Gridline values from 0 to `max` (as returned by niceMax): whole numbers, four or five intervals. */
