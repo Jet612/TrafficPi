@@ -261,8 +261,13 @@ def test_recent_events_are_newest_first_and_paged(store: Store) -> None:
 
 def test_evidence_settings_start_as_the_defaults_and_round_trip(store: Store) -> None:
     assert store.get_evidence_settings() == EvidenceSettings(True, 30, 2048)
+    assert store.get_evidence_settings().rolling_clip_hours == 3  # clips of rolls: 3 hours
+    assert store.get_evidence_settings().did_not_stop_clip_hours == 48  # of the worst: 2 days
     store.set_evidence_settings(EvidenceSettings(enabled=False, keep_days=7, max_mb=500))
     assert store.get_evidence_settings() == EvidenceSettings(False, 7, 500)
+    changed = EvidenceSettings(rolling_clip_hours=5, did_not_stop_clip_hours=100)
+    store.set_evidence_settings(changed)
+    assert store.get_evidence_settings() == changed
 
 
 def test_an_evidence_setting_that_is_stored_but_makes_no_sense_is_ignored(store: Store) -> None:
@@ -270,6 +275,8 @@ def test_an_evidence_setting_that_is_stored_but_makes_no_sense_is_ignored(store:
         ("evidence_keep_days", 0),
         ("evidence_max_mb", True),
         ("evidence_enabled", "yes"),
+        ("evidence_rolling_clip_hours", 0),
+        ("evidence_did_not_stop_clip_hours", "2 days"),
     ]:
         store.set_setting(key, value)
     # not a number of days, not a size, and not a plain "no": the defaults, and still on
@@ -277,6 +284,17 @@ def test_an_evidence_setting_that_is_stored_but_makes_no_sense_is_ignored(store:
     store.set_setting("evidence_keep_days", "30")
     store.set_setting("evidence_max_mb", 10**9)
     assert store.get_evidence_settings() == EvidenceSettings(True, 30, 2048)
+
+
+def test_the_outcomes_of_stop_events_can_be_asked_for_by_id(store: Store) -> None:
+    rolled = store.record_stop(stop("rolling"), minute(0) + 1_000)
+    stopped = store.record_stop(stop("stopped"), minute(0) + 2_000)
+    counted = store.record_count(count(), minute(0) + 3_000)  # a count has no outcome
+    assert store.stop_outcomes([rolled, stopped, counted, 999]) == {
+        rolled: "rolling",
+        stopped: "stopped",
+    }
+    assert store.stop_outcomes([]) == {}
 
 
 def test_settings_round_trip_and_overwrite(store: Store) -> None:

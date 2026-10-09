@@ -15,6 +15,8 @@ import {
   signLabel,
   summarySentence,
   toggleOutcome,
+  focusOf,
+  OUTCOME_FOCUS,
 } from "./stops";
 import type { StopOut, StopSummary, StopTotals } from "./types";
 
@@ -45,6 +47,22 @@ describe("the four outcomes", () => {
     expect(toggleOutcome(["stopped", "rolling"], "rolling")).toEqual(["stopped"]);
     expect(toggleOutcome([], "indeterminate")).toEqual(["indeterminate"]);
     expect(toggleOutcome(["indeterminate", "rolling"], "did_not_stop")).toEqual(["rolling", "did_not_stop", "indeterminate"]);
+  });
+});
+
+describe("the quick choices of outcomes", () => {
+  it("each stand for outcomes that the tiles can show, and are recognised from them in any order", () => {
+    for (const choice of OUTCOME_FOCUS) expect(focusOf(choice.outcomes), choice.value).toBe(choice.value);
+    expect(OUTCOME_FOCUS.find((choice) => choice.value === "rolling")?.outcomes).toEqual(["rolling"]);
+    expect(OUTCOME_FOCUS.find((choice) => choice.value === "did_not_stop")?.outcomes).toEqual(["did_not_stop"]);
+    expect(focusOf(["did_not_stop", "rolling"])).toBe("both");
+  });
+
+  it("are none of them when the tiles were pressed to some other mix", () => {
+    expect(focusOf(["stopped"])).toBeNull();
+    expect(focusOf([])).toBeNull();
+    expect(focusOf(["rolling", "indeterminate"])).toBeNull();
+    expect(focusOf(["stopped", "rolling", "did_not_stop", "indeterminate"])).toBeNull();
   });
 });
 

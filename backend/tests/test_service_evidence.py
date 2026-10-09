@@ -333,6 +333,32 @@ def test_evidence_that_is_too_old_is_deleted_when_the_service_starts(
     assert not old.exists() and recent.exists()
 
 
+def test_a_clip_is_deleted_by_the_hours_of_its_outcome_and_the_count_stays(
+    store: Store, tmp_path: Path, recorder: Recorded
+) -> None:
+    from tests.test_store import minute, stop
+
+    store.set_evidence_settings(EvidenceSettings(rolling_clip_hours=3, did_not_stop_clip_hours=48))
+    ids = {
+        "rolling": store.record_stop(stop("rolling"), minute(0) + 1_000),
+        "did_not_stop": store.record_stop(stop("did_not_stop"), minute(0) + 2_000),
+        "indeterminate": store.record_stop(stop("indeterminate"), minute(0) + 3_000),
+    }
+    folder = tmp_path / "evidence" / "2026-10-08"
+    folder.mkdir(parents=True)
+    made = {}
+    for name, hours in (("rolling", 4), ("did_not_stop", 4), ("indeterminate", 4)):
+        path = folder / f"stop-{ids[name]}.mp4"
+        path.write_bytes(b"x" * 50)
+        modified = time.time() - hours * 3_600
+        os.utime(path, (modified, modified))
+        made[name] = path
+    run([[]], store, tmp_path, recorder)
+    assert not made["rolling"].exists()  # 4 hours is past 3
+    assert made["did_not_stop"].exists() and made["indeterminate"].exists()
+    assert len(store.stops_between(minute(0), minute(1))) == 3  # the passes are all still counted
+
+
 def test_when_there_is_more_than_the_set_room_the_oldest_goes(
     store: Store, tmp_path: Path, recorder: Recorded
 ) -> None:

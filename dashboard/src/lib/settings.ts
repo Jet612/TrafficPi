@@ -7,6 +7,9 @@ export const MAX_KEEP_DAYS = 3650;
 export const MIN_EVIDENCE_MB = 50;
 export const MAX_EVIDENCE_MB = 1_000_000;
 
+/** The most hours that a clip may be kept for: the server's own limit (backend core/evidence_settings.py). */
+export const MAX_CLIP_HOURS = MAX_KEEP_DAYS * 24;
+
 /** The settings as the form holds them: what is typed in a number box is text until it has been checked. */
 export interface SettingsDraft {
   timezone: string;
@@ -17,6 +20,8 @@ export interface SettingsDraft {
   evidenceEnabled: boolean;
   evidenceDays: string;
   evidenceMb: string;
+  rollingClipHours: string;
+  didNotStopClipHours: string;
 }
 
 export function toDraft(settings: Settings): SettingsDraft {
@@ -29,6 +34,8 @@ export function toDraft(settings: Settings): SettingsDraft {
     evidenceEnabled: settings.evidence_enabled,
     evidenceDays: String(settings.evidence_keep_days),
     evidenceMb: String(settings.evidence_max_mb),
+    rollingClipHours: String(settings.evidence_rolling_clip_hours),
+    didNotStopClipHours: String(settings.evidence_did_not_stop_clip_hours),
   };
 }
 
@@ -48,6 +55,14 @@ export function parseEvidenceMb(text: string): number | null {
   return mb >= MIN_EVIDENCE_MB && mb <= MAX_EVIDENCE_MB ? mb : null;
 }
 
+/** The hours typed, if they are a whole number the server will take; null otherwise. */
+export function parseClipHours(text: string): number | null {
+  const trimmed = text.trim();
+  if (!/^\d{1,6}$/.test(trimmed)) return null;
+  const hours = Number(trimmed);
+  return hours >= 1 && hours <= MAX_CLIP_HOURS ? hours : null;
+}
+
 export type DraftResult = { ok: true; settings: Settings } | { ok: false; problem: string };
 
 /** The settings to send, or what is wrong with the form. (The server checks that the time zone exists.) */
@@ -62,6 +77,10 @@ export function fromDraft(draft: SettingsDraft): DraftResult {
   if (evidenceMb === null) {
     return { ok: false, problem: `Enter a whole number of megabytes from ${MIN_EVIDENCE_MB} to ${MAX_EVIDENCE_MB} for pictures and clips.` };
   }
+  const rollingHours = parseClipHours(draft.rollingClipHours);
+  if (rollingHours === null) return { ok: false, problem: `Enter a whole number of hours from 1 to ${MAX_CLIP_HOURS} to keep the clips of rolled-through stops.` };
+  const didNotStopHours = parseClipHours(draft.didNotStopClipHours);
+  if (didNotStopHours === null) return { ok: false, problem: `Enter a whole number of hours from 1 to ${MAX_CLIP_HOURS} to keep the clips of vehicles that did not stop.` };
   return {
     ok: true,
     settings: {
@@ -73,6 +92,8 @@ export function fromDraft(draft: SettingsDraft): DraftResult {
       evidence_enabled: draft.evidenceEnabled,
       evidence_keep_days: evidenceDays,
       evidence_max_mb: evidenceMb,
+      evidence_rolling_clip_hours: rollingHours,
+      evidence_did_not_stop_clip_hours: didNotStopHours,
     },
   };
 }
@@ -103,4 +124,10 @@ export function roughly(days: number): string {
   if (days < 330) return `about ${Math.round(days / 30.4)} months`;
   const years = Math.round((days / 365) * 2) / 2;
   return `about ${years} ${years === 1 ? "year" : "years"}`;
+}
+
+/** "3 hours", "1 hour", "2 days", "50 hours": a number of hours at a glance (whole days are told as days). */
+export function hoursText(hours: number): string {
+  if (hours >= 48 && hours % 24 === 0) return roughly(hours / 24);
+  return `${hours} ${hours === 1 ? "hour" : "hours"}`;
 }

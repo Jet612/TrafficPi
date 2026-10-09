@@ -16,14 +16,16 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import math
 import queue
+import re
 import shutil
 import subprocess
 import tempfile
 import threading
 import time
 from collections import deque
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Collection, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -391,15 +393,26 @@ def encode_clip(frames: Iterable[np.ndarray], fps: float, path: Path) -> bool:
 
 
 def clean_up(
-    folder: Path, *, keep_days: int, max_bytes: int, now_s: float | None = None
+    folder: Path,
+    *,
+    keep_days: int,
+    max_bytes: int,
+    clip_hours: Mapping[str, float] | None = None,
+    outcomes_of: Callable[[Collection[int]], Mapping[int, str]] | None = None,
+    now_s: float | None = None,
 ) -> tuple[int, int]:
     """Delete evidence older than ``keep_days``, then the oldest until the rest fits ``max_bytes``.
 
-    Returns how many files went and how many bytes that freed. A file that is half written is only a
-    leftover once it is old.
+    A clip is also deleted once it is older than ``clip_hours`` allows for the outcome of its pass
+    (``outcomes_of`` says which event ids had which outcome; a clip whose outcome is not known, or
+    not in ``clip_hours``, is judged by ``keep_days`` alone). Returns how many files went and how
+    many bytes that freed. A file that is half written is only a leftover once it is old.
     """
     now = time.time() if now_s is None else now_s  # (a folder that is not there has nothing in it)
     cutoff = now - keep_days * 86_400
+    clip_cutoffs: dict[int, float] = {}
+    if clip_hours and outcomes_of is not None:
+        clip_cutoffs = _clip_cutoffs(folder, clip_hours, outcomes_of, now)
     kept: list[tuple[float, int, Path]] = []
     removed_files = removed_bytes = 0
 
@@ -421,7 +434,11 @@ def clean_up(
         except OSError:
             continue
         part = ".part" in path.name
-        if (part and now - stat.st_mtime > STALE_PART_S) or (not part and stat.st_mtime < cutoff):
+        clip_id = _clip_id(path)
+        too_old = stat.st_mtime < cutoff or (
+            clip_id is not None and stat.st_mtime < clip_cutoffs.get(clip_id, -math.inf)
+        )
+        if (part and now - stat.st_mtime > STALE_PART_S) or (not part and too_old):
             remove(path, stat.st_size)
         elif not part:
             kept.append((stat.st_mtime, stat.st_size, path))
@@ -435,3 +452,36 @@ def clean_up(
         with contextlib.suppress(OSError):
             directory.rmdir()  # only if it is empty
     return removed_files, removed_bytes
+
+
+_CLIP_NAME = re.compile(r"stop-(\d+)\.mp4")
+
+
+def _clip_id(path: Path) -> int | None:
+    """The event a clip belongs to, from its name (``stop-<id>.mp4``); None for other files."""
+    found = _CLIP_NAME.fullmatch(path.name)
+    return int(found.group(1)) if found else None
+
+
+def _clip_cutoffs(
+    folder: Path,
+    clip_hours: Mapping[str, float],
+    outcomes_of: Callable[[Collection[int]], Mapping[int, str]],
+    now: float,
+) -> dict[int, float]:
+    """For each clip in the folder whose outcome has its own time: the modified time before which it
+    goes. If the outcomes cannot be read, no clip is judged by its outcome this time (the days
+    still are, and the next clean-up tries again)."""
+    ids = {i for path in folder.rglob("stop-*.mp4") if (i := _clip_id(path)) is not None}
+    if not ids:
+        return {}
+    try:
+        outcomes = outcomes_of(ids)
+    except Exception:
+        log.exception("evidence: could not read the clips' outcomes; judging them by age only")
+        return {}
+    return {
+        event_id: now - clip_hours[name] * 3_600
+        for event_id, name in outcomes.items()
+        if name in clip_hours
+    }

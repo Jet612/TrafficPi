@@ -35,6 +35,22 @@ export const NEEDS_A_LOOK: readonly StopOutcome[] = ["rolling", "did_not_stop", 
 
 export const REVIEW_LABEL: Record<ReviewState, string> = { confirmed: "Confirmed", false_positive: "False alarm" };
 
+/** The quick choices of what to list, for those who do not want to press the tiles one by one. */
+export type OutcomeFocus = "needs_a_look" | "rolling" | "did_not_stop" | "both";
+
+export const OUTCOME_FOCUS: readonly { value: OutcomeFocus; label: string; outcomes: readonly StopOutcome[] }[] = [
+  { value: "needs_a_look", label: "All that need a look", outcomes: NEEDS_A_LOOK },
+  { value: "rolling", label: "Rolled through", outcomes: ["rolling"] },
+  { value: "did_not_stop", label: "Did not stop", outcomes: ["did_not_stop"] },
+  { value: "both", label: "Both of those", outcomes: ["rolling", "did_not_stop"] },
+];
+
+/** Which quick choice the pressed tiles amount to; null when they are some other mix (a tile was pressed by hand). */
+export function focusOf(selected: readonly StopOutcome[]): OutcomeFocus | null {
+  const same = (a: readonly StopOutcome[], b: readonly StopOutcome[]) => a.length === b.length && a.every((name) => b.includes(name));
+  return OUTCOME_FOCUS.find((choice) => same(choice.outcomes, selected))?.value ?? null;
+}
+
 /** Add or take away one outcome from those shown, keeping them in their usual order. */
 export function toggleOutcome(selected: readonly StopOutcome[], outcome: StopOutcome): StopOutcome[] {
   const next = selected.includes(outcome) ? selected.filter((name) => name !== outcome) : [...selected, outcome];

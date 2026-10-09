@@ -10,11 +10,14 @@ import { Switch } from "@/components/ui/switch";
 import { useUnsavedWarning } from "@/components/unsaved";
 import { ApiError, api } from "@/lib/api";
 import {
+  MAX_CLIP_HOURS,
   MAX_EVIDENCE_MB,
   MAX_KEEP_DAYS,
   MIN_EVIDENCE_MB,
   fromDraft,
+  hoursText,
   isChanged,
+  parseClipHours,
   parseEvidenceMb,
   parseKeepDays,
   roughly,
@@ -59,6 +62,10 @@ export function SettingsCard() {
   const evidenceDaysHelpId = useId();
   const evidenceMbId = useId();
   const evidenceMbHelpId = useId();
+  const rollingHoursId = useId();
+  const rollingHoursHelpId = useId();
+  const didNotStopHoursId = useId();
+  const didNotStopHoursHelpId = useId();
 
   useEffect(() => {
     const controller = new AbortController();
@@ -86,6 +93,8 @@ export function SettingsCard() {
   const days = draft ? parseKeepDays(draft.keepDays) : null;
   const evidenceDays = draft ? parseKeepDays(draft.evidenceDays) : null;
   const evidenceMb = draft ? parseEvidenceMb(draft.evidenceMb) : null;
+  const rollingHours = draft ? parseClipHours(draft.rollingClipHours) : null;
+  const didNotStopHours = draft ? parseClipHours(draft.didNotStopClipHours) : null;
 
   function change(update: Partial<SettingsDraft>) {
     setOutcome(null);
@@ -224,6 +233,42 @@ export function SettingsCard() {
                   {evidenceDays === null
                     ? `A whole number of days, from 1 to ${MAX_KEEP_DAYS}.`
                     : `Kept for ${roughly(evidenceDays)}. Older ones are deleted by themselves, also if none are being made.`}
+                </p>
+              </div>
+              <div>
+                <Label htmlFor={rollingHoursId}>Keep the clip of a rolled-through stop for (hours)</Label>
+                <Input
+                  id={rollingHoursId}
+                  inputMode="numeric"
+                  autoComplete="off"
+                  value={draft.rollingClipHours}
+                  onChange={(event) => change({ rollingClipHours: event.target.value })}
+                  aria-invalid={rollingHours === null}
+                  aria-describedby={rollingHoursHelpId}
+                  className="w-28"
+                />
+                <p id={rollingHoursHelpId} className="mt-1.5 text-sm text-ink-2">
+                  {rollingHours === null
+                    ? `A whole number of hours, from 1 to ${MAX_CLIP_HOURS}.`
+                    : `Clips of rolled-through stops are deleted after ${hoursText(rollingHours)}, to spare the disk. The picture stays for the days above, and the count for good.`}
+                </p>
+              </div>
+              <div>
+                <Label htmlFor={didNotStopHoursId}>Keep the clip of a vehicle that did not stop for (hours)</Label>
+                <Input
+                  id={didNotStopHoursId}
+                  inputMode="numeric"
+                  autoComplete="off"
+                  value={draft.didNotStopClipHours}
+                  onChange={(event) => change({ didNotStopClipHours: event.target.value })}
+                  aria-invalid={didNotStopHours === null}
+                  aria-describedby={didNotStopHoursHelpId}
+                  className="w-28"
+                />
+                <p id={didNotStopHoursHelpId} className="mt-1.5 text-sm text-ink-2">
+                  {didNotStopHours === null
+                    ? `A whole number of hours, from 1 to ${MAX_CLIP_HOURS}.`
+                    : `Clips of vehicles that did not stop are deleted after ${hoursText(didNotStopHours)}. Neither can be kept longer than the days above.`}
                 </p>
               </div>
               <div>

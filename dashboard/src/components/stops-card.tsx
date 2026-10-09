@@ -17,11 +17,13 @@ import { formatCount, formatDateTimeSeconds } from "@/lib/format";
 import { useNow, usePersistentState, useRequest } from "@/lib/hooks";
 import {
   NEEDS_A_LOOK,
+  OUTCOME_FOCUS,
   OUTCOMES,
   OUTCOME_LABEL,
   OUTCOME_LEVEL,
   PERIOD_OPTIONS,
   counted,
+  focusOf,
   nextReview,
   numbersText,
   passText,
@@ -168,9 +170,18 @@ export function StopsCard() {
               <p className="text-sm text-ink-2">
                 {selected.length === 0
                   ? "Pick at least one of the outcomes above to see the passes."
-                  : "Showing the outcomes that are pressed, newest first."}
+                  : "Showing the outcomes that are pressed, newest first. The tiles can be pressed one by one."}
               </p>
               <div className="flex flex-wrap items-center gap-3">
+                <Segmented
+                  label="Outcome"
+                  value={focusOf(selected) ?? "custom"}
+                  options={OUTCOME_FOCUS}
+                  onChange={(value) => {
+                    setSelected(OUTCOME_FOCUS.find((choice) => choice.value === value)?.outcomes ?? NEEDS_A_LOOK);
+                    setLimit(PAGE);
+                  }}
+                />
                 <Segmented label="Show" value={review} options={REVIEW_FILTERS} onChange={(value) => { setReview(value); setLimit(PAGE); }} />
                 {signs.length > 1 && (
                   <select

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX_EVIDENCE_MB, MAX_KEEP_DAYS, MIN_EVIDENCE_MB, fromDraft, isChanged, parseEvidenceMb, parseKeepDays, roughly, sizeText, toDraft, zoneChoices } from "./settings";
+import { MAX_CLIP_HOURS, MAX_EVIDENCE_MB, MAX_KEEP_DAYS, MIN_EVIDENCE_MB, fromDraft, hoursText, isChanged, parseClipHours, parseEvidenceMb, parseKeepDays, roughly, sizeText, toDraft, zoneChoices } from "./settings";
 import type { Settings } from "./types";
 
 const saved: Settings = {
@@ -11,6 +11,8 @@ const saved: Settings = {
   evidence_enabled: true,
   evidence_keep_days: 30,
   evidence_max_mb: 2048,
+  evidence_rolling_clip_hours: 3,
+  evidence_did_not_stop_clip_hours: 48,
 };
 
 describe("the settings form", () => {
@@ -25,6 +27,8 @@ describe("the settings form", () => {
       evidenceEnabled: true,
       evidenceDays: "30",
       evidenceMb: "2048",
+      rollingClipHours: "3",
+      didNotStopClipHours: "48",
     });
     expect(fromDraft(draft)).toEqual({ ok: true, settings: saved });
   });
@@ -49,6 +53,14 @@ describe("the settings form", () => {
     expect(fromDraft({ ...toDraft(saved), timezone: "  " })).toEqual({ ok: false, problem: "Enter a time zone, like America/New_York." });
     expect(fromDraft({ ...toDraft(saved), keepDays: "forever" })).toEqual({ ok: false, problem: "Enter a whole number of days from 1 to 3650 to keep trails." });
     expect(fromDraft({ ...toDraft(saved), evidenceDays: "0" })).toEqual({ ok: false, problem: "Enter a whole number of days from 1 to 3650 to keep pictures and clips." });
+    expect(fromDraft({ ...toDraft(saved), rollingClipHours: "0" })).toEqual({
+      ok: false,
+      problem: "Enter a whole number of hours from 1 to 87600 to keep the clips of rolled-through stops.",
+    });
+    expect(fromDraft({ ...toDraft(saved), didNotStopClipHours: "2 days" })).toEqual({
+      ok: false,
+      problem: "Enter a whole number of hours from 1 to 87600 to keep the clips of vehicles that did not stop.",
+    });
     expect(fromDraft({ ...toDraft(saved), evidenceMb: "10" })).toEqual({
       ok: false,
       problem: "Enter a whole number of megabytes from 50 to 1000000 for pictures and clips.",
@@ -66,6 +78,8 @@ describe("the settings form", () => {
       evidenceEnabled: false,
       evidenceDays: " 7",
       evidenceMb: "500 ",
+      rollingClipHours: " 6",
+      didNotStopClipHours: "72 ",
     });
     expect(result).toEqual({
       ok: true,
@@ -78,6 +92,8 @@ describe("the settings form", () => {
         evidence_enabled: false,
         evidence_keep_days: 7,
         evidence_max_mb: 500,
+        evidence_rolling_clip_hours: 6,
+        evidence_did_not_stop_clip_hours: 72,
       },
     });
   });
@@ -95,8 +111,33 @@ describe("the settings form", () => {
     expect(isChanged({ ...toDraft(saved), evidenceEnabled: false }, saved)).toBe(true);
     expect(isChanged({ ...toDraft(saved), evidenceDays: "31" }, saved)).toBe(true);
     expect(isChanged({ ...toDraft(saved), evidenceDays: " 30 " }, saved)).toBe(false);
+    expect(isChanged({ ...toDraft(saved), rollingClipHours: "4" }, saved)).toBe(true);
+    expect(isChanged({ ...toDraft(saved), didNotStopClipHours: "49" }, saved)).toBe(true);
+    expect(isChanged({ ...toDraft(saved), rollingClipHours: " 3 " }, saved)).toBe(false);
     expect(isChanged({ ...toDraft(saved), evidenceMb: "2049" }, saved)).toBe(true);
     expect(isChanged({ ...toDraft(saved), evidenceMb: " 2048" }, saved)).toBe(false);
+  });
+});
+
+describe("the hours a clip is kept", () => {
+  it("takes only a whole number of hours the server will take", () => {
+    expect(parseClipHours("3")).toBe(3);
+    expect(parseClipHours(" 48 ")).toBe(48);
+    expect(parseClipHours("1")).toBe(1);
+    expect(parseClipHours(String(MAX_CLIP_HOURS))).toBe(MAX_CLIP_HOURS);
+    for (const bad of ["", " ", "0", "-3", "1.5", "3h", "2 days", String(MAX_CLIP_HOURS + 1), "9999999", "٣"]) {
+      expect(parseClipHours(bad), bad).toBeNull();
+    }
+  });
+
+  it("reads hours at a glance, a whole number of days as days", () => {
+    expect(hoursText(1)).toBe("1 hour");
+    expect(hoursText(3)).toBe("3 hours");
+    expect(hoursText(24)).toBe("24 hours");
+    expect(hoursText(47)).toBe("47 hours");
+    expect(hoursText(48)).toBe("2 days");
+    expect(hoursText(72)).toBe("3 days");
+    expect(hoursText(50)).toBe("50 hours");
   });
 });
 

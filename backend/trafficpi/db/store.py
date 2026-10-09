@@ -309,6 +309,20 @@ class Store:
             ).scalar_one_or_none()
             return None if row is None else _event_row(row)
 
+    def stop_outcomes(self, event_ids: Collection[int]) -> dict[int, str]:
+        """The outcome of each of these stop events (those that exist and have one)."""
+        if not event_ids:
+            return {}
+        with self._session() as s:
+            rows = s.execute(
+                select(Event.id, Event.details["outcome"].as_string()).where(
+                    Event.camera_id == self.camera_id,
+                    Event.type == "stop",
+                    Event.id.in_(list(event_ids)),
+                )
+            ).all()
+        return {event_id: name for event_id, name in rows if name is not None}
+
     def attach_evidence(self, event_id: int, snapshot: str | None, clip: str | None) -> bool:
         """Record where the picture and the clip of a stop event were written (paths relative to
         the data directory; None for one that was not made). False if there is no such event."""
@@ -515,12 +529,23 @@ class Store:
             enabled=self.get_setting(ev.ENABLED_KEY, True) is not False,
             keep_days=whole(ev.KEEP_DAYS_KEY, ev.DEFAULT_KEEP_DAYS, 1, ev.MAX_KEEP_DAYS),
             max_mb=whole(ev.MAX_MB_KEY, ev.DEFAULT_MAX_MB, ev.MIN_MAX_MB, ev.MAX_MAX_MB),
+            rolling_clip_hours=whole(
+                ev.ROLLING_CLIP_HOURS_KEY, ev.DEFAULT_ROLLING_CLIP_HOURS, 1, ev.MAX_CLIP_HOURS
+            ),
+            did_not_stop_clip_hours=whole(
+                ev.DID_NOT_STOP_CLIP_HOURS_KEY,
+                ev.DEFAULT_DID_NOT_STOP_CLIP_HOURS,
+                1,
+                ev.MAX_CLIP_HOURS,
+            ),
         )
 
     def set_evidence_settings(self, settings: EvidenceSettings) -> None:
         self.set_setting(ev.ENABLED_KEY, settings.enabled)
         self.set_setting(ev.KEEP_DAYS_KEY, settings.keep_days)
         self.set_setting(ev.MAX_MB_KEY, settings.max_mb)
+        self.set_setting(ev.ROLLING_CLIP_HOURS_KEY, settings.rolling_clip_hours)
+        self.set_setting(ev.DID_NOT_STOP_CLIP_HOURS_KEY, settings.did_not_stop_clip_hours)
 
     # --- settings and profile --------------------------------------------------------------
 

@@ -590,6 +590,8 @@ def create_app(
             evidence_enabled=evidence.enabled,
             evidence_keep_days=evidence.keep_days,
             evidence_max_mb=evidence.max_mb,
+            evidence_rolling_clip_hours=evidence.rolling_clip_hours,
+            evidence_did_not_stop_clip_hours=evidence.did_not_stop_clip_hours,
         )
 
     @app.put("/api/settings", response_model=Settings)
@@ -614,6 +616,8 @@ def create_app(
                 enabled=body.evidence_enabled,
                 keep_days=body.evidence_keep_days,
                 max_mb=body.evidence_max_mb,
+                rolling_clip_hours=body.evidence_rolling_clip_hours,
+                did_not_stop_clip_hours=body.evidence_did_not_stop_clip_hours,
             )
         )
         await ctx.vision.reload()  # the vision service reads these settings when told to

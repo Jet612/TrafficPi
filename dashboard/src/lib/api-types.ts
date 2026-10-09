@@ -627,12 +627,16 @@ export interface components {
          * @description Everything the Setup page can change. A PUT replaces all of it, so every member is given.
          */
         Settings: {
+            /** Evidence Did Not Stop Clip Hours */
+            evidence_did_not_stop_clip_hours: number;
             /** Evidence Enabled */
             evidence_enabled: boolean;
             /** Evidence Keep Days */
             evidence_keep_days: number;
             /** Evidence Max Mb */
             evidence_max_mb: number;
+            /** Evidence Rolling Clip Hours */
+            evidence_rolling_clip_hours: number;
             /** Timezone */
             timezone: string;
             /** Trails Enabled */

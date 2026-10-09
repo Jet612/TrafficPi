@@ -63,7 +63,7 @@ class ServiceConfig:
     trail_cleanup_every_s: float = (
         6 * 3600.0
     )  # how often trails older than the owner wants are deleted
-    evidence_cleanup_every_s: float = 3600.0  # and evidence that is too old or too much
+    evidence_cleanup_every_s: float = 600.0  # and evidence that is too old or too much
 
 
 class LiveState:
@@ -601,6 +601,11 @@ class VisionService:
                 evidence_dir(self._data_dir),
                 keep_days=settings.keep_days,
                 max_bytes=settings.max_mb * 1_000_000,
+                clip_hours={
+                    "rolling": settings.rolling_clip_hours,
+                    "did_not_stop": settings.did_not_stop_clip_hours,
+                },
+                outcomes_of=self.store.stop_outcomes,
             )
         except Exception:
             log.exception("could not delete old evidence")

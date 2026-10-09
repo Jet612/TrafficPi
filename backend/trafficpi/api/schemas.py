@@ -6,8 +6,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from trafficpi.core.evidence_settings import MAX_CLIP_HOURS, MAX_MAX_MB, MIN_MAX_MB
 from trafficpi.core.evidence_settings import MAX_KEEP_DAYS as MAX_EVIDENCE_DAYS
-from trafficpi.core.evidence_settings import MAX_MAX_MB, MIN_MAX_MB
 from trafficpi.core.profile import Profile
 from trafficpi.core.trail_settings import MAX_KEEP_DAYS
 
@@ -156,6 +156,10 @@ class Settings(BaseModel):
     evidence_enabled: bool = Field(strict=True)
     evidence_keep_days: int = Field(strict=True, ge=1, le=MAX_EVIDENCE_DAYS)
     evidence_max_mb: int = Field(strict=True, ge=MIN_MAX_MB, le=MAX_MAX_MB)  # the oldest goes first
+    # How long the clip (the picture stays as long as the days above say) of a roll, and of a pass
+    # that did not stop, is kept; sooner than the days, to spare the disk. The counts stay for ever.
+    evidence_rolling_clip_hours: int = Field(strict=True, ge=1, le=MAX_CLIP_HOURS)
+    evidence_did_not_stop_clip_hours: int = Field(strict=True, ge=1, le=MAX_CLIP_HOURS)
 
 
 class TrailHour(BaseModel):

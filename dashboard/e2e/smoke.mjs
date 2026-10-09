@@ -816,7 +816,7 @@ try {
       const passes = page.getByRole("list", { name: "Passes at stop signs" });
       const rowsOf = () => passes.getByRole("listitem");
       await eventually(async () => assert.match(await page.getByTestId("stops-headline").innerText(), /judged: /), "the summary says what was seen");
-      const tile = (outcome) => page.getByRole("button", { name: new RegExp(`^${outcome}`) });
+      const tile = (outcome) => page.getByRole("list", { name: "Outcomes" }).getByRole("button", { name: new RegExp(`^${outcome}`) });
       assert.equal(await tile("Did not stop").getAttribute("aria-pressed"), "true", "what needs a look is shown to begin with");
       assert.equal(await tile("Stopped").getAttribute("aria-pressed"), "false", "and a clean stop is not");
       await eventually(async () => assert.ok((await rowsOf().count()) >= 1, "a pass is listed"));
@@ -831,6 +831,22 @@ try {
       });
       await tile("Did not stop").click();
       await eventually(async () => assert.ok((await rowsOf().evaluateAll((items) => items.some((i) => i.getAttribute("data-outcome") === "did_not_stop"))) === true));
+
+      // the quick choice of outcome does the same in one press: only rolls, only passes that did not stop, both
+      const focus = (name) => page.getByRole("group", { name: "Outcome" }).getByRole("button", { name, exact: true });
+      const shown = async () => [...new Set(await rowsOf().evaluateAll((items) => items.map((item) => item.getAttribute("data-outcome"))))].sort();
+      await focus("Did not stop").click();
+      assert.equal(await focus("Did not stop").getAttribute("aria-pressed"), "true");
+      assert.equal(await tile("Did not stop").getAttribute("aria-pressed"), "true", "the tile follows");
+      assert.equal(await tile("Rolled through").getAttribute("aria-pressed"), "false");
+      await eventually(async () => assert.deepEqual(await shown(), ["did_not_stop"]), "only passes that did not stop");
+      await focus("Rolled through").click();
+      await eventually(async () => assert.ok((await shown()).every((kind) => kind === "rolling"), `only rolls: ${await shown()}`));
+      await focus("Both of those").click();
+      assert.equal(await tile("Could not tell").getAttribute("aria-pressed"), "false", "both leaves out what could not be told");
+      await eventually(async () => assert.ok((await shown()).every((kind) => kind === "rolling" || kind === "did_not_stop")));
+      await focus("All that need a look").click();
+      assert.equal(await tile("Could not tell").getAttribute("aria-pressed"), "true", "and the usual list is one press away");
 
       // the newest pass is called a false alarm: it is kept, found under "False alarms", and taken back
       const first = rowsOf().first();
@@ -1279,6 +1295,8 @@ try {
     const evidence = page.getByRole("switch", { name: "Keep a picture and a clip of passes that need a look" });
     const evidenceDays = page.getByLabel("Keep pictures and clips for (days)");
     const evidenceMb = page.getByLabel("Keep at most (megabytes)");
+    const rollingHours = page.getByLabel("Keep the clip of a rolled-through stop for (hours)");
+    const didNotStopHours = page.getByLabel("Keep the clip of a vehicle that did not stop for (hours)");
     try {
       assert.equal(await zone.inputValue(), original.timezone, "the form shows what is saved");
       assert.equal(await days.inputValue(), String(original.trails_keep_days));
@@ -1286,6 +1304,8 @@ try {
       assert.equal(await evidence.getAttribute("aria-checked"), String(original.evidence_enabled));
       assert.equal(await evidenceDays.inputValue(), String(original.evidence_keep_days));
       assert.equal(await evidenceMb.inputValue(), String(original.evidence_max_mb));
+      assert.equal(await rollingHours.inputValue(), String(original.evidence_rolling_clip_hours));
+      assert.equal(await didNotStopHours.inputValue(), String(original.evidence_did_not_stop_clip_hours));
       assert.equal(await save.isDisabled(), true, "nothing to save yet");
 
       await days.fill("0");
@@ -1307,6 +1327,16 @@ try {
       await page.getByText("Kept for 7 days. Older ones are deleted by themselves, also if none are being made.").waitFor();
       await evidenceMb.fill("1500");
       await page.getByText("Up to 1.5 GB on the disk. When there is more, the oldest are deleted first.").waitFor();
+      assert.equal(await save.isEnabled(), true);
+
+      // and for how long the clip of a roll, and of a pass that did not stop, is kept
+      await rollingHours.fill("0");
+      await page.getByText("Enter a whole number of hours from 1 to 87600 to keep the clips of rolled-through stops.").first().waitFor();
+      assert.equal(await save.isDisabled(), true, "no hours cannot be saved");
+      await rollingHours.fill("6");
+      await page.getByText("Clips of rolled-through stops are deleted after 6 hours", { exact: false }).waitFor();
+      await didNotStopHours.fill("72");
+      await page.getByText("Clips of vehicles that did not stop are deleted after 3 days", { exact: false }).waitFor();
       assert.equal(await save.isEnabled(), true);
 
       // changes that are not saved are not lost without asking
@@ -1344,6 +1374,8 @@ try {
         evidence_enabled: false,
         evidence_keep_days: 7,
         evidence_max_mb: 1500,
+        evidence_rolling_clip_hours: 6,
+        evidence_did_not_stop_clip_hours: 72,
       });
       assert.equal(await save.isDisabled(), true, "saved, so nothing left to save");
       await page.reload();
@@ -1356,6 +1388,8 @@ try {
       assert.equal(await evidence.getAttribute("aria-checked"), "false");
       assert.equal(await evidenceDays.inputValue(), "7");
       assert.equal(await evidenceMb.inputValue(), "1500");
+      assert.equal(await rollingHours.inputValue(), "6");
+      assert.equal(await didNotStopHours.inputValue(), "72");
       await shot("settings");
     } finally {
       // the next steps (and the next run) expect the settings that were there

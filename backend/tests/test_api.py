@@ -641,6 +641,8 @@ def settings(**over: object) -> dict[str, object]:
         "evidence_enabled": True,
         "evidence_keep_days": 30,
         "evidence_max_mb": 2048,
+        "evidence_rolling_clip_hours": 3,
+        "evidence_did_not_stop_clip_hours": 48,
         **over,
     }
 
@@ -660,6 +662,11 @@ def test_settings_default_save_and_validate(logged_in: TestClient, vision: FakeV
         30,
         2048,
     )
+    # but the clip of a roll for only 3 hours, and that of a pass that did not stop for 2 days
+    assert (first["evidence_rolling_clip_hours"], first["evidence_did_not_stop_clip_hours"]) == (
+        3,
+        48,
+    )
     body = settings(
         timezone="Europe/Paris",
         units="kmh",
@@ -668,6 +675,8 @@ def test_settings_default_save_and_validate(logged_in: TestClient, vision: FakeV
         evidence_enabled=False,
         evidence_keep_days=7,
         evidence_max_mb=500,
+        evidence_rolling_clip_hours=6,
+        evidence_did_not_stop_clip_hours=72,
     )
     saved = logged_in.put("/api/settings", json=body)
     assert saved.json() == body
@@ -688,6 +697,18 @@ def test_the_keep_time_for_trails_must_be_a_sensible_number_of_days(
     response = logged_in.put("/api/settings", json=settings(trails_keep_days=days))
     assert response.status_code == 422
     assert logged_in.get("/api/settings").json()["trails_keep_days"] == 365
+
+
+@pytest.mark.parametrize(
+    "member", ["evidence_rolling_clip_hours", "evidence_did_not_stop_clip_hours"]
+)
+@pytest.mark.parametrize("hours", [0, -5, 3650 * 24 + 1, 1.5, "3 hours", None, True])
+def test_the_hours_a_clip_is_kept_must_be_a_sensible_number(
+    logged_in: TestClient, member: str, hours: object
+) -> None:
+    response = logged_in.put("/api/settings", json=settings(**{member: hours}))
+    assert response.status_code == 422
+    assert logged_in.get("/api/settings").json()[member] == settings()[member]
 
 
 @pytest.mark.parametrize("days", [0, -5, 3651, 1.5, "a month", None, True])

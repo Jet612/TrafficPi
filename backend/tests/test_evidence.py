@@ -519,3 +519,125 @@ def test_a_half_written_file_is_left_alone_while_it_is_new_and_removed_when_it_i
 
 def test_there_is_nothing_to_clean_where_there_is_no_folder(tmp_path: Path) -> None:
     assert clean_up(tmp_path / "evidence", keep_days=30, max_bytes=1) == (0, 0)
+
+
+HOUR = 3_600
+
+
+def hours_old(folder: Path, name: str, hours: float, now: float) -> Path:
+    path = make(folder, name, 0, now=now)
+    os.utime(path, (now - hours * HOUR, now - hours * HOUR))
+    return path
+
+
+OUTCOMES = {1: "rolling", 2: "did_not_stop", 3: "indeterminate", 4: "stopped"}
+LIMITS = {"rolling": 3, "did_not_stop": 48}
+
+
+def test_a_clip_goes_when_it_is_older_than_its_outcome_allows_and_its_picture_stays(
+    tmp_path: Path,
+) -> None:
+    now = 1_000_000_000
+    folder = tmp_path / "evidence"
+    clips = {
+        "rolling_old": hours_old(folder, "d/stop-1.mp4", 3.1, now),
+        "rolling_new": hours_old(folder, "d/stop-5.mp4", 2.9, now),
+        "dns_old": hours_old(folder, "d/stop-2.mp4", 49, now),
+        "dns_new": hours_old(folder, "d/stop-6.mp4", 47, now),
+    }
+    outcomes = {1: "rolling", 5: "rolling", 2: "did_not_stop", 6: "did_not_stop"}
+    pictures = [hours_old(folder, f"d/stop-{i}.jpg", 100, now) for i in (1, 2)]
+    removed = clean_up(
+        folder,
+        keep_days=30,
+        max_bytes=10**9,
+        clip_hours=LIMITS,
+        outcomes_of=lambda ids: {i: outcomes[i] for i in ids if i in outcomes},
+        now_s=now,
+    )
+    assert removed == (2, 200)
+    assert [name for name, path in clips.items() if path.exists()] == ["rolling_new", "dns_new"]
+    assert all(path.exists() for path in pictures)  # the pictures are the days' business
+
+
+def test_a_clip_with_no_time_of_its_own_is_judged_by_the_days_alone(tmp_path: Path) -> None:
+    now = 1_000_000_000
+    folder = tmp_path / "evidence"
+    could_not_tell = hours_old(folder, "d/stop-3.mp4", 100, now)
+    unknown = hours_old(folder, "d/stop-9.mp4", 100, now)  # no such event any more
+    ancient = hours_old(folder, "d/stop-4.mp4", 31 * 24, now)
+    clean_up(
+        folder,
+        keep_days=30,
+        max_bytes=10**9,
+        clip_hours=LIMITS,
+        outcomes_of=lambda ids: {i: OUTCOMES[i] for i in ids if i in OUTCOMES},
+        now_s=now,
+    )
+    assert could_not_tell.exists() and unknown.exists() and not ancient.exists()
+
+
+def test_the_days_still_cap_a_clip_whose_hours_are_longer(tmp_path: Path) -> None:
+    now = 1_000_000_000
+    folder = tmp_path / "evidence"
+    clip = hours_old(folder, "d/stop-2.mp4", 3 * 24 + 1, now)
+    clean_up(
+        folder,
+        keep_days=3,
+        max_bytes=10**9,
+        clip_hours={"did_not_stop": 24 * 30},
+        outcomes_of=lambda ids: {2: "did_not_stop"},
+        now_s=now,
+    )
+    assert not clip.exists()
+
+
+def test_a_clip_is_only_asked_about_when_it_is_a_finished_one(tmp_path: Path) -> None:
+    now = 1_000_000_000
+    folder = tmp_path / "evidence"
+    hours_old(folder, "d/stop-1.mp4", 10, now)
+    hours_old(folder, "d/stop-2.part.mp4", 0.0001, now)  # still being written
+    hours_old(folder, "d/stop-3.jpg", 10, now)
+    hours_old(folder, "d/notes.mp4", 10, now)
+    asked: list[set[int]] = []
+    clean_up(
+        folder,
+        keep_days=30,
+        max_bytes=10**9,
+        clip_hours=LIMITS,
+        outcomes_of=lambda ids: (asked.append(set(ids)), {})[1],
+        now_s=now,
+    )
+    assert asked == [{1}]
+
+
+def test_when_the_outcomes_cannot_be_read_the_days_are_still_kept_to(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    now = 1_000_000_000
+    folder = tmp_path / "evidence"
+    fresh = hours_old(folder, "d/stop-1.mp4", 10, now)
+    ancient = hours_old(folder, "d/stop-2.mp4", 31 * 24, now)
+
+    def locked(ids: object) -> dict[int, str]:
+        raise OSError("database is locked")
+
+    with caplog.at_level(logging.ERROR, logger="trafficpi.vision"):
+        clean_up(
+            folder,
+            keep_days=30,
+            max_bytes=10**9,
+            clip_hours=LIMITS,
+            outcomes_of=locked,
+            now_s=now,
+        )
+    assert fresh.exists() and not ancient.exists()
+    assert any("could not read the clips" in r.getMessage() for r in caplog.records)
+
+
+def test_no_hours_given_means_the_old_behaviour(tmp_path: Path) -> None:
+    now = 1_000_000_000
+    folder = tmp_path / "evidence"
+    clip = hours_old(folder, "d/stop-1.mp4", 10, now)
+    clean_up(folder, keep_days=30, max_bytes=10**9, now_s=now)
+    assert clip.exists()
