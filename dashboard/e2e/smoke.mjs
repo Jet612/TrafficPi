@@ -41,6 +41,26 @@ page.on("console", (message) => {
   if (message.type() === "error") problems.push(`console: ${message.text()}`);
 });
 
+// The live socket passes through untouched, except while a step sets `fakeDrift`: then every state
+// message carries that camera-drift finding instead of the vision service's own, which is how the
+// banner and the System page are looked at without moving a camera (the real check is tested in Python).
+let fakeDrift = null;
+await page.routeWebSocket(/\/api\/live$/, (socket) => {
+  const server = socket.connectToServer();
+  socket.onMessage((message) => server.send(message));
+  server.onMessage((message) => {
+    if (fakeDrift !== null && typeof message === "string") {
+      try {
+        const data = JSON.parse(message);
+        if (data.type === "state") return socket.send(JSON.stringify({ ...data, drift: fakeDrift }));
+      } catch {
+        // not JSON: passed on as it is
+      }
+    }
+    return socket.send(message);
+  });
+});
+
 let current = "";
 async function step(name, run) {
   current = name;
@@ -1562,6 +1582,67 @@ try {
     await page.goto(`${base}/setup/`); // a page opened directly, as from a bookmark
     await page.getByRole("heading", { level: 1, name: "Setup" }).waitFor({ state: "attached" });
     assert.equal(await page.title(), "Setup · TrafficPi");
+  });
+
+  await step("a camera view that has moved is told on every page, and the System page says how far", async () => {
+    const now = Date.now();
+    const finding = (state, over = {}) => ({
+      state,
+      message: "The camera sees what it saw when the reference picture was kept.",
+      shift_pct: 0.4,
+      dx_pct: -0.3,
+      dy_pct: -0.2,
+      rotation_deg: 0.02,
+      scale: 1.001,
+      alignment: 0.7,
+      checked_at: now,
+      sure_at: now,
+      unsure_because: null,
+      ...over,
+    });
+    const banner = page.getByTestId("drift-banner");
+
+    await goTo("Live");
+    assert.equal(await banner.count(), 0, "no notice while nothing is wrong");
+
+    fakeDrift = finding("drifted", {
+      message:
+        "The camera's view has changed since the reference picture was kept: the picture has moved 2.4% of the width to the left. The lines and zones are off by up to 2.4% of the picture's width.",
+      shift_pct: 2.4,
+      dx_pct: -2.4,
+      dy_pct: 0.3,
+    });
+    await banner.waitFor();
+    assert.equal(await banner.getAttribute("role"), "alert");
+    assert.match(await banner.innerText(), /moved 2\.4% of the width to the left/);
+    assert.match(await banner.innerText(), /put the camera back/);
+    await shot("drift-banner");
+
+    await goTo("System"); // the notice follows to the other pages
+    await banner.waitFor();
+    await page.getByRole("heading", { name: "Camera view", level: 2 }).waitFor();
+    const text = await page.getByTestId("drift-message").innerText();
+    assert.match(text, /off by up to 2\.4%/);
+    assert.ok((await page.getByText("Has moved", { exact: true }).count()) >= 1, "the badge says it has moved");
+    assert.ok((await page.getByText("2.4%", { exact: true }).count()) >= 1, "and the tile says how far");
+    assert.ok((await page.getByText("left 2.4%, down 0.3%").count()) >= 1, "and in which direction");
+    await shot("drift-card");
+
+    await page.getByRole("link", { name: "Setup page" }).click(); // the notice leads to where it is put right
+    await page.getByRole("heading", { level: 1, name: "Setup" }).waitFor({ state: "attached" });
+    assert.equal(pagePath(), "/setup/");
+
+    fakeDrift = finding("ok"); // the view is back
+    await banner.waitFor({ state: "detached" });
+    await goTo("System");
+    await page.getByText("In place", { exact: true }).waitFor();
+
+    fakeDrift = finding("unknown", { shift_pct: null, dx_pct: null, dy_pct: null, rotation_deg: null, scale: null, alignment: null, sure_at: null, unsure_because: "too few features to compare: the view is too dark, plain or blurred", message: "Checking against the new reference picture." });
+    await page.getByText("Not sure yet", { exact: true }).waitFor();
+    assert.match(await page.locator("main").innerText(), /could not tell: too few features/);
+    assert.equal(await banner.count(), 0, "not being sure is not a warning");
+
+    fakeDrift = null; // what the vision service says itself, from here on
   });
 
   await step("leaving the Setup page with unsaved changes asks first, and nothing is lost if you stay", async () => {

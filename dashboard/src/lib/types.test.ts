@@ -23,6 +23,7 @@ const state = {
   ],
   events: [{ t: 1_700_000_000_500, line: "main", direction: 1, class: "car", track: 4 }],
   system: { cpu_cores: 0.2, cpu_percent: 8, rss_mb: 460, soc_temp_c: 66.7, throttled_now: [], throttled_since_boot: ["throttling occurred"] },
+  drift: { state: "ok", message: "The camera sees what it saw when the reference picture was kept.", shift_pct: 0.4, checked_at: 1_700_000_000_000 },
 };
 
 describe("parseLiveMessage", () => {
@@ -35,6 +36,20 @@ describe("parseLiveMessage", () => {
     expect(message.zones.map((z) => [z.id, z.kind, z.points.length])).toEqual([["road", "detection", 4], ["lot", "exclusion", 3]]);
     expect(message.events[0]).toMatchObject({ direction: 1, class: "car" });
     expect(message.system.throttled_since_boot).toEqual(["throttling occurred"]);
+  });
+
+  it("reads the drift check's finding", () => {
+    const message = parseLiveMessage(JSON.stringify(state));
+    if (message?.type !== "state") throw new Error("expected a state");
+    expect(message.drift).toMatchObject({ state: "ok", shift_pct: 0.4, checked_at: 1_700_000_000_000, dx_pct: null });
+  });
+
+  it("has no drift finding from a service that keeps no check, or sends something odd", () => {
+    for (const drift of [{}, null, "ok", { state: "fine" }, undefined]) {
+      const message = parseLiveMessage(JSON.stringify({ ...state, drift }));
+      if (message?.type !== "state") throw new Error("expected a state");
+      expect(message.drift).toBeNull();
+    }
   });
 
   it("reads the stop signs, and drops one that is half there", () => {
@@ -105,6 +120,7 @@ describe("parseLiveMessage", () => {
       zones: [],
       events: [],
       system: { cpu_cores: null, throttled_now: [] },
+      drift: null,
     });
   });
 

@@ -1,4 +1,5 @@
 import type { components } from "./api-types";
+import { parseDrift, type DriftStatus } from "./drift";
 
 type Schemas = components["schemas"];
 
@@ -95,6 +96,8 @@ export interface LiveState {
   tracks: LiveTrack[];
   events: LiveEvent[];
   system: SystemMetrics;
+  /** What the camera-drift check has found; null from a service that keeps no check. */
+  drift: DriftStatus | null;
 }
 
 export type LiveMessage = LiveState | { type: "offline" };
@@ -220,6 +223,7 @@ export function parseLiveMessage(text: string): LiveMessage | null {
       throttled_now: strings(system.throttled_now),
       throttled_since_boot: strings(system.throttled_since_boot),
     },
+    drift: parseDrift(data.drift),
   };
 }
 

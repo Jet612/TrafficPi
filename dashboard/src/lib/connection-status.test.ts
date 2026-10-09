@@ -18,6 +18,7 @@ const state = (over: Partial<LiveState> = {}): LiveState => ({
   tracks: [],
   events: [],
   system: { throttled_now: [], throttled_since_boot: [] },
+  drift: null,
   ...over,
 });
 

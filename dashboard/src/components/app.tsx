@@ -1,5 +1,6 @@
 "use client";
 
+import { DriftBanner } from "@/components/drift-banner";
 import { Header } from "@/components/header";
 import { LiveProvider } from "@/components/live-provider";
 import { LoginScreen } from "@/components/login-screen";
@@ -56,6 +57,7 @@ function Gate({ children }: { children: React.ReactNode }) {
             Skip to the dashboard
           </a>
           <Header />
+          <DriftBanner />
           <main id="main" className="mx-auto max-w-[1280px] px-4 py-4 sm:px-6 sm:py-6">
             {children}
           </main>
