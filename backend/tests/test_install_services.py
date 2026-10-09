@@ -109,3 +109,15 @@ def test_removing_is_also_only_said_in_a_dry_run() -> None:
 def test_the_extras_can_be_taken_out_one_by_one_in_a_dry_run() -> None:
     assert "would remove trafficpi-backup.service" in run("--dry-run", "--backup-off")
     assert "would remove trafficpi-reboot.service" in run("--dry-run", "--reboot-off")
+
+
+def test_a_journal_setting_that_is_in_place_is_not_installed_again() -> None:
+    """Restarting journald for a file that has not changed would make a second run change things."""
+    said = run("--dry-run", "--persistent-journal")
+    if Path("/etc/systemd/journald.conf.d/50-trafficpi.conf").exists():
+        installed = Path("/etc/systemd/journald.conf.d/50-trafficpi.conf").read_bytes()
+        ours = (SCRIPT.parent.parent / "deploy" / "journald" / "50-trafficpi.conf").read_bytes()
+        if installed == ours:
+            assert "is in place already" in said and "systemd-journald" not in said
+            return
+    assert "+ sudo systemctl restart systemd-journald" in said

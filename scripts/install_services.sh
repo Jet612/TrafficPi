@@ -234,10 +234,14 @@ echo "$did ${units[*]} (user $user, data in $data_dir)"
 [[ -z "$backup_at" ]] || echo "$did ${backup_units[*]} (every day at $backup_at, the newest $backup_keep kept in ${backup_to:-$data_dir/backups})"
 
 if (( journal )); then
-  run sudo install -D -m 644 "$root/deploy/journald/50-trafficpi.conf" "$journal_conf"
-  run sudo systemctl restart systemd-journald # the services' log streams are kept across this
-  run sudo journalctl --flush                 # and what this boot has said so far moves to the disk
-  echo "$did $journal_conf: the journal survives reboots now"
+  if cmp -s "$root/deploy/journald/50-trafficpi.conf" "$journal_conf" 2>/dev/null; then
+    echo "$journal_conf is in place already: the journal survives reboots"
+  else
+    run sudo install -D -m 644 "$root/deploy/journald/50-trafficpi.conf" "$journal_conf"
+    run sudo systemctl restart systemd-journald # the services' log streams are kept across this
+    run sudo journalctl --flush                 # and what this boot has said so far moves to the disk
+    echo "$did $journal_conf: the journal survives reboots now"
+  fi
 fi
 
 if [[ "$action" == enable ]]; then
