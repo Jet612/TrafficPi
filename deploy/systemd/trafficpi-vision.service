@@ -8,7 +8,14 @@ After=time-sync.target
 Wants=time-sync.target
 
 [Service]
-Type=simple
+# The service says READY=1 once its web server is up, and sends WATCHDOG=1 only while its camera
+# loop is moving. A call into the camera, the accelerator or the database that never returns stops
+# the messages, and after WatchdogSec systemd kills the service and Restart= starts it again
+# (plan.md D27). The loop counts as stuck after 30 s, so a hang is noticed within about 1.5 minutes.
+Type=notify
+NotifyAccess=main
+WatchdogSec=60
+TimeoutStartSec=120
 User=@USER@
 # The camera devices belong to this group; /dev/hailo0 is open to everyone.
 SupplementaryGroups=video
@@ -22,11 +29,37 @@ Restart=always
 RestartSec=5
 TimeoutStopSec=20
 
+# The camera loop must not be starved when builds and test runs share the Pi: between control
+# groups what counts is the weight (the default is 100), not nice. This does not cool the board.
+CPUWeight=300
+# And it is the last the kernel stops when memory runs short (the API's score is higher).
+OOMScoreAdjust=-300
+
+# Sandboxing. The options below are the ones that cannot get in the way of libcamera, the closed
+# HailoRT or ffmpeg; each was tried on the real camera. Left out on purpose, because a wrong guess
+# costs the counting and the gain is small for a service that already runs as an ordinary user
+# without new privileges: PrivateDevices and DeviceAllow (the camera and accelerator need many
+# device nodes), SystemCallFilter (HailoRT cannot be audited), MemoryDenyWriteExecute,
+# RestrictRealtime, RestrictNamespaces and ProtectKernelTunables (libcamera's isolated IPA
+# modules and the drivers may use them).
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
 ProtectHome=read-only
 ReadWritePaths=@DATA_DIR@
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+LockPersonality=yes
+RestrictSUIDSGID=yes
+RemoveIPC=yes
+SystemCallArchitectures=native
+# libcamera finds its devices through udev, which listens on a netlink socket.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+# New files are the service user's alone (the data directory is mode 700 too).
+UMask=0077
 
 [Install]
 WantedBy=multi-user.target

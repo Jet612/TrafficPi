@@ -6,7 +6,13 @@ Description=TrafficPi dashboard and API
 After=network.target
 
 [Service]
-Type=simple
+# The server says READY=1 once it listens, and sends WATCHDOG=1 while its event loop runs and a
+# worker thread of its pool takes a job. If that stops for WatchdogSec, systemd kills it and
+# Restart= starts it again (plan.md D27); Restart=always alone only helps after a crash.
+Type=notify
+NotifyAccess=main
+WatchdogSec=45
+TimeoutStartSec=60
 User=@USER@
 WorkingDirectory=@INSTALL_DIR@/backend
 Environment=TRAFFICPI_DATA_DIR=@DATA_DIR@
@@ -15,6 +21,19 @@ Restart=always
 RestartSec=5
 TimeoutStopSec=20
 
+# If memory runs short, this is the service the kernel stops, not the vision service that counts
+# the traffic: a higher score for the out-of-memory killer (it works everywhere), and a limit of
+# its own. (One login hashes 64 MiB, two at a time at most; the service is about 150 MB at rest.)
+# Raspberry Pi OS boots with cgroup_disable=memory, so the two limits do nothing until
+# `cgroup_enable=memory cgroup_memory=1` is added to /boot/firmware/cmdline.txt and the Pi is
+# rebooted; they are harmless meanwhile.
+MemoryHigh=768M
+MemoryMax=1G
+OOMScoreAdjust=300
+
+# What a compromised web server could do is kept small. NoNewPrivileges, the private /tmp and
+# /dev, the read-only file system (the data directory excepted) and no capabilities were here
+# first; the rest is from `systemd-analyze security`, each option tried against the whole API.
 NoNewPrivileges=yes
 PrivateTmp=yes
 PrivateDevices=yes
@@ -23,6 +42,27 @@ ProtectHome=read-only
 ReadWritePaths=@DATA_DIR@
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 CapabilityBoundingSet=
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+RemoveIPC=yes
+SystemCallArchitectures=native
+# The usual set for a service, less what only root needs. A call that is refused fails with EPERM
+# instead of killing the process.
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged
+SystemCallErrorNumber=EPERM
+# New files are the service user's alone (the data directory is mode 700 too).
+UMask=0077
 
 [Install]
 WantedBy=multi-user.target
