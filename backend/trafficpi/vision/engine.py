@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from trafficpi.core.types import Detection
 from trafficpi.vision.rules import CountEvent, Event, Rule
 from trafficpi.vision.tracker import ByteTracker, TrackUpdate
+from trafficpi.vision.zones import DetectionFilter
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,11 +26,19 @@ class TrafficEngine:
     replaying recorded detections.
     """
 
-    def __init__(self, tracker: ByteTracker | None = None, rules: Sequence[Rule] = ()) -> None:
+    def __init__(
+        self,
+        tracker: ByteTracker | None = None,
+        rules: Sequence[Rule] = (),
+        detection_filter: DetectionFilter | None = None,
+    ) -> None:
         self.tracker = tracker or ByteTracker()
         self.rules = list(rules)
+        self.detection_filter = detection_filter  # None: look at every detection
 
     def update(self, timestamp_ns: int, detections: Sequence[Detection]) -> EngineResult:
+        if self.detection_filter is not None:
+            detections = self.detection_filter.apply(detections)
         tracked = self.tracker.update(timestamp_ns, detections)
         events: list[Event] = []
         for rule in self.rules:

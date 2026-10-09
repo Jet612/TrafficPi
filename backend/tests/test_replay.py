@@ -8,12 +8,12 @@ import pytest
 from tests.fakes import write_crossing_log
 from trafficpi.vision import cli
 from trafficpi.vision.annotate import annotate_clip
-from trafficpi.vision.lines import parse_counting_lines
+from trafficpi.vision.profile import parse_compiled_profile
 from trafficpi.vision.replay import replay_log
 
-LINES = parse_counting_lines(
+LINES = parse_compiled_profile(
     {"lines": [{"id": "main", "name": "Main", "a": [0.2, 0.5], "b": [0.8, 0.5]}]}
-)
+).counting_lines
 
 
 def test_replaying_a_log_counts_the_crossing(tmp_path: Path) -> None:

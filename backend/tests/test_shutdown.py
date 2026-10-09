@@ -1,5 +1,7 @@
 import os
 import signal
+import threading
+import time
 
 import pytest
 
@@ -47,3 +49,11 @@ def test_the_pipeline_stops_when_asked() -> None:
 
     report = pipeline.run(FakeSource(), FakeDetector(), seconds=30, on_frame=on_frame, stop=stop)
     assert report.frames == 5 and report.elapsed_s < 5
+
+
+def test_waiting_ends_early_when_a_stop_arrives() -> None:
+    stop = StopRequest()
+    assert stop.wait(0.01) is False
+    threading.Timer(0.05, stop.request).start()
+    started = time.monotonic()
+    assert stop.wait(30) is True and time.monotonic() - started < 5

@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import sys
+import time
+import traceback
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
+from typing import NoReturn
 
 import numpy as np
 
@@ -17,25 +21,42 @@ os.environ.setdefault("LIBCAMERA_LOG_LEVELS", "*:WARN")
 os.environ.setdefault("HAILORT_LOGGER_PATH", "NONE")
 
 from trafficpi.core.coco import TRAFFIC_CLASS_IDS
+from trafficpi.core.paths import DATA_DIR_HELP, default_data_dir
+from trafficpi.core.profile import ProfileError
 from trafficpi.core.types import Detection
+from trafficpi.db.store import open_store
 from trafficpi.vision import pipeline
 from trafficpi.vision.annotate import annotate_clip
 from trafficpi.vision.compare import compare_logs, format_comparison
+from trafficpi.vision.demo import DemoStreet
 from trafficpi.vision.detector import (
     DEFAULT_MODEL,
     DEFAULT_SCORE_THRESHOLD,
+    Detector,
     HailoDetector,
     find_hef,
 )
-from trafficpi.vision.lines import load_counting_lines
 from trafficpi.vision.metrics import decode_throttled
+from trafficpi.vision.profile import CompiledProfile, load_compiled_profile
 from trafficpi.vision.recorder import DetectionLogWriter
 from trafficpi.vision.replay import replay_log
+from trafficpi.vision.server import ServerThread
+from trafficpi.vision.server import create_app as create_server_app
+from trafficpi.vision.service import VisionService
 from trafficpi.vision.shutdown import StopRequest
-from trafficpi.vision.sources import CameraSettings, PiCameraSource, VideoFileSource
+from trafficpi.vision.sources import (
+    CameraSettings,
+    PiCameraSource,
+    RealtimeLoopSource,
+    VideoFileSource,
+)
 
 # Recordings feed the tracker, which makes use of weak detections, so keep them.
 RECORD_THRESHOLD = 0.1
+PROFILE_HELP = (
+    "camera profile JSON: counting lines and zones, as exported from the dashboard "
+    "(see trafficpi.core.profile)"
+)
 
 
 def _size(text: str) -> tuple[int, int]:
@@ -51,7 +72,7 @@ def _size_or_auto(text: str) -> tuple[int, int] | None:
 
 
 def _data_dir() -> Path:
-    return Path(os.environ.get("TRAFFICPI_DATA_DIR", "data"))
+    return default_data_dir()
 
 
 def _add_camera_args(parser: argparse.ArgumentParser) -> None:
@@ -108,11 +129,18 @@ def _camera_settings(args: argparse.Namespace) -> CameraSettings:
 
 def _make_detector(args: argparse.Namespace) -> tuple[HailoDetector, Path]:
     hef = args.hef or find_hef(args.model)
-    detector = HailoDetector(
-        hef,
-        score_threshold=args.threshold,
-        class_ids=None if args.all_classes else TRAFFIC_CLASS_IDS,
-    )
+    try:
+        detector = HailoDetector(
+            hef,
+            score_threshold=args.threshold,
+            class_ids=None if args.all_classes else TRAFFIC_CLASS_IDS,
+        )
+    except Exception as exc:
+        # Only one process can use the accelerator at a time.
+        raise RuntimeError(
+            f"cannot open the Hailo accelerator ({exc}). Is another trafficpi-vision, or any "
+            "other program that uses the Hailo device, still running?"
+        ) from exc
     return detector, hef
 
 
@@ -299,6 +327,11 @@ def cmd_redetect(args: argparse.Namespace) -> int:
     return 0
 
 
+def _load_profile(path: Path | None) -> CompiledProfile:
+    """The profile in a JSON file (see ``trafficpi.core.profile``), or an empty one."""
+    return load_compiled_profile(path) if path else CompiledProfile([], None)
+
+
 def _print_replay(path: Path, replayed, lines) -> None:  # type: ignore[no-untyped-def]
     header = replayed.header
     print(
@@ -306,7 +339,7 @@ def _print_replay(path: Path, replayed, lines) -> None:  # type: ignore[no-untyp
         f"{replayed.duration_s:.1f} s, {len(replayed.confirmed_tracks)} confirmed tracks"
     )
     if not lines:
-        print("no counting lines given (use --lines)")
+        print("no counting lines given (use --profile)")
         return
     print("counts (+1 is left to right of a -> b on screen, -1 the other way):")
     for cfg in lines:
@@ -330,9 +363,10 @@ def _print_replay(path: Path, replayed, lines) -> None:  # type: ignore[no-untyp
 
 
 def cmd_replay(args: argparse.Namespace) -> int:
-    """Run the tracker and counting lines over a recorded detection log."""
-    lines = load_counting_lines(args.lines) if args.lines else []
-    replayed = replay_log(args.log, lines)
+    """Run the tracker, zones and counting lines over a recorded detection log."""
+    profile = _load_profile(args.profile)
+    lines = profile.counting_lines
+    replayed = replay_log(args.log, lines, detection_filter=profile.detection_filter)
     _print_replay(args.log, replayed, lines)
     if args.events_json:
         t0 = replayed.timestamps_ns[0] if replayed.timestamps_ns else 0
@@ -360,17 +394,94 @@ def cmd_compare(args: argparse.Namespace) -> int:
 def cmd_annotate(args: argparse.Namespace) -> int:
     """Draw tracks and counts onto a recorded clip, with a still at every count event."""
     folder: Path = args.folder
-    lines = load_counting_lines(args.lines) if args.lines else []
+    profile = _load_profile(args.profile)
     report = annotate_clip(
         args.clip or folder / "clip.mp4",
         args.log or folder / "detections.jsonl",
-        lines,
+        profile.counting_lines,
+        detection_filter=profile.detection_filter,
         video_out=args.video or folder / "annotated.mp4",
         stills_dir=args.stills or folder / "event-stills",
     )
     print(f"{report.frames_written} frames written, {len(report.events)} count events")
     for still in report.stills:
         print(f"  {still}")
+    return 0
+
+
+def _configure_logging() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        # systemd's journal adds the time; a terminal needs it.
+        format=("%(asctime)s " if sys.stderr.isatty() else "")
+        + "%(levelname)s %(name)s: %(message)s",
+        stream=sys.stderr,
+    )
+    logging.getLogger("picamera2").setLevel(logging.WARNING)  # it logs every (re)configuration
+    logging.getLogger("alembic").setLevel(logging.WARNING)  # and so does the migration runner
+
+
+def cmd_run(args: argparse.Namespace) -> int:
+    """The vision service: count traffic into the database and serve the live view locally."""
+    _configure_logging()
+    log = logging.getLogger("trafficpi.vision")
+    data_dir = args.data_dir or _data_dir()
+    if (args.replay or args.demo) and args.data_dir is None:
+        # Replayed or made-up traffic must not mix with the real counts.
+        data_dir = data_dir / ("demo" if args.demo else "replay")
+    store = open_store(data_dir)
+    snapshot = None  # the live view serves its latest frame unless the camera can do better
+    if args.demo:
+        street = DemoStreet()
+        detector: Detector = street
+        model = "demo"
+        service = VisionService(street, street, store)
+        log.warning(
+            "DEMO: a made-up street instead of the camera; counts go to %s",
+            data_dir / "trafficpi.db",
+        )
+    else:
+        settings = _camera_settings(args)
+        detector, hef = _make_detector(args)
+        model = hef.stem
+        if args.replay:
+            video = VideoFileSource(
+                args.replay, size=settings.lores_size, channel_order=settings.channel_order
+            )
+            service = VisionService(
+                RealtimeLoopSource(video),
+                detector,
+                store,
+                timestamp_ms=lambda _frame: time.time_ns() // 1_000_000,  # the clip has no clock
+            )
+            log.warning(
+                "REPLAY: playing %s in a loop instead of the camera; counts go to %s",
+                args.replay,
+                data_dir / "trafficpi.db",
+            )
+        else:
+            camera = PiCameraSource(settings)
+            service = VisionService(camera, detector, store)
+            snapshot = camera.capture_still
+    service.live.set_detector(model)
+    server = ServerThread(
+        create_server_app(service, snapshot=snapshot), host=args.host, port=args.port
+    )
+    try:
+        server.start()
+        log.info(
+            "vision service up: model %s, data in %s, live view on http://%s:%d",
+            model,
+            data_dir.resolve(),
+            args.host,
+            args.port,
+        )
+        service.run(args.stop)
+    finally:
+        server.stop()
+        store.close()
+        detector.close()  # for the accelerator this only lets go of our reference (see its close)
+    log.info("vision service stopped after %d frames", service.frames)
     return 0
 
 
@@ -384,6 +495,33 @@ def build_parser() -> argparse.ArgumentParser:
     dry.add_argument("--seconds", type=float, default=30)
     dry.add_argument("--report-every", type=float, default=5)
     dry.set_defaults(func=cmd_dry_run)
+
+    run = sub.add_parser("run", help="the vision service: count traffic, serve the live view")
+    _add_camera_args(run)
+    _add_detector_args(run)
+    run.add_argument("--data-dir", type=Path, help=DATA_DIR_HELP)
+    run.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="address of the live-view server (default: this machine only; the API relays it)",
+    )
+    run.add_argument("--port", type=int, default=8001)
+    source = run.add_mutually_exclusive_group()
+    source.add_argument(
+        "--replay",
+        type=Path,
+        metavar="CLIP",
+        help="play a recorded clip in a loop instead of using the camera, for developing without "
+        "traffic; counts go to <data-dir>/replay unless --data-dir is given",
+    )
+    source.add_argument(
+        "--demo",
+        action="store_true",
+        help="a made-up street with cars, trucks and bicycles instead of the camera and the "
+        "accelerator, neither of which is needed; counts go to <data-dir>/demo unless "
+        "--data-dir is given",
+    )
+    run.set_defaults(func=cmd_run)
 
     snap = sub.add_parser("snapshot", help="save one frame with detections drawn on it")
     _add_camera_args(snap)
@@ -415,7 +553,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     rep = sub.add_parser("replay", help="count over a recorded detection log (no hardware needed)")
     rep.add_argument("log", type=Path, help="a detections.jsonl file")
-    rep.add_argument("--lines", type=Path, help="counting lines JSON (see trafficpi.vision.lines)")
+    rep.add_argument("--profile", "--lines", type=Path, help=PROFILE_HELP)
     rep.add_argument("--events-json", type=Path, help="also write the count events as JSON")
     rep.set_defaults(func=cmd_replay)
 
@@ -429,7 +567,7 @@ def build_parser() -> argparse.ArgumentParser:
     ann.add_argument(
         "folder", type=Path, help="a folder made by `record` (clip.mp4, detections.jsonl)"
     )
-    ann.add_argument("--lines", type=Path, help="counting lines JSON")
+    ann.add_argument("--profile", "--lines", type=Path, help=PROFILE_HELP)
     ann.add_argument("--clip", type=Path)
     ann.add_argument("--log", type=Path)
     ann.add_argument("--video", type=Path, help="annotated video (default: <folder>/annotated.mp4)")
@@ -446,10 +584,31 @@ def main(argv: list[str] | None = None) -> int:
     args.stop.install()
     try:
         return args.func(args)
-    except RuntimeError as exc:
+    except (RuntimeError, ProfileError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
 
+def entry() -> NoReturn:
+    """The console script: run :func:`main`, then leave without HailoRT's native exit code.
+
+    HailoRT 4.23.0 on this platform crashes while the process exits (a jump into unmapped memory
+    inside libhailort, reproduced after the live-view server had run; see plan.md). Everything we
+    own has been flushed and closed by then, so exit directly and let the operating system clean
+    up, which is what ``HailoDetector.close`` already relies on.
+    """
+    try:
+        code = main()
+    except SystemExit as exc:  # argparse: --help, or a usage error
+        code = exc.code if isinstance(exc.code, int) else int(exc.code is not None)
+    except BaseException:
+        traceback.print_exc()
+        code = 1
+    logging.shutdown()
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(code)
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    entry()

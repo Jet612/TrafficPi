@@ -112,6 +112,58 @@ class Polygon:
         ys = [p[1] for p in self.points]
         return min(xs), min(ys), max(xs), max(ys)
 
+    def area(self) -> float:
+        """Enclosed area as a fraction of the frame (the shoelace formula); 0 for a flat polygon."""
+        n = len(self.points)
+        twice = 0.0
+        for i in range(n):
+            (x0, y0), (x1, y1) = self.points[i], self.points[(i + 1) % n]
+            twice += x0 * y1 - x1 * y0
+        return abs(twice) / 2
+
+    def is_simple(self) -> bool:
+        """Whether the outline avoids itself: no two edges cross or touch, and no edge doubles back.
+
+        Neighbouring edges meet at their shared corner and nowhere else. A bow-tie, a corner
+        dragged across the opposite side, or a point that retraces the edge before it are all
+        refused; a point-in-polygon test is not meaningful for them.
+        """
+        pts, n = self.points, len(self.points)
+        for i in range(n):
+            a, b = pts[i], pts[(i + 1) % n]
+            if a == b:
+                return False
+            for j in range(i + 1, n):
+                c, d = pts[j], pts[(j + 1) % n]
+                if j == i + 1:  # the edge after this one: shares b == c
+                    if _doubles_back(a, b, d):
+                        return False
+                elif i == 0 and j == n - 1:  # the edge before the first one: shares a == d
+                    if _doubles_back(b, a, c):
+                        return False
+                elif _segments_touch(a, b, c, d):
+                    return False
+        return True
+
+
+def _doubles_back(a: Point, corner: Point, c: Point, eps: float = 1e-12) -> bool:
+    """Whether the edges ``a -> corner`` and ``corner -> c`` run along each other, overlapping."""
+    if abs(cross(a, corner, c)) > eps:
+        return False
+    # Collinear: they overlap exactly when both lead away from the corner in the same direction.
+    return (a[0] - corner[0]) * (c[0] - corner[0]) + (a[1] - corner[1]) * (c[1] - corner[1]) > 0
+
+
+def _segments_touch(a: Point, b: Point, c: Point, d: Point) -> bool:
+    """Whether the segments ``a-b`` and ``c-d`` have any point in common."""
+    d1, d2 = cross(a, b, c), cross(a, b, d)
+    d3, d4 = cross(c, d, a), cross(c, d, b)
+    if d1 * d2 < 0 and d3 * d4 < 0:  # each segment straddles the other's line
+        return True
+    return (
+        _on_segment(a, b, c) or _on_segment(a, b, d) or _on_segment(c, d, a) or _on_segment(c, d, b)
+    )
+
 
 def _on_segment(a: Point, b: Point, p: Point, eps: float = 1e-12) -> bool:
     if abs(cross(a, b, p)) > eps:

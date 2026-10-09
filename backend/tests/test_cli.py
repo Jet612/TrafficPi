@@ -1,8 +1,18 @@
 import argparse
+import os
+import socket
+import threading
+import time
+from pathlib import Path
 
+import cv2
+import httpx
+import numpy as np
 import pytest
 
+from trafficpi.db.store import open_store
 from trafficpi.vision import cli
+from trafficpi.vision.shutdown import StopRequest
 
 
 def test_size_parsing() -> None:
@@ -52,3 +62,183 @@ def test_throttle_text() -> None:
         cli._flags(0x50005)
         == "NOW: under-voltage, throttled; since boot: under-voltage occurred, throttling occurred"
     )
+
+
+# --- leaving the process ---------------------------------------------------------------------
+
+
+def run_entry(monkeypatch: pytest.MonkeyPatch, main) -> list[int]:  # type: ignore[no-untyped-def]
+    exits: list[int] = []
+    monkeypatch.setattr(os, "_exit", exits.append)
+    monkeypatch.setattr(cli, "main", main)
+    cli.entry()
+    return exits
+
+
+def test_the_console_script_exits_directly_with_the_codes_of_main(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert run_entry(monkeypatch, lambda: 0) == [0]
+    assert run_entry(monkeypatch, lambda: 3) == [3]
+
+
+def test_argparse_exits_keep_their_codes(monkeypatch: pytest.MonkeyPatch) -> None:
+    def exit_with(code):  # type: ignore[no-untyped-def]
+        def main() -> int:
+            raise SystemExit(code)
+
+        return main
+
+    assert run_entry(monkeypatch, exit_with(2)) == [2]  # a usage error
+    assert run_entry(monkeypatch, exit_with(None)) == [0]  # --help
+    assert run_entry(monkeypatch, exit_with("message")) == [1]
+
+
+def test_a_crash_is_reported_with_a_traceback_and_exit_code_1(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def main() -> int:
+        raise ValueError("boom")
+
+    assert run_entry(monkeypatch, main) == [1]
+    assert "ValueError: boom" in capsys.readouterr().err
+
+
+# --- the run command ---------------------------------------------------------------------------
+
+
+class QuietDetector:
+    def detect(self, image: np.ndarray) -> list:  # type: ignore[type-arg]
+        return []
+
+    def close(self) -> None: ...
+
+    def __enter__(self) -> "QuietDetector":
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
+
+
+@pytest.fixture
+def clip(tmp_path: Path) -> Path:
+    path = tmp_path / "clip.mp4"
+    writer = cv2.VideoWriter(str(path), cv2.VideoWriter.fourcc(*"mp4v"), 30.0, (320, 180))
+    for i in range(20):
+        writer.write(np.full((180, 320, 3), 8 * i, np.uint8))
+    writer.release()
+    return path
+
+
+def free_port() -> int:
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
+def run_in_thread(argv: list[str]) -> tuple[threading.Thread, StopRequest, list[int]]:
+    args = cli.build_parser().parse_args(argv)
+    args.stop = StopRequest()
+    result: list[int] = []
+    thread = threading.Thread(target=lambda: result.append(args.func(args)))
+    thread.start()
+    return thread, args.stop, result
+
+
+def wait_for(url: str, ready) -> dict:  # type: ignore[no-untyped-def,type-arg]
+    deadline = time.monotonic() + 20
+    while time.monotonic() < deadline:
+        try:
+            body = httpx.get(url, timeout=2).json()
+            if ready(body):
+                return body
+        except httpx.HTTPError:
+            pass
+        time.sleep(0.1)
+    raise AssertionError(f"{url} never became ready")
+
+
+def test_run_replays_a_clip_and_serves_the_live_view(
+    tmp_path: Path, clip: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(cli, "_make_detector", lambda args: (QuietDetector(), Path("quiet.hef")))
+    monkeypatch.setenv("TRAFFICPI_DATA_DIR", str(tmp_path / "data"))
+    port = free_port()
+    thread, stop, result = run_in_thread(["run", "--replay", str(clip), "--port", str(port)])
+    try:
+        base = f"http://127.0.0.1:{port}"
+        health = wait_for(f"{base}/health", lambda h: h["frames"] > 40)  # more than one loop
+        assert health["status"] == "ok"
+        state = httpx.get(f"{base}/state").json()
+        assert state["detector"] == "quiet" and state["camera"]["ok"]
+        assert httpx.get(f"{base}/snapshot.jpg").status_code == 200  # the latest frame
+    finally:
+        stop.request()
+        thread.join(timeout=20)
+    assert result == [0] and not thread.is_alive()
+    # Replayed traffic goes to its own database, never into the real counts.
+    assert (tmp_path / "data" / "replay" / "trafficpi.db").exists()
+    assert not (tmp_path / "data" / "trafficpi.db").exists()
+
+
+def test_run_with_an_explicit_data_dir_uses_exactly_that(
+    tmp_path: Path, clip: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(cli, "_make_detector", lambda args: (QuietDetector(), Path("quiet.hef")))
+    port = free_port()
+    argv = ["run", "--replay", str(clip), "--port", str(port), "--data-dir", str(tmp_path / "here")]
+    thread, stop, result = run_in_thread(argv)
+    try:
+        wait_for(f"http://127.0.0.1:{port}/health", lambda h: h["frames"] > 3)
+    finally:
+        stop.request()
+        thread.join(timeout=20)
+    assert result == [0]
+    assert open_store(tmp_path / "here").event_count() == 0
+
+
+def test_run_reports_a_port_that_is_taken(
+    tmp_path: Path, clip: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(cli, "_make_detector", lambda args: (QuietDetector(), Path("quiet.hef")))
+    with socket.socket() as taken:
+        taken.bind(("127.0.0.1", 0))
+        taken.listen()
+        port = taken.getsockname()[1]
+        args = cli.build_parser().parse_args(
+            ["run", "--replay", str(clip), "--port", str(port), "--data-dir", str(tmp_path)]
+        )
+        args.stop = StopRequest()
+        with pytest.raises(RuntimeError, match="did not start"):
+            args.func(args)
+
+
+def test_run_demo_needs_no_camera_or_accelerator_and_keeps_its_own_database(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def no_accelerator(args):  # type: ignore[no-untyped-def]
+        raise AssertionError("the demo must not open the accelerator")
+
+    monkeypatch.setattr(cli, "_make_detector", no_accelerator)
+    monkeypatch.setenv("TRAFFICPI_DATA_DIR", str(tmp_path / "data"))
+    port = free_port()
+    thread, stop, result = run_in_thread(["run", "--demo", "--port", str(port)])
+    try:
+        base = f"http://127.0.0.1:{port}"
+        wait_for(f"{base}/health", lambda h: h["frames"] > 90)
+        state = httpx.get(f"{base}/state").json()
+        assert state["detector"] == "demo" and state["camera"]["ok"]
+        assert httpx.get(f"{base}/snapshot.jpg").status_code == 200
+    finally:
+        stop.request()
+        thread.join(timeout=20)
+    assert result == [0]
+    assert (tmp_path / "data" / "demo" / "trafficpi.db").exists()
+    assert not (tmp_path / "data" / "trafficpi.db").exists()
+
+
+def test_demo_and_replay_cannot_be_combined(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as refused:
+        cli.build_parser().parse_args(["run", "--demo", "--replay", "clip.mp4"])
+    assert refused.value.code == 2
+    assert "not allowed with" in capsys.readouterr().err

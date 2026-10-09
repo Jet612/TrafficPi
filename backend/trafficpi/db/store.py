@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import Engine, func, select
@@ -13,6 +14,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from trafficpi.core.clock import WallClock
 from trafficpi.db.models import Camera, Event, MinuteCount, Profile, Setting, User
+from trafficpi.db.session import create_db_engine, upgrade_to_head
 from trafficpi.vision.rules import CountEvent
 
 DEFAULT_CAMERA = "default"
@@ -52,7 +54,12 @@ class Store:
 
     def __init__(self, engine: Engine, camera_id: str = DEFAULT_CAMERA) -> None:
         self.camera_id = camera_id
+        self._engine = engine
         self._sessions = sessionmaker(engine, expire_on_commit=False)
+
+    def close(self) -> None:
+        """Close the database connections (the last one folds the WAL file into the database)."""
+        self._engine.dispose()
 
     @contextmanager
     def _session(self) -> Iterator[Session]:
@@ -236,3 +243,16 @@ class Store:
     def user_count(self) -> int:
         with self._session() as s:
             return len(s.execute(select(User.id)).all())
+
+
+def open_store(data_dir: Path) -> Store:
+    """The store for the database in ``data_dir``, created and migrated as needed.
+
+    Both services call this at start-up; migrations take turns (see ``upgrade_to_head``).
+    """
+    data_dir.mkdir(parents=True, exist_ok=True)
+    engine = create_db_engine(data_dir / "trafficpi.db")
+    upgrade_to_head(engine)
+    store = Store(engine)
+    store.ensure_camera()
+    return store

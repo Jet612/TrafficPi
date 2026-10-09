@@ -19,7 +19,9 @@ dependencies = [
 ]
 
 [project.scripts]
-trafficpi-vision = "trafficpi.vision.cli:main"
+trafficpi-vision = "trafficpi.vision.cli:entry"
+trafficpi-api = "trafficpi.api.cli:main"
+trafficpi-admin = "trafficpi.api.admin:main"
 
 [dependency-groups]
 dev = [

@@ -11,6 +11,7 @@ from trafficpi.vision.engine import CountTotals, EngineResult, TrafficEngine
 from trafficpi.vision.recorder import read_detection_log
 from trafficpi.vision.rules import CountEvent, CountingLine, CountingRule
 from trafficpi.vision.tracker import ByteTracker, TrackerConfig
+from trafficpi.vision.zones import DetectionFilter
 
 
 @dataclass(slots=True)
@@ -33,10 +34,13 @@ def replay_log(
     path: Path,
     lines: Sequence[CountingLine] = (),
     tracker_config: TrackerConfig | None = None,
+    detection_filter: DetectionFilter | None = None,
 ) -> ReplayResult:
     """Feed a detection log (see ``trafficpi.vision.recorder``) through the engine."""
     header, frames = read_detection_log(path)
-    engine = TrafficEngine(ByteTracker(tracker_config), [CountingRule(lines)] if lines else [])
+    engine = TrafficEngine(
+        ByteTracker(tracker_config), [CountingRule(lines)] if lines else [], detection_filter
+    )
     out = ReplayResult(header, [], [])
     for frame in frames:
         result = engine.update(frame.timestamp_ns, frame.detections)

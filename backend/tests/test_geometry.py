@@ -1,4 +1,6 @@
+import json
 import math
+from pathlib import Path
 
 import pytest
 
@@ -81,3 +83,64 @@ def test_polygon_bounds_and_validation() -> None:
     assert L_SHAPE.bounds() == (0.0, 0.0, 0.6, 0.6)
     with pytest.raises(ValueError):
         Polygon(((0, 0), (1, 1)))
+
+
+def test_polygon_area_ignores_the_direction_of_the_outline() -> None:
+    assert SQUARE.area() == pytest.approx(0.36)
+    assert Polygon(SQUARE.points[::-1]).area() == pytest.approx(0.36)
+    assert L_SHAPE.area() == pytest.approx(0.6 * 0.6 - 0.3 * 0.3)
+    assert Polygon(((0.1, 0.1), (0.5, 0.5), (0.9, 0.9))).area() == pytest.approx(0.0)  # flat
+
+
+def test_ordinary_outlines_are_simple() -> None:
+    assert SQUARE.is_simple() and L_SHAPE.is_simple()
+    assert Polygon(((0.1, 0.1), (0.9, 0.2), (0.5, 0.9))).is_simple()  # a triangle
+    assert Polygon(SQUARE.points[::-1]).is_simple()
+
+
+def test_a_bow_tie_is_not_simple() -> None:
+    bow_tie = Polygon(((0.2, 0.2), (0.8, 0.8), (0.8, 0.2), (0.2, 0.8)))
+    assert not bow_tie.is_simple()
+
+
+def test_a_corner_dragged_across_the_opposite_side_is_not_simple() -> None:
+    dragged = Polygon(((0.2, 0.2), (0.8, 0.2), (0.8, 0.8), (0.5, 0.1)))
+    assert not dragged.is_simple()
+
+
+def test_edges_that_touch_are_not_simple() -> None:
+    # A corner resting on a non-neighbouring edge (a "T") and a figure-eight pinched at a point.
+    t_junction = Polygon(((0.2, 0.2), (0.8, 0.2), (0.8, 0.8), (0.5, 0.2), (0.2, 0.8)))
+    assert not t_junction.is_simple()
+    pinched = Polygon(((0.2, 0.2), (0.5, 0.5), (0.8, 0.2), (0.8, 0.8), (0.5, 0.5), (0.2, 0.8)))
+    assert not pinched.is_simple()
+
+
+def test_repeated_points_and_edges_that_double_back_are_not_simple() -> None:
+    assert not Polygon(((0.2, 0.2), (0.2, 0.2), (0.8, 0.2), (0.8, 0.8))).is_simple()
+    # (0.2,0.2) -> (0.8,0.2) -> (0.5,0.2) runs back along the first edge, then goes down and around.
+    spike = Polygon(((0.2, 0.2), (0.8, 0.2), (0.5, 0.2), (0.5, 0.8)))
+    assert not spike.is_simple()
+    # The same fold at the closing corner: the last edge runs back over the first one.
+    closing = Polygon(((0.2, 0.2), (0.8, 0.2), (0.8, 0.8), (0.5, 0.2)))
+    assert not closing.is_simple()
+
+
+def test_collinear_neighbours_that_continue_onwards_are_fine() -> None:
+    # A straight run split into two edges is an ordinary (if redundant) corner.
+    assert Polygon(((0.2, 0.2), (0.5, 0.2), (0.8, 0.2), (0.8, 0.8), (0.2, 0.8))).is_simple()
+
+
+# --- the cases shared with the dashboard's zone editor -------------------------------------
+
+CASES = json.loads((Path(__file__).parent / "data" / "polygon_cases.json").read_text())["cases"]
+
+
+@pytest.mark.parametrize("case", CASES, ids=[c["name"] for c in CASES])
+def test_the_shared_polygon_cases(case: dict) -> None:  # type: ignore[type-arg]
+    polygon = Polygon(tuple((x, y) for x, y in case["points"]))
+    assert polygon.is_simple() is case["simple"]
+    if case["area"] is not None:
+        assert polygon.area() == pytest.approx(case["area"])
+    for x, y, expected in case["inside"]:
+        assert polygon.contains((x, y)) is expected, (x, y)

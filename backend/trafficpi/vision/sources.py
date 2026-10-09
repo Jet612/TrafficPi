@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+import contextlib
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from fractions import Fraction
 from pathlib import Path
 from typing import Any, Literal, Protocol, Self
 
 import numpy as np
+
+# A frame arrives every 33 ms; if none comes for this long the camera has stalled. The service
+# then restarts it, instead of waiting forever with a frozen picture.
+READ_TIMEOUT_S = 5.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,20 +127,32 @@ class PiCameraSource:
         from picamera2 import Picamera2
 
         s = self.settings
-        picam2 = Picamera2()
-        sensor = {"output_size": s.sensor_size, "bit_depth": 10} if s.sensor_size else None
-        config = picam2.create_video_configuration(
-            main={"size": s.main_size, "format": "YUV420"},
-            lores={
-                "size": s.lores_size,
-                "format": "BGR888" if s.channel_order == "rgb" else "RGB888",
-            },
-            sensor=sensor,
-            controls=self._controls(),
-            queue=False,  # always hand out the freshest frame; if we are slow, frames are skipped
-        )
-        picam2.configure(config)
-        picam2.start()
+        try:
+            picam2 = Picamera2()
+        except RuntimeError as exc:
+            raise RuntimeError(
+                f"cannot open the camera ({exc}); is another program using it?"
+            ) from exc
+        try:
+            sensor = {"output_size": s.sensor_size, "bit_depth": 10} if s.sensor_size else None
+            config = picam2.create_video_configuration(
+                main={"size": s.main_size, "format": "YUV420"},
+                lores={
+                    "size": s.lores_size,
+                    "format": "BGR888" if s.channel_order == "rgb" else "RGB888",
+                },
+                sensor=sensor,
+                controls=self._controls(),
+                queue=False,  # always hand out the freshest frame; if slow, frames are skipped
+            )
+            picam2.configure(config)
+            picam2.start()
+        except BaseException:
+            # An opened camera that is not closed stays acquired by this process, and then no
+            # later attempt, however long we wait, can open it.
+            with contextlib.suppress(Exception):
+                picam2.close()
+            raise
         self._picam2 = picam2
 
     def describe(self) -> dict[str, Any]:
@@ -149,7 +168,10 @@ class PiCameraSource:
 
     def read(self) -> Frame:
         picam2 = self._require_started()
-        request = picam2.capture_request()
+        try:
+            request = picam2.capture_request(wait=READ_TIMEOUT_S)
+        except TimeoutError:
+            raise RuntimeError(f"no frame from the camera for {READ_TIMEOUT_S:.0f} s") from None
         try:
             image = request.make_array("lores")
             meta = request.get_metadata()
@@ -261,7 +283,67 @@ class VideoFileSource:
         self._index += 1
         return frame
 
+    def rewind(self) -> None:
+        """Go back to the first frame. Timestamps keep counting up, so time never runs backwards."""
+        import cv2
+
+        if self._capture is None:
+            raise RuntimeError("video not opened")
+        self._capture.set(cv2.CAP_PROP_POS_FRAMES, 0)
+
     def stop(self) -> None:
         if self._capture is not None:
             self._capture.release()
             self._capture = None
+
+
+class RealtimeLoopSource:
+    """A recorded video played like a live camera: at its own speed, over and over.
+
+    This is for developing the dashboard and the rules without a camera or any traffic. Frames
+    come at the video's frame rate rather than as fast as they decode, and when the clip ends it
+    starts again with timestamps that keep rising, so the tracker sees one endless recording.
+    """
+
+    def __init__(
+        self,
+        video: VideoFileSource,
+        *,
+        loop: bool = True,
+        monotonic_ns: Callable[[], int] = time.monotonic_ns,
+        sleep: Callable[[float], None] = time.sleep,
+    ) -> None:
+        self.video = video
+        self.loop = loop
+        self._monotonic_ns = monotonic_ns
+        self._sleep = sleep
+        self._started_ns = 0
+        self._first_ts: int | None = None
+
+    @property
+    def frame_size(self) -> tuple[int, int]:
+        return self.video.frame_size
+
+    def start(self) -> None:
+        self.video.start()
+        self._started_ns = self._monotonic_ns()
+        self._first_ts = None
+
+    def read(self) -> Frame:
+        try:
+            frame = self.video.read()
+        except EndOfStream:
+            if not self.loop:
+                raise
+            self.video.rewind()
+            frame = self.video.read()
+        if self._first_ts is None:
+            self._first_ts = frame.timestamp_ns
+        due_ns = self._started_ns + frame.timestamp_ns - self._first_ts
+        wait_ns = due_ns - self._monotonic_ns()
+        if wait_ns > 0:
+            self._sleep(wait_ns / 1e9)
+        return frame
+
+    def stop(self) -> None:
+        self.video.stop()

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, Field
+
+from trafficpi.core.profile import Profile
 
 
 class LoginRequest(BaseModel):
@@ -67,13 +69,29 @@ class EventOut(BaseModel):
 
 
 class ProfileOut(BaseModel):
-    version: int  # 0 when none has been saved
-    document: dict[str, Any]
+    version: int  # counts saves; 0 when none has been saved
+    profile: Profile
+    # Why the saved document could not be read, when it could not. The profile above is then an
+    # empty one, and saving replaces the unreadable document.
+    problem: str | None
+    reference_at: int | None  # when the reference picture was taken, ms since the epoch; or None
 
 
 class ProfileSaved(BaseModel):
     version: int
     vision_notified: bool  # whether the vision service was told to reload
+
+
+class ProfileCheck(BaseModel):
+    """The answer to "is this document a usable profile?", with the profile it comes to."""
+
+    ok: bool
+    problem: str | None  # what is wrong, when something is
+    profile: Profile | None  # the document in canonical form, when it is usable
+
+
+class ReferenceSaved(BaseModel):
+    reference_at: int  # ms since the epoch
 
 
 class Settings(BaseModel):
@@ -87,6 +105,17 @@ class DiskStatus(BaseModel):
     used_percent: float
 
 
+class SystemMetrics(BaseModel):
+    """What the vision service measures about the machine, every few seconds."""
+
+    cpu_cores: float | None = None  # CPU used by the vision service, in cores
+    cpu_percent: float | None = None  # CPU used by the whole machine
+    rss_mb: float | None = None  # memory held by the vision service
+    soc_temp_c: float | None = None
+    throttled_now: list[str] = []  # why the Pi is being slowed down right now, if it is
+    throttled_since_boot: list[str] = []
+
+
 class VisionStatus(BaseModel):
     status: Literal["ok", "camera-offline", "unreachable"]
     fps: float | None = None
@@ -94,7 +123,7 @@ class VisionStatus(BaseModel):
     camera_error: str | None = None
     profile_version: int | None = None
     detector: str | None = None
-    system: dict[str, Any] = {}
+    system: SystemMetrics = SystemMetrics()
 
 
 class StatusResponse(BaseModel):

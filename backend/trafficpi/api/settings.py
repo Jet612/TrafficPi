@@ -6,6 +6,8 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from trafficpi.core.paths import default_data_dir
+
 
 def _default_dashboard() -> Path | None:
     """The built dashboard in a source checkout (``dashboard/out``), if it exists."""
@@ -13,11 +15,18 @@ def _default_dashboard() -> Path | None:
     return candidate if candidate.is_dir() else None
 
 
+def _env_list(name: str) -> tuple[str, ...]:
+    return tuple(part.strip() for part in os.environ.get(name, "").split(",") if part.strip())
+
+
+def normalize_origin(origin: str) -> str:
+    """How origins are compared: no trailing slash, any case."""
+    return origin.strip().rstrip("/").lower()
+
+
 @dataclass(frozen=True, slots=True)
 class ApiSettings:
-    data_dir: Path = field(
-        default_factory=lambda: Path(os.environ.get("TRAFFICPI_DATA_DIR", "data"))
-    )
+    data_dir: Path = field(default_factory=default_data_dir)
     vision_url: str = field(
         default_factory=lambda: os.environ.get("TRAFFICPI_VISION_URL", "http://127.0.0.1:8001")
     )
@@ -32,6 +41,14 @@ class ApiSettings:
     # Behind a tunnel every request arrives from localhost; with this on, the client address comes
     # from CF-Connecting-IP / X-Forwarded-For. Leave it off unless a trusted proxy sets them.
     trust_proxy_headers: bool = False
+    # Page origins, besides the API's own, whose requests are accepted (the Origin check refuses
+    # all others). For development only: the dashboard's dev server runs on another port, so
+    # `--allow-origin http://127.0.0.1:3100`. Anything listed here can act as a logged-in user.
+    allowed_origins: tuple[str, ...] = field(
+        default_factory=lambda: tuple(
+            normalize_origin(o) for o in _env_list("TRAFFICPI_ALLOWED_ORIGINS")
+        )
+    )
     # Failed logins allowed per window, per client address and per username.
     login_attempts: int = 8
     login_window_s: int = 600
@@ -43,3 +60,8 @@ class ApiSettings:
     @property
     def secret_path(self) -> Path:
         return self.data_dir / "secret.key"
+
+    @property
+    def reference_path(self) -> Path:
+        """The camera's reference picture: what the lines and zones were drawn on."""
+        return self.data_dir / "reference.jpg"

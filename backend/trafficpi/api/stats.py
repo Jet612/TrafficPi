@@ -33,11 +33,15 @@ def _empty_line() -> dict[str, Any]:
 def summarize(
     rows: Iterable[CountRow], line_names: Mapping[str, str] | None = None
 ) -> dict[str, Any]:
-    """Totals overall, by class and by line, from minute rows."""
+    """Totals overall, by class and by line, from minute rows.
+
+    Every line in ``line_names`` is listed, with zeros if nothing crossed it yet; so are lines
+    that have counts but are no longer configured.
+    """
     names = line_names or {}
     total = 0
     by_class: Counter[str] = Counter()
-    lines: dict[str, dict[str, Any]] = {}
+    lines: dict[str, dict[str, Any]] = {line_id: _empty_line() for line_id in names}
     for row in rows:
         total += row.count
         by_class[row.class_label] += row.count

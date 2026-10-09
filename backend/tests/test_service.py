@@ -1,5 +1,6 @@
 import json
 import threading
+import time
 from collections import deque
 
 import pytest
@@ -9,7 +10,7 @@ from trafficpi.core.clock import WallClock
 from trafficpi.core.types import Detection
 from trafficpi.db import create_db_engine, upgrade_to_head
 from trafficpi.db.store import Store
-from trafficpi.vision.service import LiveState, VisionService
+from trafficpi.vision.service import CameraUnavailable, LiveState, ServiceConfig, VisionService
 from trafficpi.vision.shutdown import StopRequest
 
 LINE_PROFILE = {"lines": [{"id": "main", "name": "Main", "a": [0.2, 0.5], "b": [0.8, 0.5]}]}
@@ -159,3 +160,157 @@ def test_live_state_waiting_for_frames() -> None:
     assert got == [1]
     live.set_camera_error("camera lost")
     assert live.snapshot()["camera"] == {"ok": False, "error": "camera lost"}
+
+
+# --- a camera that misbehaves ----------------------------------------------------------------
+
+FAST_RETRY = ServiceConfig(camera_retry_s=0.01)
+
+
+class FlakySource(ScriptedSource):
+    """A scripted source that fails to start ``start_failures`` times and to read at some frames."""
+
+    def __init__(self, script, *, start_failures=0, fail_reads_at=(), on_start=None):  # type: ignore[no-untyped-def]
+        super().__init__(script)
+        self.starts = self.stops = 0
+        self.start_failures = start_failures
+        self.fail_reads_at = set(fail_reads_at)
+        self.on_start = on_start
+
+    def start(self) -> None:
+        self.starts += 1
+        if self.on_start is not None:
+            self.on_start()
+        if self.starts <= self.start_failures:
+            raise RuntimeError("camera busy")
+
+    def stop(self) -> None:
+        self.stops += 1
+
+    def read(self):  # type: ignore[no-untyped-def]
+        if self.index in self.fail_reads_at:
+            self.fail_reads_at.discard(self.index)
+            raise RuntimeError("camera unplugged")
+        return super().read()
+
+
+def test_the_service_starts_and_stops_its_source(store: Store) -> None:
+    source = FlakySource(car_crossing(10))
+    service_for(None, store, source=source).run(StopRequest())
+    assert (source.starts, source.stops) == (1, 1)
+
+
+def test_a_camera_that_will_not_start_is_reported_and_retried(store: Store) -> None:
+    seen: list[dict[str, object]] = []
+    holder: list[VisionService] = []
+    source = FlakySource(
+        car_crossing(10),
+        start_failures=3,
+        on_start=lambda: holder and seen.append(holder[0].live.snapshot()["camera"]),
+    )
+    service = service_for(None, store, source=source, config=FAST_RETRY)
+    holder.append(service)
+    service.run(StopRequest())
+    assert source.starts == 4 and service.frames == 10
+    assert seen[1:] == [{"ok": False, "error": "cannot start the camera: camera busy"}] * 3
+    assert service.live.snapshot()["camera"] == {"ok": True, "error": None}
+
+
+def test_a_camera_that_fails_while_running_is_restarted_and_counting_goes_on(
+    store: Store,
+) -> None:
+    store.set_profile(LINE_PROFILE)
+    source = FlakySource(car_crossing(), fail_reads_at={30})
+    service = service_for(None, store, source=source, config=FAST_RETRY)
+    service.run(StopRequest())
+    assert source.starts == 2 and source.stops == 2  # restarted once; stopped for good at the end
+    assert service.frames == 100 and service.events_recorded == 1
+
+
+def test_the_outage_shows_in_the_live_state_until_frames_return(store: Store) -> None:
+    holder: list[VisionService] = []
+    during: list[object] = []
+    source = FlakySource(
+        car_crossing(60),
+        fail_reads_at={20},
+        on_start=lambda: holder and during.append(holder[0].live.snapshot()["camera"]),
+    )
+    service = service_for(None, store, source=source, config=FAST_RETRY)
+    holder.append(service)
+    service.run(StopRequest())
+    # The first entry is the normal start; the second is the restart, made during the outage.
+    assert during[1:] == [{"ok": False, "error": "camera failed: camera unplugged"}]
+    assert service.live.snapshot()["camera"]["ok"]
+
+
+def test_a_stop_request_cuts_short_the_wait_for_a_broken_camera(store: Store) -> None:
+    source = FlakySource(car_crossing(10), start_failures=10**9)
+    service = service_for(None, store, source=source, config=ServiceConfig(camera_retry_s=60))
+    stop = StopRequest()
+    threading.Timer(0.2, stop.request).start()
+    started = time.monotonic()
+    service.run(stop)
+    assert time.monotonic() - started < 5 and service.frames == 0
+    assert service.live.snapshot()["camera"]["error"] == "cannot start the camera: camera busy"
+
+
+def test_a_camera_that_stops_delivering_is_reported_by_the_live_state_itself() -> None:
+    """The loop is stuck waiting for the camera then, so it cannot say anything itself."""
+    live = LiveState(stale_after_s=0.05)
+    live.publish_frame(ScriptedSource(car_crossing(3)).read(), [], 1, 30.0)
+    assert live.snapshot()["camera"]["ok"] and live.snapshot()["fps"] == 30.0
+    time.sleep(0.15)
+    state = live.snapshot()
+    assert state["camera"]["ok"] is False and "no frames for" in state["camera"]["error"]
+    assert state["fps"] == 0.0
+
+
+def test_the_service_gives_up_on_a_camera_that_never_comes_back(store: Store) -> None:
+    """So that systemd restarts the whole process, which starts libcamera afresh."""
+    source = FlakySource(car_crossing(10), start_failures=10**9)
+    config = ServiceConfig(camera_retry_s=0.01, camera_giveup_s=0.15)
+    service = service_for(None, store, source=source, config=config)
+    started = time.monotonic()
+    with pytest.raises(CameraUnavailable, match=r"no camera for .*\(camera busy\)"):
+        service.run(StopRequest())
+    assert 0.1 < time.monotonic() - started < 5
+    assert source.stops == source.starts  # every failed attempt was cleaned up, and once more
+
+
+def test_the_give_up_clock_restarts_whenever_frames_flow_again(store: Store) -> None:
+    # Two outages of about 0.2 s each, with working frames between them. Each is shorter than
+    # the 0.3 s limit, though together they are longer.
+    class Outage(FlakySource):
+        def __init__(self) -> None:
+            super().__init__(car_crossing(60), fail_reads_at={10, 30})
+            self.down_until = 0.0
+
+        def start(self) -> None:
+            if self.down_until and time.monotonic() < self.down_until:
+                raise RuntimeError("still down")
+            super().start()
+
+        def read(self):  # type: ignore[no-untyped-def]
+            if self.index in self.fail_reads_at:
+                self.down_until = time.monotonic() + 0.2
+            return super().read()
+
+    config = ServiceConfig(camera_retry_s=0.02, camera_giveup_s=0.3)
+    service = service_for(None, store, source=Outage(), config=config)
+    service.run(StopRequest())
+    assert service.frames == 60
+
+
+def test_the_frame_rate_is_not_inflated_by_uneven_arrival_times(store: Store) -> None:
+    """Frames arriving 20 and 46 ms apart, in turn, are 30 a second; 1/gap averaged would say 36."""
+    gaps = iter(0.020 if i % 2 == 0 else 0.046 for i in range(1000))
+    clock = [0.0]
+
+    def perf_counter() -> float:
+        clock[0] += next(gaps)
+        return clock[0]
+
+    source = ScriptedSource(car_crossing(300))
+    service = VisionService(source, ScriptedDetector(source), store, perf_counter=perf_counter)
+    service.run(StopRequest())
+    assert service.live.snapshot()["fps"] == pytest.approx(30.3, abs=1.5)

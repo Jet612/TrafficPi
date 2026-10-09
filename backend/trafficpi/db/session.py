@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import fcntl
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -49,7 +52,24 @@ def _alembic_config(**attributes: Any) -> Config:
     return config
 
 
+@contextmanager
+def _migration_lock(engine: Engine) -> Iterator[None]:
+    """Make processes take turns migrating one database file.
+
+    Both services migrate at start-up, and systemd starts them together. On a fresh database the
+    second one would otherwise fail with "database is locked" (SQLite does not wait for a write
+    that follows a read in the same transaction). The lock file sits next to the database.
+    """
+    database = engine.url.database
+    if not database or database == ":memory:":
+        yield
+        return
+    with Path(f"{database}.migrate-lock").open("w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)  # released when the file is closed
+        yield
+
+
 def upgrade_to_head(engine: Engine) -> None:
     """Apply any migrations the database has not seen yet."""
-    with engine.begin() as connection:
+    with _migration_lock(engine), engine.begin() as connection:
         command.upgrade(_alembic_config(connection=connection), "head")

@@ -53,6 +53,21 @@ def test_summarize_by_class_and_line(store: Store) -> None:
     assert side["id"] == "side" and side["name"] == "" and side["forward"] == 1
 
 
+def test_every_configured_line_is_listed_even_with_no_counts(store: Store) -> None:
+    count(store, ms(2026, 10, 8, 9, 5), line="gone")  # counted once, since removed from the profile
+    summary = stats.summarize(
+        store.minute_counts(0, 2**40), {"north": "Northbound", "south": "Southbound"}
+    )
+    assert [(x["id"], x["name"], x["forward"] + x["reverse"]) for x in summary["lines"]] == [
+        ("gone", "", 1),
+        ("north", "Northbound", 0),
+        ("south", "Southbound", 0),
+    ]
+    assert summary["lines"][1]["by_class"] == {}
+    empty = stats.today_summary(store, NY, ms(2026, 10, 9, 15), {"north": "Northbound"})
+    assert empty["total"] == 0 and [x["id"] for x in empty["lines"]] == ["north"]
+
+
 def test_today_uses_the_local_day_not_the_utc_day(store: Store) -> None:
     count(store, ms(2026, 10, 8, 0, 30))  # 00:30 local on the 8th is 04:30 UTC
     count(store, ms(2026, 10, 7, 23, 30))  # 23:30 local on the 7th is the next day in UTC

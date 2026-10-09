@@ -40,3 +40,7 @@ class StopRequest:
     @property
     def requested(self) -> bool:
         return self._event.is_set()
+
+    def wait(self, timeout: float) -> bool:
+        """Sleep up to ``timeout`` seconds, waking early on a stop request; True if one came."""
+        return self._event.wait(timeout)

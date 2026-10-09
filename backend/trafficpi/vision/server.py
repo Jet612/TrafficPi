@@ -8,6 +8,7 @@ never slows the camera loop.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -169,14 +170,21 @@ class ServerThread:
         )
         self._app = app
         self._server = uvicorn.Server(config)
-        self._thread = threading.Thread(target=self._server.run, name="vision-server", daemon=True)
+        self._thread = threading.Thread(target=self._run, name="vision-server", daemon=True)
+
+    def _run(self) -> None:
+        # uvicorn exits, instead of raising, when it cannot bind its port.
+        with contextlib.suppress(SystemExit):
+            self._server.run()
 
     def start(self, timeout: float = 10.0) -> None:
         self._thread.start()
         deadline = time.monotonic() + timeout
         while not self._server.started:
             if not self._thread.is_alive() or time.monotonic() > deadline:
-                raise RuntimeError(f"web server did not start on {self.host}:{self.port}")
+                raise RuntimeError(
+                    f"web server did not start on {self.host}:{self.port} (is the port in use?)"
+                )
             time.sleep(0.02)
 
     def stop(self, timeout: float = 5.0) -> None:

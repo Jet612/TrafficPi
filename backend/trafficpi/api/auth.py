@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import secrets
 import time
 from collections import defaultdict, deque
 from pathlib import Path
+from typing import NamedTuple
 
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
@@ -36,6 +38,19 @@ def needs_rehash(password_hash: str) -> bool:
     return _hasher.check_needs_rehash(password_hash)
 
 
+def normalize_username(name: str) -> str:
+    """Usernames are not case-sensitive: phone keyboards capitalise the first letter."""
+    return name.strip().lower()
+
+
+def password_stamp(password_hash: str) -> str:
+    """A short fingerprint of a password hash.
+
+    Sessions carry it, so setting a new password ends every session made with the old one.
+    """
+    return hashlib.sha256(password_hash.encode()).hexdigest()[:16]
+
+
 def load_or_create_secret(path: Path) -> str:
     """The key that signs session cookies, created (readable by the owner only) on first use."""
     if path.exists():
@@ -48,6 +63,11 @@ def load_or_create_secret(path: Path) -> str:
     return secret
 
 
+class Session(NamedTuple):
+    username: str
+    stamp: str  # the password fingerprint (:func:`password_stamp`) the session was made with
+
+
 class SessionSigner:
     """Signed, expiring session tokens. Nothing is stored on the server."""
 
@@ -55,19 +75,23 @@ class SessionSigner:
         self._serializer = URLSafeTimedSerializer(secret, salt="trafficpi-session")
         self.max_age_s = max_age_s
 
-    def issue(self, username: str) -> str:
-        return self._serializer.dumps({"u": username})
+    def issue(self, username: str, stamp: str) -> str:
+        return self._serializer.dumps({"u": username, "s": stamp})
 
-    def read(self, token: str | None) -> str | None:
-        """The username in a valid, unexpired token, else None."""
+    def read(self, token: str | None) -> Session | None:
+        """The session in a valid, unexpired token, else None."""
         if not token:
             return None
         try:
             data = self._serializer.loads(token, max_age=self.max_age_s)
         except (BadSignature, SignatureExpired):
             return None
-        username = data.get("u") if isinstance(data, dict) else None
-        return username if isinstance(username, str) else None
+        if not isinstance(data, dict):
+            return None
+        username, stamp = data.get("u"), data.get("s")
+        if not isinstance(username, str) or not isinstance(stamp, str):
+            return None
+        return Session(username, stamp)
 
 
 class LoginThrottle:

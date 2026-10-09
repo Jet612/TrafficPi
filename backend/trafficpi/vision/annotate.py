@@ -16,6 +16,7 @@ from trafficpi.vision.engine import CountTotals
 from trafficpi.vision.replay import replay_log
 from trafficpi.vision.rules import CountEvent, CountingLine
 from trafficpi.vision.tracker import TrackUpdate
+from trafficpi.vision.zones import DetectionFilter
 
 COLORS = {
     0: (0, 165, 255),
@@ -26,6 +27,8 @@ COLORS = {
     7: (255, 255, 0),
 }
 LINE_COLOR = (0, 215, 255)
+INCLUDE_COLOR = (80, 200, 80)  # detection zones
+EXCLUDE_COLOR = (60, 60, 230)  # exclusion zones
 FONT = cv2.FONT_HERSHEY_SIMPLEX
 BANNER_S = 2.0  # how long a count event stays on screen
 
@@ -49,10 +52,16 @@ def draw(
     trails: dict[int, deque[Point]],
     banners: Sequence[str],
     totals: CountTotals,
+    zones: DetectionFilter | None = None,
 ) -> None:
     """Draw on a BGR image in place."""
     height, width = image.shape[:2]
     size = (width, height)
+    if zones is not None:
+        for polygons, color in ((zones.include, INCLUDE_COLOR), (zones.exclude, EXCLUDE_COLOR)):
+            for polygon in polygons:
+                corners = np.array([_px(p, size) for p in polygon.points], np.int32)
+                cv2.polylines(image, [corners], True, color, 2)
     for cfg in lines:
         a, b = _px(cfg.line.a, size), _px(cfg.line.b, size)
         cv2.line(image, a, b, LINE_COLOR, 2)
@@ -89,17 +98,18 @@ def annotate_clip(
     log: Path,
     lines: Sequence[CountingLine],
     *,
+    detection_filter: DetectionFilter | None = None,
     video_out: Path | None = None,
     stills_dir: Path | None = None,
     trail_s: float = 2.0,
 ) -> AnnotateReport:
-    """Draw the tracks, trails, lines and running counts of ``log`` onto ``clip``.
+    """Draw the tracks, trails, lines, zones and running counts of ``log`` onto ``clip``.
 
     Clip frames are matched to log frames by time since the first frame of each (the recorder
     starts both together, so they agree to within a frame or two). With ``stills_dir`` a JPEG is
     saved at every count event.
     """
-    replayed = replay_log(log, lines)
+    replayed = replay_log(log, lines, detection_filter=detection_filter)
     stamps, results = replayed.timestamps_ns, replayed.results
     report = AnnotateReport()
     if not stamps:
@@ -152,7 +162,15 @@ def annotate_clip(
                 banners.popleft()
             shown = [text for _, text in banners]
             tracks = results[current].tracks
-            draw(image, lines=lines, tracks=tracks, trails=trails, banners=shown, totals=totals)
+            draw(
+                image,
+                lines=lines,
+                tracks=tracks,
+                trails=trails,
+                banners=shown,
+                totals=totals,
+                zones=detection_filter,
+            )
             if writer is not None:
                 writer.write(image)
                 report.frames_written += 1

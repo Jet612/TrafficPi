@@ -4,10 +4,13 @@ import pytest
 
 from trafficpi.api.auth import (
     LoginThrottle,
+    Session,
     SessionSigner,
     hash_password,
     load_or_create_secret,
     needs_rehash,
+    normalize_username,
+    password_stamp,
     verify_password,
 )
 
@@ -36,8 +39,8 @@ def test_the_secret_is_created_once_and_kept_private(tmp_path: Path) -> None:
 
 def test_session_tokens_round_trip_and_reject_tampering() -> None:
     signer = SessionSigner("s3cret", max_age_s=3600)
-    token = signer.issue("admin")
-    assert signer.read(token) == "admin"
+    token = signer.issue("admin", "stamp")
+    assert signer.read(token) == Session("admin", "stamp")
     # Change a character of the payload. (The last character of a base64 signature carries
     # padding bits, so altering it can leave the decoded bytes, and the token, valid.)
     tampered = ("A" if token[2] != "A" else "B").join((token[:2], token[3:]))
@@ -46,8 +49,28 @@ def test_session_tokens_round_trip_and_reject_tampering() -> None:
     assert SessionSigner("other-secret", 3600).read(token) is None
 
 
+def test_a_signed_token_without_the_expected_fields_is_refused() -> None:
+    from itsdangerous import URLSafeTimedSerializer
+
+    forge = URLSafeTimedSerializer("s3cret", salt="trafficpi-session").dumps
+    signer = SessionSigner("s3cret", 3600)
+    assert signer.read(forge({"u": "admin"})) is None  # no stamp: made before stamps existed
+    assert signer.read(forge({"u": 7, "s": "x"})) is None
+    assert signer.read(forge(["admin", "x"])) is None
+
+
+def test_the_password_stamp_changes_with_the_hash_and_hides_it() -> None:
+    first, second = hash_password("correct horse battery"), hash_password("correct horse battery")
+    assert password_stamp(first) == password_stamp(first) != password_stamp(second)
+    assert len(password_stamp(first)) == 16 and password_stamp(first) not in first
+
+
+def test_usernames_ignore_case_and_surrounding_spaces() -> None:
+    assert normalize_username("  Admin ") == "admin"
+
+
 def test_session_tokens_expire() -> None:
-    token = SessionSigner("s3cret", max_age_s=3600).issue("admin")
+    token = SessionSigner("s3cret", max_age_s=3600).issue("admin", "stamp")
     assert SessionSigner("s3cret", max_age_s=-1).read(token) is None
 
 
