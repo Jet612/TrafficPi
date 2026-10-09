@@ -847,6 +847,9 @@ try {
       await eventually(async () => assert.ok((await shown()).every((kind) => kind === "rolling" || kind === "did_not_stop")));
       await focus("All that need a look").click();
       assert.equal(await tile("Could not tell").getAttribute("aria-pressed"), "true", "and the usual list is one press away");
+      // the rows on show are those of the choice before until the answer for this one comes, and the made-up street has
+      // passed another vehicle by then: wait for it, or the pass that is read below is not the one that is pressed
+      await eventually(async () => assert.equal(await passes.getAttribute("aria-busy"), "false"), "the list has caught up with the choice");
 
       // the newest pass is called a false alarm: it is kept, found under "False alarms", and taken back
       const first = rowsOf().first();
