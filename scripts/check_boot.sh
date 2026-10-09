@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016  # the commands are single-quoted for the shell that runs them
 # Checks the accelerator and camera stack, for example right after a reboot (M0's cold-boot check).
 # With the systemd services running it checks them; otherwise it runs a 10 s smoke test of its own.
 # Prints PASS or FAIL per check and exits non-zero if anything failed.

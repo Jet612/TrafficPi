@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2329  # the job functions below are run by name, through `job`
 # Run CI's four jobs from a fresh clone of what is committed, the way a GitHub runner sees it.
 #
 #   scripts/rehearse_ci.sh              all four jobs (about 8 minutes)
@@ -55,7 +56,7 @@ job() { # job NAME FUNCTION: run it, print PASS or FAIL and the end of its log
 
 backend() {
   (cd backend && uv sync --locked && uv run ruff check . && uv run ruff format --check . \
-    && uv run pyright && uv run pytest -q -p no:cacheprovider)
+    && ../scripts/lint_shell.sh && uv run pyright && uv run pytest -q -p no:cacheprovider)
 }
 
 dashboard() { # types are checked before the build, as in CI: the build writes next-env.d.ts
@@ -75,7 +76,7 @@ browser_test() { # the services are started by the script that CI runs, on other
     E2E_EXPECT_LIVE=1 E2E_SHOTS="$work/shots" CHROMIUM="${CHROMIUM:-/usr/bin/chromium-headless-shell}" \
     node e2e/smoke.mjs) || status=1
   stop_demo
-  return $status
+  return "$status"
 }
 
 job "backend (lint, types, tests)" backend

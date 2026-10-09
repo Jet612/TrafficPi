@@ -1,0 +1,14 @@
+# Starts trafficpi-backup.service every day. @BACKUP_AT@ is filled in by
+# scripts/install_services.sh.
+[Unit]
+Description=Back up the TrafficPi database every day at @BACKUP_AT@
+
+[Timer]
+# On the Pi's own clock (timedatectl shows its time zone). After the nightly reboot, if there is one.
+OnCalendar=*-*-* @BACKUP_AT@:00
+# A backup missed while the Pi was off is made when it next starts: late is better than never.
+Persistent=yes
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

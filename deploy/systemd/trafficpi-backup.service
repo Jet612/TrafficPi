@@ -1,0 +1,39 @@
+# TrafficPi nightly backup: started only by trafficpi-backup.timer, and only if you asked for it
+# (scripts/install_services.sh --backup-at). It writes one .tar.gz of the database and the files
+# beside it (plan.md D29) and keeps the newest few; the services go on running meanwhile, because
+# the copy of the database is a snapshot. @NAME@ placeholders are filled in by that script.
+[Unit]
+Description=Back up the TrafficPi database
+
+[Service]
+Type=oneshot
+User=@USER@
+WorkingDirectory=@INSTALL_DIR@/backend
+Environment=TRAFFICPI_DATA_DIR=@DATA_DIR@
+ExecStart=@INSTALL_DIR@/backend/.venv/bin/trafficpi-admin backup --keep @BACKUP_KEEP@@BACKUP_TO_ARGS@
+# Behind everything else: it must never be the reason for a dropped frame.
+Nice=15
+IOSchedulingClass=idle
+CPUWeight=20
+# It only reads the database and writes archives (into the data directory, or where --backup-to
+# says).
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=@DATA_DIR@ @BACKUP_WRITE_PATHS@
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+SystemCallArchitectures=native
+UMask=0077

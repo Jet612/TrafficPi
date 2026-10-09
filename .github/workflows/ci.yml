@@ -44,6 +44,11 @@ jobs:
       - name: Ruff (format)
         run: uv run ruff format --check .
 
+      # The installer and the helper scripts are shell. The script is the one that
+      # scripts/rehearse_ci.sh runs too; the runners have shellcheck.
+      - name: Shell scripts (shellcheck)
+        run: ../scripts/lint_shell.sh
+
       - name: Pyright
         run: uv run pyright
 
