@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+
+# Node / dashboard
+node_modules/
+.next/
+dashboard/out/
+.pnpm-store/
+
+# Runtime data and local artifacts: database, clips, snapshots, recordings, logs
+data/
+*.log
+hailort.log
+
+# Local configuration and secrets
+.env
+.env.*

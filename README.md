@@ -4,7 +4,7 @@
 
 TrafficPi is an open-source traffic monitoring system that uses computer vision and edge AI to detect, track, and analyze vehicles in real time.
 
-**Project Status:** In development. The features described below represent the intended architecture and development roadmap.
+**Project Status:** Early development. TrafficPi is not usable yet; the features described below are the intended design. See [plan.md](plan.md) for the roadmap and [todo.md](todo.md) for current tasks.
 
 ---
 
@@ -38,7 +38,7 @@ TrafficPi combines edge AI, computer vision, configurable traffic rules, and a w
 
 A connected camera continuously captures video of the monitored roadway.
 
-The initial hardware target is the Raspberry Pi Camera Module 3.
+The initial hardware target is the Raspberry Pi Camera Module 3. Recorded video files (for testing and calibration) and network cameras may be supported as additional sources later.
 
 ### 2. AI Object Detection
 
@@ -96,7 +96,7 @@ Supported configuration elements are planned to include:
 |---|---|
 | Detection Zone | Define where objects should be detected and monitored. |
 | Counting Line | Count vehicles crossing a virtual line in a configured direction. |
-| Stop Line | Define where vehicles must stop for stop-sign or traffic-light monitoring. |
+| Stop Line | Define where vehicles must stop for stop-sign monitoring. |
 | Lane Zone | Separate traffic into individual lanes and directions. |
 | Traffic Sign Marker | Identify a sign's location and associate it with a monitoring rule. |
 | Speed Calibration | Configure real-world measurements and perspective correction. |
@@ -108,7 +108,7 @@ Camera configurations will be saved and automatically loaded when the monitoring
 
 ### Monitoring Modes
 
-TrafficPi will support different monitoring modes that can be configured for each camera.
+TrafficPi will support different monitoring modes that can be configured for each camera. Modes are not mutually exclusive; a camera profile can enable any combination of them.
 
 **Traffic Counting Mode**
 
@@ -191,7 +191,7 @@ Where recording is enabled, supported events may include snapshots or short vide
 
 A dedicated settings interface will allow users to configure each camera, including detection modes, monitoring zones, recording preferences, and calibration settings.
 
-The long-term goal is to support multiple camera profiles and, where hardware capacity permits, multiple active camera streams.
+Each camera has its own profile. The first releases target a single active camera; running several camera streams at once is a long-term goal, where hardware capacity permits.
 
 ---
 
@@ -202,11 +202,11 @@ TrafficPi uses Python for computer vision and traffic processing, with a TypeScr
 | Layer | Technology |
 |---|---|
 | Hardware | Raspberry Pi 5 |
-| Operating System | Raspberry Pi OS Lite 64-bit |
+| Operating System | Raspberry Pi OS Lite 64-bit (Debian 13, Trixie) |
 | Camera | Raspberry Pi Camera Module 3 |
-| AI Accelerator | Raspberry Pi AI HAT / Hailo accelerator |
+| AI Accelerator | Raspberry Pi AI HAT+ (Hailo-8L, 13 TOPS, or Hailo-8, 26 TOPS) |
 | Camera Capture | Picamera2 / libcamera |
-| AI Inference | HailoRT and compatible object-detection models |
+| AI Inference | HailoRT and compatible pre-compiled object-detection models |
 | Vehicle Tracking | ByteTrack or Hailo-compatible tracking |
 | Image Processing | OpenCV and NumPy |
 | Backend | Python and FastAPI |
@@ -215,10 +215,10 @@ TrafficPi uses Python for computer vision and traffic processing, with a TypeScr
 | Frontend | Next.js and TypeScript |
 | UI Components | Tailwind CSS and shadcn/ui |
 | Data Visualization | Recharts |
-| Package Management | pnpm |
+| Frontend Packages | pnpm |
 | Remote Access | Cloudflare Tunnel and Cloudflare Access |
 
-The inference implementation will depend on the installed Hailo accelerator model and supported software versions.
+Pre-compiled models are specific to the accelerator variant, so the inference implementation depends on the installed Hailo accelerator and supported software versions. The Raspberry Pi AI HAT+ 2 (Hailo-10H) uses a different runtime and is not targeted initially.
 
 ---
 
@@ -248,7 +248,7 @@ The vision service runs locally on the Raspberry Pi. The dashboard can be access
 
 ## Remote Access
 
-TrafficPi is intended to support remote dashboard access without requiring users to connect to Tailscale or another VPN.
+TrafficPi is intended to support remote dashboard access without requiring viewers to connect to a VPN.
 
 The recommended deployment method will use Cloudflare Tunnel to securely route browser traffic to the locally hosted dashboard, with Cloudflare Access for authentication and access control.
 
@@ -291,4 +291,10 @@ The main goals are to:
 
 TrafficPi is intended to become an open-source project welcoming contributions, bug reports, feature ideas, and improvements.
 
-Contributor guidelines and development setup instructions will be added as the project progresses.
+Development machine setup is documented in [docs/dev-setup.md](docs/dev-setup.md). Contributor guidelines will be added as the project progresses.
+
+---
+
+## License
+
+TrafficPi is released under the [MIT License](LICENSE).
