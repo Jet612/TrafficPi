@@ -95,6 +95,14 @@ async function dragCorner(index, fx, fy) {
   await drag(await centreOf(corners().nth(index)), await inPicture(fx, fy));
 }
 
+/** Where the keyboard focus is, in a few words: the element and what it is called. */
+const focusNow = () =>
+  page.evaluate(() => {
+    const el = document.activeElement;
+    if (!el) return "nothing";
+    return `${el.tagName.toLowerCase()}${el.getAttribute("aria-label") ? ` "${el.getAttribute("aria-label")}"` : ""}${el.closest("[data-testid='zone-canvas']") ? " (in the picture)" : ""}`;
+  });
+
 const stored = () =>
   page.evaluate(async () => {
     const response = await fetch("/api/profile");
@@ -274,7 +282,15 @@ try {
     await page.keyboard.press("Control+Shift+z");
     const redone = await centreOf(corners().nth(2));
     near(redone.x, target.x, 2, "corner after redo, x");
-    await page.keyboard.press("Control+z"); // leave the zone as it was saved
+    // Undo works wherever the keyboard focus is, not only inside the picture (Chrome's own Ctrl+Z would
+    // otherwise undo the last text typed in a field, such as the zone's name).
+    await page.evaluate(() => document.activeElement?.blur?.());
+    await page.keyboard.press("Control+z");
+    const settled = await centreOf(corners().nth(2));
+    near(settled.x, start.x, 2, "corner after undoing with the focus elsewhere, x");
+    near(settled.y, start.y, 2, "corner after undoing with the focus elsewhere, y");
+    assert.equal(await saveButton().isEnabled(), false, "back to what is saved");
+    assert.equal(await page.getByLabel("Name", { exact: true }).inputValue(), "The road", "and the zone's name is untouched");
   });
 
   await step("an outline that crosses itself is flagged and cannot be saved, until it is put right", async () => {
@@ -421,6 +437,71 @@ try {
     await page.getByRole("switch", { name: "Lines" }).click(); // put it back
   });
 
+  // The picture and what is drawn over it can fill the screen. Where the browser has no full screen for
+  // a div (an iPhone's Safari), the page lays the picture over the whole window instead.
+  const insideTheOverlayCanvas = () =>
+    page.waitForFunction(
+      () => {
+        const canvas = document.querySelector("canvas");
+        if (!canvas || canvas.width === 0) return false;
+        const { data } = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height);
+        for (let i = 3; i < data.length; i += 4) if (data[i] > 0) return true;
+        return false;
+      },
+      undefined,
+      { timeout: 8_000 },
+    );
+
+  await step("the video goes full screen by an overlay where the browser has none, and comes back", async () => {
+    await page.evaluate(() => {
+      Element.prototype.requestFullscreen = undefined;
+      Element.prototype.webkitRequestFullscreen = undefined;
+    });
+    const stage = page.getByTestId("live-stage");
+    const frame = page.getByTestId("live-frame");
+    await stage.scrollIntoViewIfNeeded();
+    const window = page.viewportSize();
+
+    await page.getByRole("button", { name: "Full screen", exact: true }).click();
+    await page.getByRole("dialog", { name: "Live view, full screen" }).waitFor();
+    const covered = await stage.boundingBox();
+    assert.deepEqual([covered.x, covered.y, covered.width, covered.height], [0, 0, window.width, window.height], "the stage fills the window");
+    const picture = await frame.boundingBox();
+    assert.ok(picture.width <= window.width + 1 && picture.height <= window.height + 1, "the whole picture is inside the window");
+    assert.ok(Math.abs(picture.width - window.width) < 2 || Math.abs(picture.height - window.height) < 2, "and as large as it can be");
+    assert.ok(Math.abs(picture.width / picture.height - 16 / 9) < 0.05, "with its own proportions");
+    assert.equal(await page.evaluate(() => document.body.style.overflow), "hidden", "the page behind does not scroll");
+    if (demo || expectLive) await insideTheOverlayCanvas(); // the boxes, lines and zones are still drawn
+    await shot("fullscreen");
+
+    await page.keyboard.press("Escape");
+    await page.getByRole("dialog", { name: "Live view, full screen" }).waitFor({ state: "detached" });
+    assert.equal(await page.evaluate(() => document.body.style.overflow), "", "scrolling is back");
+    assert.equal(await page.getByRole("button", { name: "Full screen", exact: true }).count(), 1);
+
+    await frame.dblclick({ position: { x: 200, y: 150 } }); // a double-click on the picture toggles it too
+    await page.getByRole("dialog", { name: "Live view, full screen" }).waitFor();
+    await page.getByRole("button", { name: "Exit full screen" }).click();
+    await page.getByRole("dialog", { name: "Live view, full screen" }).waitFor({ state: "detached" });
+  });
+
+  await step("the video goes full screen by the browser where it can, and comes back", async () => {
+    await page.reload(); // gives back the browser's own call
+    await page.getByRole("heading", { name: "Live view" }).waitFor();
+    const stage = page.getByTestId("live-stage");
+    await stage.scrollIntoViewIfNeeded();
+    await page.getByRole("button", { name: "Full screen", exact: true }).click();
+    // Either the browser took it (the stage is the full screen element) or it refused and the overlay took over.
+    await page.waitForFunction(() => document.fullscreenElement !== null || document.querySelector('[role="dialog"]') !== null);
+    const native = await page.evaluate(() => document.fullscreenElement?.getAttribute("data-testid") === "live-stage");
+    console.log(`     full screen by: ${native ? "the browser" : "the overlay (this browser refused)"}`);
+    await page.getByRole("button", { name: "Exit full screen" }).waitFor();
+    await page.getByRole("button", { name: "Exit full screen" }).click();
+    await page.getByRole("button", { name: "Full screen", exact: true }).waitFor();
+    assert.equal(await page.evaluate(() => document.fullscreenElement), null);
+    assert.equal(await page.getByRole("dialog").count(), 0);
+  });
+
   await step("the chart shows a tooltip with the hour's counts", async () => {
     // Hovering needs the bars on screen, as for a person, who would scroll down to the chart.
     await page.locator(".recharts-wrapper").first().scrollIntoViewIfNeeded();
@@ -474,6 +555,7 @@ try {
   console.log("all steps passed");
 } catch (error) {
   console.error(`FAILED at: ${current}`);
+  console.error(`the focus was in: ${await focusNow().catch(() => "unknown")}`);
   await shot("failure");
   console.error(error);
   process.exitCode = 1;

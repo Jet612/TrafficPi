@@ -1,13 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { VideoOff } from "lucide-react";
+import { Maximize2, Minimize2, VideoOff } from "lucide-react";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { useLiveClient, useLiveSelector } from "@/components/live-provider";
 import { deriveStatus, overlayIsCurrent } from "@/lib/connection-status";
+import { cn } from "@/lib/cn";
 import { usePersistentState } from "@/lib/hooks";
 import type { LiveSnapshot } from "@/lib/live";
+import { useFullscreen } from "@/lib/use-fullscreen";
 import {
   DEFAULT_OVERLAY,
   drawOverlay,
@@ -49,8 +51,10 @@ export function LiveView() {
   const prefs = useMemo<Prefs>(() => ({ ...DEFAULT_PREFS, ...stored }), [stored]);
   const noPicture = useLiveSelector(selectNoPicture, sameReason);
   const visible = usePageVisible();
+  const stageRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const fullscreen = useFullscreen(stageRef);
   const trails = useRef(new Map<number, Trail>());
   const [attempt, setAttempt] = useState(0);
   const [streamFailed, setStreamFailed] = useState(false);
@@ -153,32 +157,59 @@ export function LiveView() {
         </div>
       </CardHeader>
       <CardBody>
-        <div ref={frameRef} className="relative w-full overflow-hidden rounded-lg bg-[#0b0b0b]" style={{ aspectRatio: aspect }}>
-          {showStream && (
-            // An <img> is how a browser plays an MJPEG stream, and Next's image component cannot.
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              key={attempt}
-              src={`/api/preview.mjpg?attempt=${attempt}`}
-              alt="Live view of the street"
-              className="absolute inset-0 size-full object-fill"
-              onLoad={(event) => {
-                const { naturalWidth, naturalHeight } = event.currentTarget;
-                if (naturalWidth > 0 && naturalHeight > 0) setAspect(naturalWidth / naturalHeight);
-              }}
-              onError={() => setStreamFailed(true)}
-            />
-          )}
-          {placeholder && (
-            <div className="absolute inset-0 grid place-items-center p-6 text-center">
-              <div className="max-w-xs text-[#c3c2b7]">
-                <VideoOff className="mx-auto mb-2 size-7" aria-hidden="true" />
-                <p className="font-medium text-white">{placeholder.label}</p>
-                {placeholder.detail && <p className="mt-1 text-sm">{placeholder.detail}</p>}
+        {/* The stage is what goes full screen: the picture and the boxes drawn over it, so that both
+            stay together. Full screen shows the whole picture, with black bars where it does not fit. */}
+        <div
+          ref={stageRef}
+          data-testid="live-stage"
+          role={fullscreen.active ? "dialog" : undefined}
+          aria-modal={fullscreen.active || undefined}
+          aria-label={fullscreen.active ? "Live view, full screen" : undefined}
+          className={cn(fullscreen.active ? "fixed inset-0 z-50 grid place-items-center bg-black" : "relative")}
+        >
+          <div
+            ref={frameRef}
+            data-testid="live-frame"
+            onDoubleClick={fullscreen.toggle}
+            className={cn("relative touch-manipulation overflow-hidden bg-[#0b0b0b]", fullscreen.active ? "" : "w-full rounded-lg")}
+            style={{ aspectRatio: aspect, width: fullscreen.active ? `min(100vw, calc(100dvh * ${aspect}))` : undefined }}
+          >
+            {showStream && (
+              // An <img> is how a browser plays an MJPEG stream, and Next's image component cannot.
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                key={attempt}
+                src={`/api/preview.mjpg?attempt=${attempt}`}
+                alt="Live view of the street"
+                className="absolute inset-0 size-full object-fill"
+                onLoad={(event) => {
+                  const { naturalWidth, naturalHeight } = event.currentTarget;
+                  if (naturalWidth > 0 && naturalHeight > 0) setAspect(naturalWidth / naturalHeight);
+                }}
+                onError={() => setStreamFailed(true)}
+              />
+            )}
+            {placeholder && (
+              <div className="absolute inset-0 grid place-items-center p-6 text-center">
+                <div className="max-w-xs text-[#c3c2b7]">
+                  <VideoOff className="mx-auto mb-2 size-7" aria-hidden="true" />
+                  <p className="font-medium text-white">{placeholder.label}</p>
+                  {placeholder.detail && <p className="mt-1 text-sm">{placeholder.detail}</p>}
+                </div>
               </div>
-            </div>
-          )}
-          <canvas ref={canvasRef} aria-hidden="true" className="pointer-events-none absolute inset-0 size-full" />
+            )}
+            <canvas ref={canvasRef} aria-hidden="true" className="pointer-events-none absolute inset-0 size-full" />
+            <button
+              type="button"
+              onClick={fullscreen.toggle}
+              onDoubleClick={(event) => event.stopPropagation()}
+              aria-label={fullscreen.active ? "Exit full screen" : "Full screen"}
+              title={fullscreen.active ? "Exit full screen (Esc)" : "Full screen (or double-click the picture)"}
+              className="absolute right-2 top-2 z-10 inline-flex size-9 items-center justify-center rounded-lg bg-black/55 text-white transition-colors hover:bg-black/75"
+            >
+              {fullscreen.active ? <Minimize2 className="size-5" aria-hidden="true" /> : <Maximize2 className="size-5" aria-hidden="true" />}
+            </button>
+          </div>
         </div>
         <LiveFooter />
       </CardBody>

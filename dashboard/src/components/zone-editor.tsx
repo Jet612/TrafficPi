@@ -80,6 +80,29 @@ export function ZoneEditor() {
     return () => controller.abort();
   }, []);
 
+  // Undo and redo work wherever the keyboard focus is, not only inside the editor. Chrome's Ctrl+Z
+  // is document-wide: a press that missed the editor (the focus on the page itself, say) undoes
+  // the last text typed in a field instead, and the draft changes under the user's hands. A text
+  // field keeps its own undo, and a full screen view is not the editor's business.
+  const ready = open && saved !== null;
+  useEffect(() => {
+    if (!ready) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || !(event.ctrlKey || event.metaKey) || isTyping(event.target)) return;
+      if (document.fullscreenElement !== null || document.querySelector("[aria-modal='true']") !== null) return;
+      const key = event.key.toLowerCase();
+      if (key === "z") {
+        event.preventDefault();
+        dispatch({ type: event.shiftKey ? "redo" : "undo" });
+      } else if (key === "y") {
+        event.preventDefault();
+        dispatch({ type: "redo" });
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [ready]);
+
   const pictureUrl = pictureFailed
     ? null
     : saved?.referenceAt
@@ -195,16 +218,8 @@ export function ZoneEditor() {
   }
 
   function onKeyDown(event: React.KeyboardEvent) {
-    if (isTyping(event.target)) return; // let a text field have its own undo, Delete and Escape
-    const withModifier = event.ctrlKey || event.metaKey;
-    const key = event.key.toLowerCase();
-    if (withModifier && key === "z") {
-      event.preventDefault();
-      dispatch({ type: event.shiftKey ? "redo" : "undo" });
-    } else if (withModifier && key === "y") {
-      event.preventDefault();
-      dispatch({ type: "redo" });
-    } else if ((event.key === "Delete" || event.key === "Backspace") && state.selection) {
+    if (isTyping(event.target)) return; // let a text field have its own Delete and Escape
+    if ((event.key === "Delete" || event.key === "Backspace") && state.selection) {
       // Only when the focus is on the picture or the list: a press on a button elsewhere is not about this.
       if (event.target instanceof Element && event.target.closest("[data-testid='zone-canvas'], [aria-label='Lines and zones']")) {
         event.preventDefault();
@@ -243,7 +258,7 @@ export function ZoneEditor() {
 
         {open && saved !== null && (
           <CardBody className="pt-0">
-            {/* The keyboard shortcuts (undo, redo, Delete, Escape) apply anywhere in the editor. */}
+            {/* Delete and Escape apply anywhere in the editor (undo and redo anywhere on the page). */}
             <div role="group" aria-label="Lines and zones editor" onKeyDown={onKeyDown}>
               <p id={introId} className="mb-3 max-w-3xl text-sm text-ink-2">
                 A <strong className="font-medium text-ink">counting line</strong> counts the vehicles that cross it.{" "}
