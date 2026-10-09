@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import os
 from collections.abc import Iterable
 from functools import lru_cache
 from html.parser import HTMLParser
@@ -19,7 +20,7 @@ from pathlib import Path
 
 from starlette.concurrency import run_in_threadpool
 from starlette.responses import FileResponse, Response
-from starlette.staticfiles import StaticFiles
+from starlette.staticfiles import PathLike, StaticFiles
 from starlette.types import Scope
 
 
@@ -81,16 +82,34 @@ def _inline_script_hashes(path: str, mtime_ns: int, size: int) -> tuple[str, ...
     return tuple(dict.fromkeys(script_source(text) for text in parser.scripts if text))
 
 
+def _set_policy(response: Response, path: str | Path, stat: os.stat_result) -> None:
+    """Put the Content-Security-Policy that fits an HTML file on the response that sends it."""
+    if str(path).endswith(".html"):
+        hashes = _inline_script_hashes(str(path), stat.st_mtime_ns, stat.st_size)
+        response.headers["Content-Security-Policy"] = content_security_policy(hashes)
+
+
 class DashboardFiles(StaticFiles):
-    """The exported dashboard, every HTML page with a policy that fits its own inline scripts."""
+    """The exported dashboard, every HTML page with a policy that fits its own inline scripts.
+
+    The policy goes on the "304 Not Modified" that answers a reload as well as on the page: a
+    browser merges the headers of a 304 into the page it has kept, so a 304 with the plain policy
+    (no inline script allowed) left the reloaded page blank.
+    """
+
+    def file_response(
+        self, full_path: PathLike, stat_result: os.stat_result, scope: Scope, status_code: int = 200
+    ) -> Response:
+        response = super().file_response(full_path, stat_result, scope, status_code)
+        _set_policy(
+            response, str(full_path), stat_result
+        )  # a 200, or the 304 that answers a reload
+        return response
 
     async def get_response(self, path: str, scope: Scope) -> Response:
         response = await super().get_response(path, scope)
-        # (The not-found page does not come through file_response, so look at what comes back.)
-        if isinstance(response, FileResponse) and str(response.path).endswith(".html"):
+        # The not-found page does not come through file_response, so look at what comes back.
+        if isinstance(response, FileResponse) and response.status_code == 404:
             stat = response.stat_result or Path(response.path).stat()
-            hashes = await run_in_threadpool(
-                _inline_script_hashes, str(response.path), stat.st_mtime_ns, stat.st_size
-            )
-            response.headers["Content-Security-Policy"] = content_security_policy(hashes)
+            await run_in_threadpool(_set_policy, response, str(response.path), stat)
         return response

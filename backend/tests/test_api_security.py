@@ -355,6 +355,23 @@ def test_a_rebuilt_page_gets_a_new_policy_without_restarting_the_server(
     assert script_hash("replaced()") in scripts and script_hash(HISTORY_SCRIPT) not in scripts
 
 
+def test_a_page_that_is_revalidated_keeps_its_own_policy(site_client: TestClient) -> None:
+    """A reload asks the server whether the page has changed, and the answer is a 304 with no body.
+    A browser merges the headers of that answer into the page it has kept, so a 304 that carried the
+    default policy (which allows no inline script) made the reloaded page blank. A browser found this
+    on the first reload; a test that only ever fetches each page once could not."""
+    first = site_client.get("/history/")
+    assert first.status_code == 200
+    expected = policy_of(first)["script-src"]
+    again = site_client.get("/history/", headers={"If-None-Match": first.headers["etag"]})
+    assert again.status_code == 304
+    assert policy_of(again)["script-src"] == expected
+    by_date = site_client.get(
+        "/history/", headers={"If-Modified-Since": first.headers["last-modified"]}
+    )
+    assert by_date.status_code == 304 and policy_of(by_date)["script-src"] == expected
+
+
 def test_files_that_are_not_pages_and_the_api_allow_no_inline_script_at_all(
     site_client: TestClient,
 ) -> None:
