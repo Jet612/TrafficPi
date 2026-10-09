@@ -1,0 +1,12 @@
+# TrafficPi nightly reboot: started only by trafficpi-reboot.timer, and only if you asked for it
+# (scripts/install_services.sh --reboot-at).
+[Unit]
+Description=Reboot the TrafficPi (nightly)
+
+[Service]
+Type=oneshot
+# Do nothing if the Pi came up less than ten minutes ago (a power cut just before the hour, or a
+# clock that was set late and jumped over it), so that a reboot cannot follow a reboot.
+ExecCondition=/usr/bin/awk 'BEGIN { getline up < "/proc/uptime"; exit !(up + 0 >= 600) }'
+# The services get their stop signal first: the vision service writes what it holds and leaves.
+ExecStart=/usr/bin/systemctl reboot

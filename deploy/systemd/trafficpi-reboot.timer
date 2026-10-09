@@ -1,0 +1,13 @@
+# Starts trafficpi-reboot.service every day. @REBOOT_AT@ is filled in by scripts/install_services.sh.
+[Unit]
+Description=Reboot the TrafficPi every day at @REBOOT_AT@
+
+[Timer]
+# On the Pi's own clock (timedatectl shows its time zone).
+OnCalendar=*-*-* @REBOOT_AT@:00
+# A reboot that fell while the Pi was off is not made up for when it next starts.
+Persistent=no
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target
