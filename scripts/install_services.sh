@@ -22,6 +22,12 @@
 #   --backup-keep N     how many daily backups stay (default 7)
 #   --backup-to DIR     put them in DIR (an existing folder of yours: a USB disk, a mounted share)
 #   --backup-off        take the daily backup out again and do nothing else
+#   --trust-proxy       also tell the API to believe the client address that a proxy on this machine
+#                       (cloudflared) passes on, instead of 127.0.0.1 for everyone: it writes the
+#                       drop-in /etc/systemd/system/trafficpi-api.service.d/10-remote.conf. Needed
+#                       for the login limits to tell visitors apart behind a Cloudflare Tunnel; see
+#                       docs/remote-access.md. Use --restart with --enable to apply it now
+#   --trust-proxy-off   take that drop-in out again and do nothing else
 #   --persistent-journal  also keep the journal across reboots, at most 256 MB and a month of it.
 #                       Raspberry Pi OS keeps it in RAM, so the log of a reboot (the nightly one
 #                       included) is gone afterwards and `journalctl -b -1` shows nothing
@@ -45,6 +51,8 @@ backup_keep=7
 backup_to=""
 journal=0
 journal_conf=/etc/systemd/journald.conf.d/50-trafficpi.conf
+trust_proxy=0
+remote_conf=/etc/systemd/system/trafficpi-api.service.d/10-remote.conf
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -58,6 +66,8 @@ while [[ $# -gt 0 ]]; do
     --backup-keep) backup_keep="${2:?--backup-keep wants a number}"; shift ;;
     --backup-to) backup_to="${2:?--backup-to wants a folder}"; shift ;;
     --backup-off) action="backup-off" ;;
+    --trust-proxy) trust_proxy=1 ;;
+    --trust-proxy-off) action="trust-proxy-off" ;;
     --persistent-journal) journal=1 ;;
     --journal-off) action="journal-off" ;;
     --user) user="${2:?--user wants a name}"; shift ;;
@@ -128,6 +138,20 @@ if [[ "$action" == backup-off ]]; then
   exit 0
 fi
 
+remove_remote_conf() {
+  if [[ -e "$remote_conf" ]]; then
+    run sudo rm -f "$remote_conf"
+    run sudo rmdir --ignore-fail-on-non-empty "$(dirname "$remote_conf")"
+    run sudo systemctl daemon-reload
+    echo "$removed $remote_conf: the API no longer believes a proxy about the client's address (restart trafficpi-api to apply)"
+  fi
+}
+
+if [[ "$action" == trust-proxy-off ]]; then
+  remove_remote_conf
+  exit 0
+fi
+
 if [[ "$action" == journal-off ]]; then
   remove_journal_conf
   exit 0
@@ -140,6 +164,7 @@ if [[ "$action" == remove ]]; then
   done
   remove_units trafficpi-reboot.timer "${reboot_units[@]}"
   remove_units trafficpi-backup.timer "${backup_units[@]}"
+  remove_remote_conf
   run sudo systemctl daemon-reload
   remove_journal_conf
   echo "$removed ${units[*]} ${reboot_units[*]} ${backup_units[*]}"
@@ -197,8 +222,14 @@ fi
 if [[ -n "$backup_at" ]]; then
   for unit in "${backup_units[@]}"; do install_unit "$unit"; done
 fi
+if (( trust_proxy )); then
+  printf '%s\n' '# Written by scripts/install_services.sh --trust-proxy (docs/remote-access.md).' \
+    '[Service]' 'Environment=TRAFFICPI_TRUST_PROXY_HEADERS=1' > "$tmp/10-remote.conf"
+  run sudo install -D -m 644 "$tmp/10-remote.conf" "$remote_conf"
+fi
 run sudo systemctl daemon-reload
 echo "$did ${units[*]} (user $user, data in $data_dir)"
+(( ! trust_proxy )) || echo "$did $remote_conf: the API believes the client address that cloudflared passes on"
 [[ -z "$reboot_at" ]] || echo "$did ${reboot_units[*]} (every day at $reboot_at, local time)"
 [[ -z "$backup_at" ]] || echo "$did ${backup_units[*]} (every day at $backup_at, the newest $backup_keep kept in ${backup_to:-$data_dir/backups})"
 

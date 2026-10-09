@@ -1,0 +1,13 @@
+# An example for a tunnel you make from the command line (the way in docs/remote-access.md that
+# uses a token from Cloudflare's dashboard needs no file). Copy it to /etc/cloudflared/config.yml
+# after `cloudflared tunnel login` and `cloudflared tunnel create trafficpi`, and fill in the two
+# places marked. Not tried against a real tunnel.
+tunnel: REPLACE-WITH-THE-TUNNEL-UUID
+credentials-file: /etc/cloudflared/REPLACE-WITH-THE-TUNNEL-UUID.json
+
+ingress:
+  # Your name for the dashboard (also add it with `cloudflared tunnel route dns trafficpi <name>`).
+  - hostname: traffic.example.com
+    service: http://127.0.0.1:8000
+  # Anything else that reaches the tunnel gets a 404.
+  - service: http_status:404

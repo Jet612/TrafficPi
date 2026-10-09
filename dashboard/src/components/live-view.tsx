@@ -5,10 +5,12 @@ import { Maximize2, Minimize2, VideoOff } from "lucide-react";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { useLiveClient, useLiveSelector } from "@/components/live-provider";
+import { useSession } from "@/components/session";
 import { deriveStatus, overlayIsCurrent } from "@/lib/connection-status";
 import { cn } from "@/lib/cn";
 import { usePersistentState } from "@/lib/hooks";
 import type { LiveSnapshot } from "@/lib/live";
+import { STILL_NOTICE, STILL_REFRESH_MS, pictureMode, stillUrl } from "@/lib/remote";
 import { useFullscreen } from "@/lib/use-fullscreen";
 import {
   DEFAULT_OVERLAY,
@@ -44,8 +46,45 @@ function selectNoPicture(snapshot: LiveSnapshot): { label: string; detail?: stri
 const sameReason = (a: ReturnType<typeof selectNoPicture>, b: ReturnType<typeof selectNoPicture>) =>
   a === b || (a !== null && b !== null && a.label === b.label && a.detail === b.detail);
 
+/**
+ * A still picture, fetched again every few seconds: what a viewer who comes through Cloudflare sees
+ * when the owner has not allowed live video for them (plan.md D28). The component is not mounted
+ * while the page is hidden, so nothing is fetched then.
+ */
+function StillPicture({
+  attempt,
+  onAspect,
+  onFailed,
+}: {
+  attempt: number;
+  onAspect: (aspect: number) => void;
+  onFailed: () => void;
+}) {
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => setN((value) => value + 1), STILL_REFRESH_MS);
+    return () => clearInterval(timer);
+  }, []);
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      key={attempt}
+      src={stillUrl(n)}
+      alt="Still picture of the street, renewed every few seconds"
+      className="absolute inset-0 size-full object-fill"
+      onLoad={(event) => {
+        const { naturalWidth, naturalHeight } = event.currentTarget;
+        if (naturalWidth > 0 && naturalHeight > 0) onAspect(naturalWidth / naturalHeight);
+      }}
+      onError={onFailed}
+    />
+  );
+}
+
 export function LiveView() {
   const client = useLiveClient();
+  const { liveVideo } = useSession();
+  const still = pictureMode(liveVideo) === "still";
   const [stored, setPrefs] = usePersistentState<Partial<Prefs>>("trafficpi.live-view", DEFAULT_PREFS);
   // Settings saved before a switch existed lack it: the default fills the gap.
   const prefs = useMemo<Prefs>(() => ({ ...DEFAULT_PREFS, ...stored }), [stored]);
@@ -94,7 +133,8 @@ export function LiveView() {
         lines: state?.lines ?? [],
         zones: state?.zones ?? [],
         stopSigns: state?.stop_signs ?? [],
-        tracks: current && state ? state.tracks : [],
+        // A still is seconds old: boxes drawn from the live data would sit beside the vehicles.
+        tracks: current && state && !still ? state.tracks : [],
       };
       drawOverlay(ctx, size, scene, prefs, drawn, colors);
     };
@@ -135,11 +175,11 @@ export function LiveView() {
       scheme.removeEventListener("change", onScheme);
       cancelAnimationFrame(pending);
     };
-  }, [client, prefs]);
+  }, [client, prefs, still]);
 
   const showStream = prefs.video && visible && noPicture === null && !streamFailed;
   const placeholder = !prefs.video
-    ? { label: "Video is off", detail: "Boxes, lines and zones still show what the camera sees." }
+    ? { label: still ? "Picture is off" : "Video is off", detail: "Boxes, lines and zones still show what the camera sees." }
     : !visible
       ? { label: "Paused while the page is hidden" }
       : streamFailed
@@ -153,7 +193,7 @@ export function LiveView() {
       <CardHeader>
         <CardTitle>Live view</CardTitle>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2" role="group" aria-label="What to show">
-          <Switch label="Video" checked={prefs.video} onChange={(video) => set({ video })} />
+          <Switch label={still ? "Picture" : "Video"} checked={prefs.video} onChange={(video) => set({ video })} />
           <Switch label="Boxes" checked={prefs.boxes} onChange={(boxes) => set({ boxes })} />
           <Switch label="Labels" checked={prefs.labels} onChange={(labels) => set({ labels })} />
           <Switch label="Trails" checked={prefs.trails} onChange={(trails) => set({ trails })} />
@@ -179,7 +219,10 @@ export function LiveView() {
             className={cn("relative touch-manipulation overflow-hidden bg-[#0b0b0b]", fullscreen.active ? "" : "w-full rounded-lg")}
             style={{ aspectRatio: aspect, width: fullscreen.active ? `min(100vw, calc(100dvh * ${aspect}))` : undefined }}
           >
-            {showStream && (
+            {showStream && still && (
+              <StillPicture attempt={attempt} onAspect={setAspect} onFailed={() => setStreamFailed(true)} />
+            )}
+            {showStream && !still && (
               // An <img> is how a browser plays an MJPEG stream, and Next's image component cannot.
               // eslint-disable-next-line @next/next/no-img-element
               <img
@@ -216,6 +259,11 @@ export function LiveView() {
             </button>
           </div>
         </div>
+        {still && (
+          <p data-testid="still-notice" className="mt-3 text-sm text-ink-2">
+            {STILL_NOTICE}
+          </p>
+        )}
         <LiveFooter />
       </CardBody>
     </Card>

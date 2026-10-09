@@ -52,7 +52,7 @@ def test_the_user_made_by_the_command_can_log_in(
     with TestClient(app) as client:
         login = {"username": "owner", "password": PASSWORD}
         assert client.post("/api/auth/login", json=login).status_code == 204
-        assert client.get("/api/auth/me").json() == {"username": "owner"}
+        assert client.get("/api/auth/me").json()["username"] == "owner"
 
 
 def test_a_short_password_or_an_empty_username_is_refused(

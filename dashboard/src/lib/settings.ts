@@ -22,6 +22,7 @@ export interface SettingsDraft {
   evidenceMb: string;
   rollingClipHours: string;
   didNotStopClipHours: string;
+  remoteLiveVideo: boolean;
 }
 
 export function toDraft(settings: Settings): SettingsDraft {
@@ -36,6 +37,7 @@ export function toDraft(settings: Settings): SettingsDraft {
     evidenceMb: String(settings.evidence_max_mb),
     rollingClipHours: String(settings.evidence_rolling_clip_hours),
     didNotStopClipHours: String(settings.evidence_did_not_stop_clip_hours),
+    remoteLiveVideo: settings.remote_live_video,
   };
 }
 
@@ -94,6 +96,7 @@ export function fromDraft(draft: SettingsDraft): DraftResult {
       evidence_max_mb: evidenceMb,
       evidence_rolling_clip_hours: rollingHours,
       evidence_did_not_stop_clip_hours: didNotStopHours,
+      remote_live_video: draft.remoteLiveVideo,
     },
   };
 }

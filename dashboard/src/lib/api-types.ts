@@ -625,6 +625,16 @@ export interface components {
         };
         /** Me */
         Me: {
+            /**
+             * Live Video
+             * @default true
+             */
+            live_video: boolean;
+            /**
+             * Remote
+             * @default false
+             */
+            remote: boolean;
             /** Username */
             username: string;
         };
@@ -734,6 +744,8 @@ export interface components {
             evidence_max_mb: number;
             /** Evidence Rolling Clip Hours */
             evidence_rolling_clip_hours: number;
+            /** Remote Live Video */
+            remote_live_video: boolean;
             /** Timezone */
             timezone: string;
             /** Trails Enabled */

@@ -5,6 +5,7 @@ type Schemas = components["schemas"];
 
 // Shapes of the REST API, generated from its OpenAPI schema (scripts/gen_api_types.sh).
 export type AuthState = Schemas["AuthState"];
+export type Me = Schemas["Me"];
 export type StatusResponse = Schemas["StatusResponse"];
 export type TodaySummary = Schemas["TodaySummary"];
 export type LineTotals = Schemas["LineTotals"];

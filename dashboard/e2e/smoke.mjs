@@ -1531,6 +1531,7 @@ try {
         evidence_max_mb: 1500,
         evidence_rolling_clip_hours: 6,
         evidence_did_not_stop_clip_hours: 72,
+        remote_live_video: original.remote_live_video,
       });
       assert.equal(await save.isDisabled(), true, "saved, so nothing left to save");
       await page.reload();
@@ -1551,6 +1552,93 @@ try {
       await page.evaluate(async (settings) => {
         await fetch("/api/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(settings) });
       }, original);
+    }
+    assert.deepEqual(await readSettings(), original);
+  });
+
+  await step("a viewer who comes through Cloudflare gets a still picture and not the stream, until the owner allows it", async () => {
+    // A second browser whose every request carries what Cloudflare adds to those it passes on.
+    const remoteContext = await browser.newContext({
+      viewport: { width: 1280, height: 900 },
+      extraHTTPHeaders: { "CF-Ray": "e2e0123456789abc-EWR", "CF-Connecting-IP": "203.0.113.9" },
+    });
+    const remote = await remoteContext.newPage();
+    remote.setDefaultTimeout(20_000);
+    const asked = []; // the picture requests this viewer made, and how they were answered
+    remote.on("response", (response) => {
+      const path = new URL(response.url()).pathname;
+      if (path === "/api/preview.mjpg" || path === "/api/snapshot.jpg") asked.push(`${path} ${response.status()}`);
+    });
+    remote.on("pageerror", (error) => problems.push(`uncaught (remote viewer): ${error.message}`));
+    remote.on("console", (message) => {
+      if (message.type() === "error") problems.push(`console (remote viewer): ${message.text()}`);
+    });
+    const until = async (condition, what) => {
+      for (let i = 0; i < 150; i++) {
+        if (condition()) return;
+        await remote.waitForTimeout(100);
+      }
+      assert.fail(`never happened: ${what}; the viewer's picture requests were ${JSON.stringify(asked)}`);
+    };
+    const readSettings = () => page.evaluate(async () => (await fetch("/api/settings")).json());
+    const statusOfStream = (where) =>
+      where.evaluate(async () => {
+        const controller = new AbortController();
+        const response = await fetch("/api/preview.mjpg", { signal: controller.signal });
+        controller.abort(); // the stream never ends; its status is what is wanted
+        return response.status;
+      });
+    const original = await readSettings();
+    assert.equal(original.remote_live_video, false, "live video for remote viewers starts off");
+    try {
+      await remote.goto(`${base}/`);
+      await remote.getByLabel("Username").fill(user);
+      await remote.getByLabel("Password").fill(password);
+      await remote.getByRole("button", { name: "Sign in" }).click();
+      await remote.getByRole("heading", { name: "Live view" }).waitFor();
+
+      // a still picture, with the reason; the stream is never even asked for
+      const notice = remote.getByTestId("still-notice");
+      await notice.waitFor();
+      assert.match(await notice.innerText(), /Cloudflare/);
+      await remote.getByRole("img", { name: /Still picture of the street/ }).waitFor();
+      await until(() => asked.includes("/api/snapshot.jpg 200"), "a still picture arrives");
+      assert.deepEqual(asked.filter((entry) => entry.startsWith("/api/preview")), [], "the stream was not asked for");
+      await remote.getByRole("switch", { name: "Picture" }).waitFor(); // the switch says what it switches
+      if (shots) await remote.screenshot({ path: `${shots}/remote-still.png`, fullPage: true });
+
+      // the same viewer asking for the stream by hand is refused, and the person at home is not
+      assert.equal(await statusOfStream(remote), 403);
+      assert.equal(await statusOfStream(page), 200);
+
+      // the viewer is told on the Setup page that this is through Cloudflare, and where the switch is
+      await remote.getByRole("link", { name: "Setup", exact: true }).click();
+      await remote.getByRole("form", { name: "Settings" }).waitFor();
+      await remote.getByText("You are looking at this page through Cloudflare now.").waitFor();
+      await remote.getByRole("switch", { name: "Allow live video for viewers who come through Cloudflare" }).waitFor();
+
+      // the owner allows it (from home, here), and the viewer's next page has the stream
+      await goTo("Setup");
+      const allow = page.getByRole("switch", { name: "Allow live video for viewers who come through Cloudflare" });
+      assert.equal(await allow.getAttribute("aria-checked"), "false");
+      await allow.click();
+      await page.getByText("Settings not saved yet").waitFor();
+      await page.getByRole("button", { name: "Save settings" }).click();
+      await page.getByRole("status").filter({ hasText: "Saved." }).waitFor();
+      assert.equal((await readSettings()).remote_live_video, true);
+      assert.equal(await statusOfStream(remote), 200, "the stream is open to the remote viewer now");
+      asked.length = 0;
+      await remote.goto(`${base}/`);
+      await remote.getByRole("heading", { name: "Live view" }).waitFor();
+      await until(() => asked.includes("/api/preview.mjpg 200"), "the stream arrives");
+      assert.equal(await remote.getByTestId("still-notice").count(), 0, "no more notice of a still");
+      assert.deepEqual(asked.filter((entry) => entry.startsWith("/api/snapshot")), [], "and no stills");
+      await remote.getByRole("switch", { name: "Video" }).waitFor();
+    } finally {
+      await page.evaluate(async (settings) => {
+        await fetch("/api/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(settings) });
+      }, original);
+      await remoteContext.close();
     }
     assert.deepEqual(await readSettings(), original);
   });

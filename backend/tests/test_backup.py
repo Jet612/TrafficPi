@@ -504,9 +504,8 @@ def test_the_restored_files_log_in_as_before(tmp_path: Path) -> None:
     backup.restore_backup(archive, fresh, now=NOW)
     with TestClient(create_app(ApiSettings(data_dir=fresh, dashboard_dir=None))) as c:
         c.cookies.set("trafficpi_session", cookie)
-        assert c.get("/api/auth/me").json() == {
-            "username": "admin"
-        }  # same key, same user, same hash
+        # same key, same user, same hash
+        assert c.get("/api/auth/me").json()["username"] == "admin"
 
 
 def test_without_a_given_time_a_backup_is_named_by_the_utc_clock(

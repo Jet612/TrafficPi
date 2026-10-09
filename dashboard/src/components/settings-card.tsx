@@ -7,6 +7,7 @@ import { Input, Label } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/segmented";
 import { StatusBadge } from "@/components/ui/status";
 import { Switch } from "@/components/ui/switch";
+import { useSession } from "@/components/session";
 import { useUnsavedWarning } from "@/components/unsaved";
 import { ApiError, api } from "@/lib/api";
 import {
@@ -48,6 +49,7 @@ function knownZones(): string[] {
 }
 
 export function SettingsCard() {
+  const { remote, recheck } = useSession();
   const [saved, setSaved] = useState<Settings | null>(null);
   const [draft, setDraft] = useState<SettingsDraft | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -110,6 +112,7 @@ export function SettingsCard() {
       setSaved(stored);
       setDraft(toDraft(stored));
       setOutcome({ kind: "ok", text: "Saved." });
+      recheck(); // whether the live view may show video can have changed with this
     } catch (error) {
       setOutcome({ kind: "error", text: error instanceof ApiError ? error.message : "Could not save." });
     } finally {
@@ -203,6 +206,24 @@ export function SettingsCard() {
                     {days === null ? `A whole number of days, from 1 to ${MAX_KEEP_DAYS}.` : `Kept for ${roughly(days)}. Older trails are deleted by themselves.`}
                   </p>
                 </div>
+              </fieldset>
+
+              <fieldset className="grid content-start gap-3">
+                <legend className="mb-1 text-sm font-medium text-ink">Viewers who come through Cloudflare</legend>
+                <p className="text-sm text-ink-2">
+                  If you reach this dashboard from outside through a Cloudflare Tunnel, the numbers, the charts, the pictures and the boxes work as usual, but the
+                  continuous live video is held back and a still picture, renewed every few seconds, is shown instead. Cloudflare&rsquo;s terms let it limit video on its
+                  network without a paid plan, and they do not say whether a Tunnel counts. People on your own network always get the live video.
+                </p>
+                <Switch
+                  label="Allow live video for viewers who come through Cloudflare"
+                  checked={draft.remoteLiveVideo}
+                  onChange={(remoteLiveVideo) => change({ remoteLiveVideo })}
+                />
+                <p className="text-sm text-ink-2">
+                  Read Cloudflare&rsquo;s terms first; docs/remote-access.md says where.
+                  {remote && " You are looking at this page through Cloudflare now."}
+                </p>
               </fieldset>
             </div>
 

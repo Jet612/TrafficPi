@@ -153,7 +153,7 @@ def test_login_sets_a_strict_http_only_cookie_and_me_works(client: TestClient) -
     cookie = response.headers["set-cookie"].lower()
     assert COOKIE_NAME in cookie and "httponly" in cookie and "samesite=strict" in cookie
     assert "secure" not in cookie  # plain HTTP on the LAN
-    assert client.get("/api/auth/me").json() == {"username": "admin"}
+    assert client.get("/api/auth/me").json()["username"] == "admin"
 
 
 def test_the_cookie_is_secure_behind_https(client: TestClient) -> None:
@@ -186,7 +186,7 @@ def test_a_forged_or_tampered_cookie_is_refused(client: TestClient) -> None:
 def test_the_username_is_not_case_sensitive(client: TestClient) -> None:
     login = {"username": "  Admin ", "password": PASSWORD}  # as a phone keyboard might send it
     assert client.post("/api/auth/login", json=login).status_code == 204
-    assert client.get("/api/auth/me").json() == {"username": "admin"}
+    assert client.get("/api/auth/me").json()["username"] == "admin"
 
 
 def test_a_new_password_ends_the_sessions_made_with_the_old_one(
@@ -229,9 +229,8 @@ def test_a_weak_old_hash_is_upgraded_at_login_and_the_session_still_works(
         assert (
             user is not None and user.password_hash != weak and not needs_rehash(user.password_hash)
         )
-        assert c.get("/api/auth/me").json() == {
-            "username": "admin"
-        }  # the cookie matches the new hash
+        # the cookie matches the new hash
+        assert c.get("/api/auth/me").json()["username"] == "admin"
 
 
 def test_a_session_for_a_deleted_user_stops_working(logged_in: TestClient, store: Store) -> None:
@@ -650,6 +649,7 @@ def settings(**over: object) -> dict[str, object]:
         "evidence_max_mb": 2048,
         "evidence_rolling_clip_hours": 3,
         "evidence_did_not_stop_clip_hours": 48,
+        "remote_live_video": False,
         **over,
     }
 

@@ -431,6 +431,16 @@
       },
       "Me": {
         "properties": {
+          "live_video": {
+            "default": true,
+            "title": "Live Video",
+            "type": "boolean"
+          },
+          "remote": {
+            "default": false,
+            "title": "Remote",
+            "type": "boolean"
+          },
           "username": {
             "title": "Username",
             "type": "string"
@@ -726,6 +736,10 @@
             "title": "Evidence Rolling Clip Hours",
             "type": "integer"
           },
+          "remote_live_video": {
+            "title": "Remote Live Video",
+            "type": "boolean"
+          },
           "timezone": {
             "title": "Timezone",
             "type": "string"
@@ -763,7 +777,8 @@
           "evidence_keep_days",
           "evidence_max_mb",
           "evidence_rolling_clip_hours",
-          "evidence_did_not_stop_clip_hours"
+          "evidence_did_not_stop_clip_hours",
+          "remote_live_video"
         ],
         "title": "Settings",
         "type": "object"

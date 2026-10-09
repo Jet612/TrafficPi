@@ -128,6 +128,13 @@ def _by_https(request: Request) -> bool:
     )
 
 
+def _via_cloudflare(request: Request) -> bool:
+    """Whether the request came through Cloudflare, which puts these headers on every request it
+    passes to the origin. This only holds back bandwidth (plan.md D28); it is no login. A client
+    on the LAN that writes the header itself only restricts itself."""
+    return "cf-ray" in request.headers or "cf-connecting-ip" in request.headers
+
+
 def _address(text: str) -> str | None:
     """The address a header names, in its usual spelling, or None if it names none."""
     try:
@@ -425,9 +432,13 @@ def create_app(
 
     # --- authenticated ---------------------------------------------------------------------------
 
+    def remote_video_allowed() -> bool:
+        return ctx.store.get_setting("remote_live_video", False) is True
+
     @app.get("/api/auth/me", response_model=Me)
-    def me(user: User) -> Me:
-        return Me(username=user)
+    def me(user: User, request: Request) -> Me:
+        remote = _via_cloudflare(request)
+        return Me(username=user, remote=remote, live_video=not remote or remote_video_allowed())
 
     @app.get("/api/status", response_model=StatusResponse)
     async def status(user: User) -> StatusResponse:
@@ -724,6 +735,7 @@ def create_app(
             evidence_max_mb=evidence.max_mb,
             evidence_rolling_clip_hours=evidence.rolling_clip_hours,
             evidence_did_not_stop_clip_hours=evidence.did_not_stop_clip_hours,
+            remote_live_video=remote_video_allowed(),
         )
 
     @app.put("/api/settings", response_model=Settings)
@@ -736,6 +748,7 @@ def create_app(
             ) from exc
         ctx.store.set_setting("timezone", body.timezone)
         ctx.store.set_setting("units", body.units)
+        ctx.store.set_setting("remote_live_video", body.remote_live_video)
         ctx.store.set_trail_settings(
             TrailSettings(
                 enabled=body.trails_enabled,
@@ -765,7 +778,15 @@ def create_app(
             raise HTTPException(status_code=503, detail="camera unavailable") from exc
 
     @app.get("/api/preview.mjpg")
-    async def preview(user: User) -> StreamingResponse:
+    async def preview(request: Request, user: User) -> StreamingResponse:
+        if _via_cloudflare(request) and not remote_video_allowed():
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "live video is off for viewers who come through Cloudflare; the owner can "
+                    "switch it on in Settings"
+                ),
+            )
         try:
             content_type, chunks = await ctx.vision.open_preview()
         except VisionUnavailable as exc:

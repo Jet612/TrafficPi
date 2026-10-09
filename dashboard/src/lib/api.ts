@@ -1,6 +1,7 @@
 import type {
   AuthState,
   EventOut,
+  Me,
   Profile,
   ProfileCheck,
   ProfileOut,
@@ -114,7 +115,7 @@ export function stopsQuery(query: StopsQuery): string {
 
 export const api = {
   authState: () => request<AuthState>("GET", "/api/auth/state"),
-  me: () => request<{ username: string }>("GET", "/api/auth/me"),
+  me: () => request<Me>("GET", "/api/auth/me"),
   login: (username: string, password: string) =>
     request<void>("POST", "/api/auth/login", { username, password }),
   logout: () => request<void>("POST", "/api/auth/logout"),

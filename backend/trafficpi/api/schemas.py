@@ -23,6 +23,10 @@ class AuthState(BaseModel):
 
 class Me(BaseModel):
     username: str
+    # Whether the request came through Cloudflare (plan.md D28), and whether this viewer may open
+    # the continuous live stream: always on the LAN, and from outside only if the owner allowed it.
+    remote: bool = False
+    live_video: bool = True
 
 
 class LineTotals(BaseModel):
@@ -262,6 +266,9 @@ class Settings(BaseModel):
     # that did not stop, is kept; sooner than the days, to spare the disk. The counts stay for ever.
     evidence_rolling_clip_hours: int = Field(strict=True, ge=1, le=MAX_CLIP_HOURS)
     evidence_did_not_stop_clip_hours: int = Field(strict=True, ge=1, le=MAX_CLIP_HOURS)
+    # May viewers who come through Cloudflare open the continuous live stream? Off: Cloudflare's
+    # terms let it limit video on its CDN and do not say whether a Tunnel counts (plan.md D28).
+    remote_live_video: bool = Field(strict=True)
 
 
 class TrailHour(BaseModel):
