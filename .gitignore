@@ -18,8 +18,11 @@ dashboard/next-env.d.ts
 *.tsbuildinfo
 .pnpm-store/
 
-# Runtime data and local artifacts: database, clips, snapshots, recordings, logs
-data/
+# Runtime data and local artifacts: database, clips, snapshots, recordings, logs. The data
+# directories are named in full: a bare `data/` would also hide backend/tests/data, whose test
+# cases both the Python and the TypeScript tests read.
+/data/
+/backend/data/
 *.log
 hailort.log
 

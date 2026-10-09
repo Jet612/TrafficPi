@@ -1,0 +1,103 @@
+{
+  "_about": "Shared by backend/tests/test_geometry.py and dashboard/src/lib/geometry.test.ts. The backend (core/geometry.py) and the zone editor (dashboard/src/lib/geometry.ts) must agree on what a usable outline is, so both are checked against these cases. 'simple' is Polygon.is_simple(); 'area' is Polygon.area(); each 'inside' entry is [x, y, expected] for Polygon.contains (the boundary counts as inside).",
+  "cases": [
+    {
+      "name": "square",
+      "points": [[0.2, 0.2], [0.8, 0.2], [0.8, 0.8], [0.2, 0.8]],
+      "simple": true,
+      "area": 0.36,
+      "inside": [[0.5, 0.5, true], [0.1, 0.5, false], [0.2, 0.5, true], [0.2, 0.2, true], [0.9, 0.9, false]]
+    },
+    {
+      "name": "square, the other way round",
+      "points": [[0.2, 0.8], [0.8, 0.8], [0.8, 0.2], [0.2, 0.2]],
+      "simple": true,
+      "area": 0.36,
+      "inside": [[0.5, 0.5, true], [0.1, 0.5, false]]
+    },
+    {
+      "name": "L shape",
+      "points": [[0, 0], [0.6, 0], [0.6, 0.3], [0.3, 0.3], [0.3, 0.6], [0, 0.6]],
+      "simple": true,
+      "area": 0.27,
+      "inside": [[0.1, 0.5, true], [0.5, 0.1, true], [0.5, 0.5, false], [0.3, 0.3, true]]
+    },
+    {
+      "name": "triangle",
+      "points": [[0.1, 0.1], [0.9, 0.2], [0.5, 0.9]],
+      "simple": true,
+      "area": 0.3,
+      "inside": [[0.5, 0.4, true], [0.1, 0.9, false]]
+    },
+    {
+      "name": "a straight run split into two edges",
+      "points": [[0.2, 0.2], [0.5, 0.2], [0.8, 0.2], [0.8, 0.8], [0.2, 0.8]],
+      "simple": true,
+      "area": 0.36,
+      "inside": [[0.5, 0.5, true], [0.5, 0.2, true]]
+    },
+    {
+      "name": "bow tie",
+      "points": [[0.2, 0.2], [0.8, 0.8], [0.8, 0.2], [0.2, 0.8]],
+      "simple": false,
+      "area": 0,
+      "inside": []
+    },
+    {
+      "name": "a corner dragged across the opposite side",
+      "points": [[0.2, 0.2], [0.8, 0.2], [0.8, 0.8], [0.5, 0.1]],
+      "simple": false,
+      "area": null,
+      "inside": []
+    },
+    {
+      "name": "a corner resting on a non-neighbouring edge",
+      "points": [[0.2, 0.2], [0.8, 0.2], [0.8, 0.8], [0.5, 0.2], [0.2, 0.8]],
+      "simple": false,
+      "area": null,
+      "inside": []
+    },
+    {
+      "name": "pinched at a point (figure of eight)",
+      "points": [[0.2, 0.2], [0.5, 0.5], [0.8, 0.2], [0.8, 0.8], [0.5, 0.5], [0.2, 0.8]],
+      "simple": false,
+      "area": null,
+      "inside": []
+    },
+    {
+      "name": "a repeated point",
+      "points": [[0.2, 0.2], [0.2, 0.2], [0.8, 0.2], [0.8, 0.8]],
+      "simple": false,
+      "area": null,
+      "inside": []
+    },
+    {
+      "name": "an edge that doubles back along the one before it",
+      "points": [[0.2, 0.2], [0.8, 0.2], [0.5, 0.2], [0.5, 0.8]],
+      "simple": false,
+      "area": null,
+      "inside": []
+    },
+    {
+      "name": "the closing edge doubles back over the first",
+      "points": [[0.2, 0.2], [0.8, 0.2], [0.8, 0.8], [0.5, 0.2]],
+      "simple": false,
+      "area": null,
+      "inside": []
+    },
+    {
+      "name": "flat (all corners on one line)",
+      "points": [[0.1, 0.1], [0.5, 0.5], [0.9, 0.9]],
+      "simple": false,
+      "area": 0,
+      "inside": []
+    },
+    {
+      "name": "the whole picture",
+      "points": [[0, 0], [1, 0], [1, 1], [0, 1]],
+      "simple": true,
+      "area": 1,
+      "inside": [[0.5, 0.5, true], [0, 0, true], [1, 1, true], [1, 0.5, true]]
+    }
+  ]
+}
