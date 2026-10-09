@@ -410,7 +410,7 @@ class VisionService:
                 if isinstance(event, CountEvent | StopEvent):
                     self._record(event, now_ms)
             self._follow_trails(result, now_ms)
-            if self._evidence is not None:
+            if self._evidence is not None and self._stop_signs:  # nothing to show without a sign
                 self._evidence.feed(frame.timestamp_ns, frame.image, result.tracks)
             if self._evidence is not None or self._evidence_waiting:
                 self._note_evidence()

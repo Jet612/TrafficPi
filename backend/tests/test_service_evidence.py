@@ -410,6 +410,15 @@ def test_the_cleanup_runs_once_an_interval_and_not_at_every_frame(
     assert len(calls) == times
 
 
+def test_frames_are_kept_only_while_there_is_a_stop_sign_to_show(
+    store: Store, tmp_path: Path, recorder: Recorded
+) -> None:
+    store.set_profile({"stop_signs": []})
+    run([[] for _ in range(60)], store, tmp_path, recorder)
+    assert recorder._incoming.qsize() == 0 and len(recorder._ring) == 0
+    assert recorder.frames_dropped == 0
+
+
 def test_the_recorder_is_stopped_when_the_service_is(
     store: Store, tmp_path: Path, recorder: Recorded
 ) -> None:

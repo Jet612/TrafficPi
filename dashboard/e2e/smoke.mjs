@@ -859,9 +859,9 @@ try {
       // The vision service writes the picture and the clip a few seconds after the pass, and the list is asked again every 15 s.
       await eventually(async () => assert.ok((await clipButtons().count()) >= 1, "a pass is listed with its clip"), "evidence is kept of a pass", 90_000);
 
-      const opener = clipButtons().first();
-      const name = await opener.getAttribute("aria-label");
+      const name = await clipButtons().first().getAttribute("aria-label");
       assert.ok(name, "the thumbnail says which pass it is of");
+      const opener = passes.getByRole("button", { name }); // by its name: the list may be asked again, and the newest change
       const picture = opener.locator("img");
       await eventually(async () => assert.ok((await picture.evaluate((img) => img.complete && img.naturalWidth)) >= 320, "the picture has loaded"));
       const snapshotUrl = await picture.getAttribute("src");
@@ -937,10 +937,10 @@ try {
       // Escape closes it, and the keyboard is where it was
       await page.keyboard.press("Escape");
       await viewer.waitFor({ state: "hidden" });
-      assert.equal(await passes.getByRole("button", { name: name ?? "" }).evaluate((el) => el === document.activeElement), true, "focus is back on the picture that was opened");
+      assert.equal(await opener.evaluate((el) => el === document.activeElement), true, "focus is back on the picture that was opened");
 
       // the close button does as much, and so does opening it again
-      await passes.getByRole("button", { name: name ?? "" }).click();
+      await opener.click();
       await page.getByRole("dialog").waitFor();
       await page.getByRole("dialog").getByRole("button", { name: "Close" }).click();
       await page.getByRole("dialog").waitFor({ state: "hidden" });
