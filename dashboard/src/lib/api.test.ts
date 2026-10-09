@@ -66,6 +66,31 @@ describe("api", () => {
     expect([path, init.method, init.body]).toEqual(["/api/profile/reference", "POST", undefined]);
   });
 
+  it("reads the settings and saves all of them at once", async () => {
+    const settings = { timezone: "UTC", units: "mph", trails_enabled: true, trails_people: false, trails_keep_days: 365 };
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(respond(200, settings)));
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await api.settings()).toEqual(settings);
+    expect(await api.saveSettings(settings as never)).toEqual(settings);
+    const [path, init] = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect([path, init.method, init.body]).toEqual(["/api/settings", "PUT", JSON.stringify(settings)]);
+  });
+
+  it("asks for a day by the hour, today if none is named", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(respond(200, { day: "2026-10-09", hours: [] })));
+    vi.stubGlobal("fetch", fetchMock);
+    await api.trailsDay();
+    await api.trailsDay("2026-10-08");
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual(["/api/trails/day", "/api/trails/day?day=2026-10-08"]);
+  });
+
+  it("asks for the paths in a range of time", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(respond(200, { trails: [], scale: 65535 }));
+    vi.stubGlobal("fetch", fetchMock);
+    expect((await api.trails(1000, 2000)).scale).toBe(65535);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/trails?from_ms=1000&to_ms=2000");
+  });
+
   it("names the pictures so that a new one is fetched when it changes", () => {
     expect(referencePictureUrl(123)).toBe("/api/profile/reference.jpg?v=123");
     expect(snapshotUrl(7)).toBe("/api/snapshot.jpg?t=7");

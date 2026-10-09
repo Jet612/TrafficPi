@@ -186,6 +186,10 @@ Users will be able to filter events by date, camera, event type, and vehicle cla
 
 Where recording is enabled, supported events may include snapshots or short video clips for manual review.
 
+### Trails
+
+TrafficPi will save the path every moving vehicle takes through the picture: a few hundred bytes of points, with no video, no face and no number plate. The History page will show a day, or any hours of it, as paths or as a heat map drawn over the camera picture, filtered by kind of vehicle, with the counting lines and zones on top. It will play a day hour by hour and save the picture. It shows how the road is really used, and whether the lines and zones fit it. Trails are kept for a year unless you choose otherwise.
+
 ### Camera Management
 
 A dedicated settings interface will allow users to configure each camera, including detection modes, monitoring zones, recording preferences, and calibration settings.

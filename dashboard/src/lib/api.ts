@@ -7,8 +7,11 @@ import type {
   ProfileSaved,
   ReferenceSaved,
   SeriesPoint,
+  Settings,
   StatusResponse,
   TodaySummary,
+  TrailDay,
+  TrailPaths,
 } from "./types";
 
 /** An answer that is not a success. Status 0 means the server could not be reached at all. */
@@ -105,6 +108,15 @@ export const api = {
   checkProfile: (document: unknown) => request<ProfileCheck>("POST", "/api/profile/check", document),
   /** Keep the camera's current view as the picture the lines and zones are drawn on. */
   captureReference: () => request<ReferenceSaved>("POST", "/api/profile/reference"),
+  settings: (signal?: AbortSignal) => request<Settings>("GET", "/api/settings", undefined, signal),
+  /** Every member of the settings, which replace what is stored. */
+  saveSettings: (settings: Settings) => request<Settings>("PUT", "/api/settings", settings),
+  /** A local day ("2026-10-09"; today where the camera is, if none) by the hour: when trails began. */
+  trailsDay: (day?: string, signal?: AbortSignal) =>
+    request<TrailDay>("GET", day === undefined ? "/api/trails/day" : `/api/trails/day?day=${encodeURIComponent(day)}`, undefined, signal),
+  /** The paths of the trails that began in [fromMs, toMs): all of them, or an even sample if there are very many. */
+  trails: (fromMs: number, toMs: number, signal?: AbortSignal) =>
+    request<TrailPaths>("GET", `/api/trails?from_ms=${fromMs}&to_ms=${toMs}`, undefined, signal),
 };
 
 /** The picture the profile was drawn on. `takenAt` changes when it is replaced, so a new one is fetched. */

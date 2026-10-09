@@ -95,3 +95,76 @@ export function useNow(stepMs: number): number {
     () => 0,
   );
 }
+
+export interface RequestResult<T> {
+  /** The newest answer, whichever request it came from: see `answeredKey`. */
+  data: T | null;
+  /** The key of the request that `data` answers. It differs from the wanted key while the next answer is on its way. */
+  answeredKey: string | null;
+  /** The failure of the request for the wanted key; cleared by a new key or a success. */
+  error: unknown;
+  /** True until the request for the wanted key has been answered or has failed. */
+  loading: boolean;
+  refresh: () => void;
+}
+
+/**
+ * Fetch when `key` changes, and again every `refreshMs` while the page is visible. An answer for a key
+ * that is no longer wanted is dropped. The previous answer stays in `data` while the next is fetched,
+ * so that a screen can dim instead of blanking between two days or two hours. A null key fetches
+ * nothing. `delayMs` waits that long first, so that a run of quick changes makes one request.
+ */
+export function useRequest<T>(
+  key: string | null,
+  fetcher: (signal: AbortSignal) => Promise<T>,
+  options: { refreshMs?: number; delayMs?: number } = {},
+): RequestResult<T> {
+  const { refreshMs, delayMs = 0 } = options;
+  const [state, setState] = useState<{ data: T | null; answeredKey: string | null; error: unknown; failedKey: string | null }>({
+    data: null,
+    answeredKey: null,
+    error: null,
+    failedKey: null,
+  });
+  const [round, setRound] = useState(0);
+  const latest = useRef(fetcher);
+  useEffect(() => {
+    latest.current = fetcher;
+  });
+
+  useEffect(() => {
+    if (key === null) return;
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      latest.current(controller.signal).then(
+        (data) => {
+          if (!controller.signal.aborted) setState({ data, answeredKey: key, error: null, failedKey: null });
+        },
+        (error: unknown) => {
+          if (!controller.signal.aborted) setState((previous) => ({ ...previous, error, failedKey: key }));
+        },
+      );
+    }, delayMs);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [key, round, delayMs]);
+
+  useEffect(() => {
+    if (key === null || !refreshMs) return;
+    const timer = setInterval(() => {
+      if (!document.hidden) setRound((n) => n + 1);
+    }, refreshMs);
+    return () => clearInterval(timer);
+  }, [key, refreshMs]);
+
+  const refresh = useCallback(() => setRound((n) => n + 1), []);
+  return {
+    data: state.data,
+    answeredKey: state.answeredKey,
+    error: state.failedKey === key ? state.error : null,
+    loading: key !== null && state.answeredKey !== key && state.failedKey !== key,
+    refresh,
+  };
+}

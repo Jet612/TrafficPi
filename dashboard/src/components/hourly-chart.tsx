@@ -15,8 +15,8 @@ import {
   type TooltipContentProps,
 } from "recharts";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
+import { Segmented } from "@/components/ui/segmented";
 import { useStats } from "@/components/stats-provider";
-import { cn } from "@/lib/cn";
 import { useNow } from "@/lib/hooks";
 import { classColor, classLabel } from "@/lib/classes";
 import { formatCount, hourRange } from "@/lib/format";
@@ -58,19 +58,15 @@ export function HourlyChart() {
             </p>
           )}
         </div>
-        <div role="group" aria-label="Show as" className="flex rounded-lg border border-edge p-0.5 text-sm">
-          {(["chart", "table"] as const).map((option) => (
-            <button
-              key={option}
-              type="button"
-              aria-pressed={view === option}
-              onClick={() => setView(option)}
-              className={cn("rounded-md px-3 py-1 font-medium capitalize", view === option ? "bg-sunken text-ink" : "text-ink-2 hover:text-ink")}
-            >
-              {option}
-            </button>
-          ))}
-        </div>
+        <Segmented
+          label="Show as"
+          value={view}
+          options={[
+            { value: "chart", label: "Chart" },
+            { value: "table", label: "Table" },
+          ]}
+          onChange={setView}
+        />
       </CardHeader>
       <CardBody>
         {!model ? (

@@ -6,7 +6,9 @@
 //
 // Needs a running stack (see docs/dev-setup.md) with some lines and zones drawn in it (the made-up
 // street after the browser test has run is one), and a Chromium: the apt package
-// chromium-headless-shell, or any Chrome set in CHROMIUM.
+// chromium-headless-shell, or any Chrome set in CHROMIUM. The History page shows the newest day
+// that has trails; E2E_TRAILS_DAY=2026-10-08 shows another (the made-up street, started with
+// --history-days 7, has earlier days with thousands of trails).
 import { mkdirSync } from "node:fs";
 import { chromium } from "playwright-core";
 
@@ -46,7 +48,10 @@ for (const view of views) {
     // The other pages, by their own addresses (as a bookmark would open them).
     await page.goto(`${base}/history/`);
     await page.getByRole("heading", { level: 1, name: "History" }).waitFor({ state: "attached" });
-    await page.waitForTimeout(1200);
+    await page.getByTestId("trail-view").or(page.getByText("No trails have been recorded yet.")).first().waitFor();
+    if (process.env.E2E_TRAILS_DAY) await page.getByLabel("Day", { exact: true }).fill(process.env.E2E_TRAILS_DAY);
+    await page.waitForTimeout(1500); // the day, its paths and the picture
+    await page.waitForFunction(() => document.querySelector('[data-testid="trail-view"]')?.getAttribute("aria-busy") !== "true");
     await shot("history");
 
     await page.goto(`${base}/setup/`);

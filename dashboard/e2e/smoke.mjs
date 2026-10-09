@@ -134,6 +134,81 @@ async function waitForCounts(more) {
   );
 }
 
+
+// --- the Trails card -----------------------------------------------------------------------------
+
+const trailCanvas = () => page.getByTestId("trail-canvas");
+const trailHeadline = () => page.getByTestId("trails-headline");
+const hourStrip = () => page.getByTestId("hour-strip");
+const hourButtons = () => hourStrip().getByRole("button");
+const pickedHours = () => hourStrip().locator('button[aria-pressed="true"]');
+const dayInput = () => page.getByLabel("Day", { exact: true });
+const linesSwitch = () => page.getByRole("switch", { name: "Lines and zones" });
+const drawPaths = () => page.getByRole("button", { name: "Paths", exact: true });
+const drawHeat = () => page.getByRole("button", { name: "Heat map", exact: true });
+
+/** How many pixels of the drawing over the picture are not clear. */
+const drawnPixels = () =>
+  trailCanvas().evaluate((canvas) => {
+    const { data } = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height);
+    let drawn = 0;
+    for (let at = 3; at < data.length; at += 4) if (data[at] > 0) drawn += 1;
+    return drawn;
+  });
+
+/** What the drawing has at a point: a fraction of its width and of its height. */
+const pixelAt = (fx, fy) =>
+  trailCanvas().evaluate(
+    (canvas, [x, y]) => [...canvas.getContext("2d").getImageData(Math.round(canvas.width * x), Math.round(canvas.height * y), 1, 1).data],
+    [fx, fy],
+  );
+
+/** Try a check until it holds: what the card shows follows a request that is still on its way. */
+async function eventually(check, what, timeoutMs = 10_000) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      return await check();
+    } catch (error) {
+      if (Date.now() > deadline) throw new Error(`${what}: ${error instanceof Error ? error.message : error}`);
+      await page.waitForTimeout(100);
+    }
+  }
+}
+
+/** "Thursday 8 October 2026", as the card writes a day. */
+const dayTitle = (day) =>
+  new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" })
+    .format(new Date(`${day}T00:00:00Z`))
+    .replace(",", "");
+
+/** The card has finished fetching: nothing is dimmed or on its way. */
+const settled = () =>
+  eventually(async () => assert.equal(await page.getByTestId("trail-view").getAttribute("aria-busy"), "false"), "the Trails card settles");
+
+/** Show a day, wait for it, and pick all of it. */
+async function showDay(day) {
+  await dayInput().fill(day);
+  await eventually(async () => assert.match(await trailHeadline().innerText(), new RegExp(dayTitle(day))), `the card shows ${day}`);
+  await settled();
+}
+
+/** The number of trails in each hour, from the names of the hour buttons ("17:00–18:00: 512 vehicles"). */
+async function hourCountsShown() {
+  const labels = await hourButtons().evaluateAll((buttons) => buttons.map((button) => button.getAttribute("aria-label") ?? ""));
+  return labels.map((label) => Number((/: (?:no|([\d,]+)) /.exec(label)?.[1] ?? "0").replaceAll(",", "")));
+}
+
+/** The hours an hour button is for, as it says so: "17:00–18:00". (Not worked out from its place in the row: a day can have 23 or 25.) */
+const rangeOf = async (index) => ((await hourButtons().nth(index).getAttribute("aria-label")) ?? "").slice(0, 11);
+/** The hours from one button to another: "02:00–06:00". */
+const rangeBetween = async (first, last) => `${(await rangeOf(first)).slice(0, 5)}–${(await rangeOf(last)).slice(6)}`;
+
+/** The count at the start of the headline: "4,799 vehicles (drawing ...) · Thursday ..." */
+async function headlineCount() {
+  return Number(/^([\d,]+) /.exec(await trailHeadline().innerText())?.[1].replaceAll(",", ""));
+}
+
 try {
   await step("the login page appears for a visitor", async () => {
     await page.goto(base);
@@ -559,6 +634,377 @@ try {
     await table.waitFor();
     assert.ok((await table.getByRole("row").count()) >= 24, "a row for each hour, and the header");
     await page.getByRole("button", { name: "Chart", pressed: false }).click();
+  });
+
+  // The made-up street records trails as its vehicles leave the picture, and with --history-days N
+  // it has N earlier days of them, which hold still, so that numbers can be compared exactly.
+  const oldestDay = async () => {
+    const first = await dayInput().getAttribute("min");
+    const last = await dayInput().getAttribute("max");
+    assert.ok(first && last && first < last, "the made-up street needs --history-days 3, to have earlier days (see docs/dev-setup.md)");
+    return first;
+  };
+
+  await step("the Trails card draws a day's paths over the camera picture", async () => {
+    await goTo("History");
+    await page.waitForFunction(() => Number(document.querySelector('[data-testid="trail-canvas"]')?.dataset.paths) > 0, undefined, { timeout: 60_000 });
+    await trailCanvas().scrollIntoViewIfNeeded();
+    await linesSwitch().click(); // the paths alone, to look at them
+    assert.equal(await linesSwitch().getAttribute("aria-checked"), "false");
+    await settled();
+    assert.ok((await drawnPixels()) > 500, "the paths are drawn");
+    assert.match(await trailHeadline().innerText(), /^[\d,]+ vehicles?\b.* · \w+ \d+ \w+ \d{4} · All day$/);
+    assert.equal(await pickedHours().count(), await hourButtons().count(), "the whole day is picked");
+    assert.equal(await hourStrip().locator('button[tabindex="0"]').count(), 1, "one stop for the Tab key in the row of hours");
+    assert.match((await trailCanvas().getAttribute("aria-label")) ?? "", /^Paths of .* drawn on the camera picture\.$/);
+    await shot("trails");
+  });
+
+  await step("an hour picked narrows the Trails to it; dragging, Shift and the keyboard pick several", async () => {
+    await showDay(await oldestDay());
+    const counts = await hourCountsShown();
+    assert.ok(counts.length >= 23 && counts.length <= 25);
+    const busiest = counts.indexOf(Math.max(...counts));
+
+    await hourButtons().nth(busiest).click();
+    await eventually(async () => assert.equal(await pickedHours().count(), 1));
+    assert.equal(await hourButtons().nth(busiest).getAttribute("aria-pressed"), "true");
+    await eventually(
+      async () => assert.match(await trailHeadline().innerText(), new RegExp(`^${counts[busiest].toLocaleString("en-US")} vehicles.* · ${await rangeOf(busiest)}$`)),
+      "the headline names the hour and counts its vehicles",
+    );
+    await settled();
+    assert.equal(Number(await trailCanvas().getAttribute("data-paths")), Math.min(counts[busiest], 600), "a path for each, up to the most that can be told apart");
+    assert.ok((await drawnPixels()) > 500);
+
+    // Shift-click extends to another hour
+    const far = Math.min(busiest + 2, counts.length - 1);
+    await hourButtons().nth(far).click({ modifiers: ["Shift"] });
+    await eventually(async () => assert.equal(await pickedHours().count(), far - busiest + 1));
+    await eventually(
+      async () => assert.equal(await headlineCount(), counts.slice(busiest, far + 1).reduce((a, b) => a + b, 0)),
+      "the count is of all the hours picked",
+    );
+
+    // dragging across the row picks the hours it passes over
+    const from = await centreOf(hourButtons().nth(2));
+    const to = await centreOf(hourButtons().nth(5));
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await page.mouse.move(to.x, to.y, { steps: 8 });
+    await page.mouse.up();
+    await eventually(async () => assert.equal(await pickedHours().count(), 4));
+    assert.equal(await hourButtons().nth(2).getAttribute("aria-pressed"), "true");
+    assert.equal(await hourButtons().nth(5).getAttribute("aria-pressed"), "true");
+    assert.equal(await hourButtons().nth(6).getAttribute("aria-pressed"), "false");
+    const dragged = await rangeBetween(2, 5);
+    await eventually(async () => assert.equal((await trailHeadline().innerText()).split(" · ").at(-1), dragged));
+
+    // and so does the keyboard: Enter picks the hour in focus, Shift with an arrow key extends
+    await hourButtons().nth(10).focus();
+    await page.keyboard.press("Enter");
+    await eventually(async () => assert.equal(await pickedHours().count(), 1));
+    await page.keyboard.press("Shift+ArrowRight");
+    await page.keyboard.press("Shift+ArrowRight");
+    await eventually(async () => assert.equal(await pickedHours().count(), 3));
+    assert.equal(await hourButtons().nth(12).getAttribute("aria-pressed"), "true");
+    await page.keyboard.press("Home"); // moves on without picking
+    assert.equal(await pickedHours().count(), 3);
+    assert.equal(await hourStrip().locator('button[tabindex="0"]').count(), 1);
+    assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("data-hour")), "0");
+    await page.keyboard.press("Enter");
+    await eventually(async () => assert.equal(await pickedHours().count(), 1));
+
+    await page.getByRole("button", { name: "All day", exact: true }).click();
+    await eventually(async () => assert.equal(await pickedHours().count(), counts.length));
+    await eventually(async () => assert.match(await trailHeadline().innerText(), / · All day$/));
+  });
+
+  await step("each kind of vehicle can be switched off, and the count and the picture follow", async () => {
+    await settled();
+    const kinds = page.getByRole("group", { name: "Kinds to show" }).getByRole("checkbox");
+    const total = await headlineCount();
+    const names = await kinds.evaluateAll((boxes) => boxes.map((box) => box.closest("label")?.textContent?.trim() ?? ""));
+    assert.ok(names.length >= 2, `more than one kind of vehicle in the day: ${names}`);
+    const carsLabel = names.find((name) => name.startsWith("Cars"));
+    assert.ok(carsLabel, "cars are in the day");
+    const cars = Number(carsLabel.replace(/\D+/, "").replaceAll(",", ""));
+    assert.ok(cars > 0 && cars < total);
+
+    await page.getByRole("checkbox", { name: /^Cars/ }).uncheck();
+    await eventually(async () => assert.equal(await headlineCount(), total - cars), "without the cars, the others are counted");
+    await settled();
+    assert.ok((await hourCountsShown()).reduce((a, b) => a + b, 0) === total - cars, "and so are the hours");
+
+    for (let index = 0; index < (await kinds.count()); index += 1) await kinds.nth(index).uncheck();
+    await page.getByText("Every kind is switched off.").waitFor();
+    await eventually(async () => assert.equal(Number(await trailCanvas().getAttribute("data-paths")), 0));
+    assert.equal(await drawnPixels(), 0, "nothing is left on the picture");
+
+    for (let index = 0; index < (await kinds.count()); index += 1) await kinds.nth(index).check();
+    await eventually(async () => assert.equal(await headlineCount(), total));
+    await settled();
+    assert.ok((await drawnPixels()) > 500, "and everything is back");
+  });
+
+  await step("the heat map shows all the paths as density, and the choice is remembered", async () => {
+    await drawHeat().click();
+    await eventually(async () => assert.equal(await trailCanvas().getAttribute("data-view"), "heat"));
+    await page.getByText("Fewer vehicles").waitFor();
+    const paths = Number(await trailCanvas().getAttribute("data-paths"));
+    assert.ok(paths > 600, `the heat map takes every path, not the few hundred that can be told apart (${paths})`);
+    assert.ok((await drawnPixels()) > 20_000, "the heat map covers the roads in a glow");
+    assert.match((await trailCanvas().getAttribute("aria-label")) ?? "", /^Heat map of /);
+    await shot("trails-heat");
+    await page.reload();
+    await page.getByTestId("trail-canvas").waitFor();
+    assert.equal(await drawHeat().getAttribute("aria-pressed"), "true", "still the heat map after a reload");
+    await drawPaths().click();
+    await eventually(async () => assert.equal(await trailCanvas().getAttribute("data-view"), "paths"));
+    assert.equal(Number(await trailCanvas().getAttribute("data-paths")) <= 600, true);
+  });
+
+  await step("a day is chosen with the arrows or the date, and a day without trails says so", async () => {
+    const first = await oldestDay();
+    const last = await dayInput().getAttribute("max");
+    await showDay(first);
+    const previous = page.getByRole("button", { name: "Previous day" });
+    const next = page.getByRole("button", { name: "Next day" });
+    assert.equal(await previous.isDisabled(), true, "nothing before the first day with trails");
+    await next.click();
+    const second = new Date(Date.parse(`${first}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+    await eventually(async () => assert.match(await trailHeadline().innerText(), new RegExp(dayTitle(second))));
+    assert.equal(await dayInput().inputValue(), second);
+    await page.getByRole("button", { name: "Previous day" }).click();
+    await eventually(async () => assert.match(await trailHeadline().innerText(), new RegExp(dayTitle(first))));
+
+    await dayInput().fill("2020-01-01");
+    await page.getByText("No vehicles were recorded on this day.").waitFor();
+    assert.equal(Number(await trailCanvas().getAttribute("data-paths")), 0);
+    assert.ok((await hourCountsShown()).every((n) => n === 0));
+
+    await page.getByRole("button", { name: "Latest day" }).click();
+    await eventually(async () => assert.equal(await dayInput().inputValue(), last));
+    assert.equal(await page.getByRole("button", { name: "Latest day" }).count(), 0, "the button goes once it has done its work");
+    assert.equal(await next.isDisabled(), true, "nothing after the newest day");
+  });
+
+  await step("playing a day goes through the hours with trails, from the one picked, and ends where it began", async () => {
+    await showDay(await oldestDay());
+    const counts = await hourCountsShown();
+    const start = counts.length - 3; // the last three hours of the day all have some traffic
+    assert.ok(counts.slice(start).every((n) => n > 0), "the evening has traffic");
+    await hourButtons().nth(start).click();
+    await eventually(async () => assert.equal(await pickedHours().count(), 1));
+    const play = page.getByRole("button", { name: /^(Play the day|Pause)$/ });
+    await play.click();
+    assert.equal(await play.innerText(), "Pause");
+    const lastWord = async () => (await trailHeadline().innerText()).split(" · ").at(-1);
+    await eventually(async () => assert.equal(await lastWord(), await rangeOf(start + 1)), "the next hour", 4_000);
+    assert.equal(await hourButtons().nth(start + 1).getAttribute("aria-pressed"), "true");
+    assert.equal(await pickedHours().count(), 1, "one hour at a time");
+    await eventually(async () => assert.equal(await lastWord(), await rangeOf(start + 2)), "and the one after", 4_000);
+    await eventually(async () => assert.equal(await play.innerText(), "Play the day"), "it stops at the end of the day", 5_000);
+    await eventually(async () => assert.equal(await hourButtons().nth(start).getAttribute("aria-pressed"), "true"), "and goes back to the hour that was picked");
+    assert.equal(await pickedHours().count(), 1);
+
+    // from the whole day it begins with the first hour that has something, and Pause holds it there
+    await page.getByRole("button", { name: "All day", exact: true }).click();
+    await play.click();
+    const firstBusy = counts.findIndex((n) => n > 0);
+    await eventually(async () => assert.equal(await lastWord(), await rangeOf(firstBusy)));
+    const secondBusy = counts.findIndex((n, index) => index > firstBusy && n > 0);
+    await eventually(async () => assert.equal(await lastWord(), await rangeOf(secondBusy)), "the second hour", 4_000);
+    await play.click(); // Pause
+    assert.equal(await play.innerText(), "Play the day");
+    const held = await trailHeadline().innerText();
+    await page.waitForTimeout(2_300);
+    assert.equal(await trailHeadline().innerText(), held, "it stays where it was paused");
+    await page.getByRole("button", { name: "All day", exact: true }).click();
+  });
+
+  await step("the picture can be saved as a PNG that says what it shows", async () => {
+    await settled();
+    const day = await oldestDay();
+    await showDay(day);
+    const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Save picture" }).click()]);
+    assert.equal(download.suggestedFilename(), `trafficpi-paths-${day}.png`);
+    const file = join(scratch, "trails.png");
+    await download.saveAs(file);
+    const png = readFileSync(file);
+    assert.deepEqual([...png.subarray(0, 8)], [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], "a PNG");
+    const [width, height] = [png.readUInt32BE(16), png.readUInt32BE(20)];
+    assert.ok(width >= 640 && Math.abs(width / height - 16 / 9) < 0.05, `the camera picture's size and shape (${width} x ${height})`);
+    assert.ok(png.length > 30_000, `a picture with paths on it, not a blank one (${png.length} bytes)`);
+    if (shots) writeFileSync(`${shots}/trails-saved.png`, png);
+    await page.getByRole("button", { name: "Save picture" }).waitFor();
+  });
+
+  await step("the lines and zones can be shown over the paths or left off", async () => {
+    await settled();
+    const without = await drawnPixels();
+    await linesSwitch().click();
+    assert.equal(await linesSwitch().getAttribute("aria-checked"), "true");
+    await eventually(async () => assert.ok((await drawnPixels()) > without, "the lines and zones add to the drawing"));
+    await shot("trails-with-lines");
+  });
+
+  await step("an empty history, a failed request and a day of 25 hours are all shown properly", async () => {
+    const hour = 3_600_000;
+    const dayRoute = "**/api/trails/day**";
+    const json = (body, status = 200) => ({ status, contentType: "application/json", body: JSON.stringify(body) });
+
+    // 1. no trail has ever been recorded
+    await page.route(dayRoute, (route) =>
+      route.fulfill(json({ day: "2026-10-09", timezone: "UTC", total: 0, first_day: null, last_day: null, hours: [] })),
+    );
+    await page.reload();
+    await page.getByText("No trails have been recorded yet.").waitFor();
+    assert.equal(await hourStrip().count(), 0);
+    assert.equal(await page.getByRole("button", { name: "Save picture" }).count(), 0, "nothing to save");
+
+    // 2. the request fails, and Try again asks once more
+    await page.unroute(dayRoute);
+    await page.route(dayRoute, (route) => route.fulfill(json({ detail: "the database is busy" }, 503)));
+    await page.reload();
+    await page.getByText("Could not load the trails: the database is busy.").waitFor();
+    await page.unroute(dayRoute);
+    await page.getByRole("button", { name: "Try again" }).click();
+    await hourStrip().waitFor();
+
+    // 3. the day the clocks go back has 25 hours, and the hour that happens twice is two buttons
+    const midnight = Date.UTC(2026, 10, 1, 4); // 00:00 EDT on 1 November 2026
+    const localHours = [0, 1, 1, ...Array.from({ length: 22 }, (_, index) => index + 2)];
+    const hours = localHours.map((local, index) => ({
+      t: midnight + index * hour,
+      end: midnight + (index + 1) * hour,
+      hour: local,
+      count: index === 1 ? 3 : index === 2 ? 5 : 0,
+      by_kind: index === 1 ? { car: 3 } : index === 2 ? { truck: 5 } : {},
+    }));
+    const asked = [];
+    const pathsRoute = (url) => url.pathname === "/api/trails";
+    await page.route(dayRoute, (route) =>
+      route.fulfill(json({ day: "2026-11-01", timezone: "America/New_York", total: 8, first_day: "2026-10-30", last_day: "2026-11-01", hours })),
+    );
+    await page.route(
+      pathsRoute,
+      (route) => {
+        const query = new URL(route.request().url()).searchParams;
+        asked.push([Number(query.get("from_ms")), Number(query.get("to_ms"))]);
+        const here = (x0, y, x1) => ({ x: [x0, x1].map((f) => Math.round(f * 65535)), y: [y, y].map((f) => Math.round(f * 65535)) });
+        return route.fulfill(
+          json({
+            from_ms: asked.at(-1)[0],
+            to_ms: asked.at(-1)[1],
+            total: 5,
+            returned: 5,
+            scale: 65535,
+            // the five trucks that began in that hour, three one way and two the other
+            trails: [0.1, 0.1, 0.1, 0.9, 0.9].map((from, index) => ({
+              id: index + 1,
+              started_at: asked.at(-1)[0] + 1000 * (index + 1),
+              ended_at: asked.at(-1)[0] + 9000 + 1000 * index,
+              label: "truck",
+              ...here(from, 0.5, 1 - from),
+            })),
+          }),
+        );
+      },
+    );
+    await page.reload();
+    await hourStrip().waitFor();
+    await eventually(async () => assert.equal(await hourButtons().count(), 25));
+    assert.match((await hourButtons().nth(1).getAttribute("aria-label")) ?? "", /^01:00–02:00, the first time: 3 vehicles$/);
+    assert.match((await hourButtons().nth(2).getAttribute("aria-label")) ?? "", /^01:00–02:00, the second time: 5 vehicles$/);
+    await page.getByRole("switch", { name: "Lines and zones" }).waitFor();
+    if ((await linesSwitch().getAttribute("aria-checked")) === "true") await linesSwitch().click();
+    await hourButtons().nth(2).click(); // the second 1 o'clock
+    await eventually(async () => assert.deepEqual(asked.at(-1), [midnight + 2 * hour, midnight + 3 * hour]), "its own hour is asked for");
+    await eventually(async () => assert.equal(Number(await trailCanvas().getAttribute("data-paths")), 5));
+    await eventually(async () => assert.match(await trailHeadline().innerText(), /^5 vehicles · .* · 01:00–02:00$/), "five trucks, all of them drawn");
+    // the paths are trucks' (orange) along the middle of the picture: orange there, nothing above it
+    const [r, , b, alpha] = await pixelAt(0.5, 0.5);
+    assert.ok(alpha > 100 && r > b, `an orange path at the middle (rgba ${r}, ${b}, ${alpha})`);
+    assert.equal((await pixelAt(0.5, 0.2))[3], 0, "and nothing above it");
+    await page.unroute(dayRoute);
+    await page.unroute(pathsRoute);
+    await page.reload();
+    await hourStrip().waitFor();
+  });
+
+  await step("the settings are changed and saved, and a time zone that does not exist is refused", async () => {
+    await goTo("Setup");
+    await page.getByRole("form", { name: "Settings" }).waitFor();
+    const readSettings = () => page.evaluate(async () => (await fetch("/api/settings")).json());
+    const original = await readSettings();
+    const save = page.getByRole("button", { name: "Save settings" });
+    const zone = page.getByLabel("Time zone");
+    const days = page.getByLabel("Keep trails for (days)");
+    const people = page.getByRole("switch", { name: "Include people" });
+    const enabled = page.getByRole("switch", { name: "Save the path of each vehicle" });
+    try {
+      assert.equal(await zone.inputValue(), original.timezone, "the form shows what is saved");
+      assert.equal(await days.inputValue(), String(original.trails_keep_days));
+      assert.equal(await enabled.getAttribute("aria-checked"), String(original.trails_enabled));
+      assert.equal(await save.isDisabled(), true, "nothing to save yet");
+
+      await days.fill("0");
+      await page.getByText("Enter a whole number of days from 1 to 3650.").first().waitFor();
+      assert.equal(await save.isDisabled(), true, "a number of days that makes no sense cannot be saved");
+      await days.fill("30");
+      await page.getByText("Kept for 30 days. Older trails are deleted by themselves.").waitFor();
+      await page.getByText("Settings not saved yet").waitFor();
+      assert.equal(await save.isEnabled(), true);
+
+      // changes that are not saved are not lost without asking
+      const asked = [];
+      page.once("dialog", async (dialog) => {
+        asked.push(dialog.message());
+        await dialog.dismiss();
+      });
+      await pagesNav().getByRole("link", { name: "Live", exact: true }).click();
+      await page.waitForTimeout(300);
+      assert.match(asked[0] ?? "", /not saved/);
+      assert.equal(pagePath(), "/setup/");
+      assert.equal(await days.inputValue(), "30", "and are still there");
+
+      // a time zone that does not exist is refused by the server, in words, and nothing is changed
+      await zone.fill("Mars/Olympus");
+      await save.click();
+      await page.getByRole("alert").filter({ hasText: "unknown time zone" }).waitFor();
+      assert.deepEqual(await readSettings(), original, "a refused change changes nothing");
+
+      // all of it, saved
+      await zone.fill("Europe/Paris");
+      await page.getByRole("button", { name: "km/h" }).click();
+      if ((await people.getAttribute("aria-checked")) !== "true") await people.click();
+      if ((await enabled.getAttribute("aria-checked")) === "true") await enabled.click();
+      await save.click();
+      await page.getByRole("status").filter({ hasText: "Saved." }).waitFor();
+      assert.deepEqual(await readSettings(), {
+        timezone: "Europe/Paris",
+        units: "kmh",
+        trails_enabled: false,
+        trails_people: true,
+        trails_keep_days: 30,
+      });
+      assert.equal(await save.isDisabled(), true, "saved, so nothing left to save");
+      await page.reload();
+      await page.getByRole("form", { name: "Settings" }).waitFor();
+      assert.equal(await zone.inputValue(), "Europe/Paris");
+      assert.equal(await days.inputValue(), "30");
+      assert.equal(await page.getByRole("button", { name: "km/h" }).getAttribute("aria-pressed"), "true");
+      assert.equal(await people.getAttribute("aria-checked"), "true");
+      assert.equal(await enabled.getAttribute("aria-checked"), "false");
+      await shot("settings");
+    } finally {
+      // the next steps (and the next run) expect the settings that were there
+      await page.evaluate(async (settings) => {
+        await fetch("/api/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(settings) });
+      }, original);
+    }
+    assert.deepEqual(await readSettings(), original);
   });
 
   await step("the pages are real addresses: links, deep links, a missing slash, reload and back all work", async () => {

@@ -172,15 +172,33 @@ function drawZones(ctx: Canvas2D, size: Size, zones: readonly LiveZone[], labels
   }
 }
 
+export interface OverlayScene {
+  lines: readonly LiveLine[];
+  zones: readonly LiveZone[];
+  tracks: readonly LiveTrack[];
+}
+
 export function drawOverlay(
   ctx: Canvas2D,
   size: Size,
-  scene: { lines: readonly LiveLine[]; zones: readonly LiveZone[]; tracks: readonly LiveTrack[] },
+  scene: OverlayScene,
   options: OverlayOptions,
   trails: ReadonlyMap<number, Trail>,
   colors: OverlayColors,
 ): void {
   ctx.clearRect(0, 0, size.width, size.height);
+  paintOverlay(ctx, size, scene, options, trails, colors);
+}
+
+/** Like `drawOverlay`, but on top of what is already drawn: the Trails card paints the paths first. */
+export function paintOverlay(
+  ctx: Canvas2D,
+  size: Size,
+  scene: OverlayScene,
+  options: OverlayOptions,
+  trails: ReadonlyMap<number, Trail>,
+  colors: OverlayColors,
+): void {
   const compact = size.width < COMPACT_BELOW_PX;
   ctx.lineJoin = "round";
   ctx.lineCap = "round";

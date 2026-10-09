@@ -18,6 +18,11 @@ export type LineConfig = Schemas["CountingLineConfig"];
 export type ZoneConfig = Schemas["ZoneConfig"];
 export type SystemMetrics = Schemas["SystemMetrics"];
 export type VisionStatus = Schemas["VisionStatus"];
+export type TrailDay = Schemas["TrailDay"];
+export type TrailHour = Schemas["TrailHour"];
+export type TrailPath = Schemas["TrailPath"];
+export type TrailPaths = Schemas["TrailPaths"];
+export type Settings = Schemas["Settings"];
 
 /**
  * The live socket is not part of OpenAPI, so its messages are described here. They come from
