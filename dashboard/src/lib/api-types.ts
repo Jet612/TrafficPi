@@ -324,6 +324,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/stops/{event_id}/clip.mp4": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stop Clip
+         * @description The clip around that moment (when one is kept); it can be played and seeked in.
+         */
+        get: operations["stop_clip_api_stops__event_id__clip_mp4_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/stops/{event_id}/review": {
         parameters: {
             query?: never;
@@ -337,6 +357,26 @@ export interface paths {
          * @description Say what a person made of a stop event: confirmed, a false positive, or null to undo.
          */
         put: operations["review_stop_api_stops__event_id__review_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/stops/{event_id}/snapshot.jpg": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stop Snapshot
+         * @description The picture of the moment a vehicle crossed the stop line (when one is kept).
+         */
+        get: operations["stop_snapshot_api_stops__event_id__snapshot_jpg_get"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -587,6 +627,12 @@ export interface components {
          * @description Everything the Setup page can change. A PUT replaces all of it, so every member is given.
          */
         Settings: {
+            /** Evidence Enabled */
+            evidence_enabled: boolean;
+            /** Evidence Keep Days */
+            evidence_keep_days: number;
+            /** Evidence Max Mb */
+            evidence_max_mb: number;
             /** Timezone */
             timezone: string;
             /** Trails Enabled */
@@ -617,6 +663,8 @@ export interface components {
          * @description What one vehicle did at one stop sign (plan.md D23), and what a person made of it.
          */
         StopOut: {
+            /** Clip Url */
+            clip_url: string | null;
             /** Hold S */
             hold_s: number;
             /** Id */
@@ -638,6 +686,8 @@ export interface components {
             reviewed_at: number | null;
             /** Sign */
             sign: string;
+            /** Snapshot Url */
+            snapshot_url: string | null;
             /** T */
             t: number;
         };
@@ -1390,6 +1440,37 @@ export interface operations {
             };
         };
     };
+    stop_clip_api_stops__event_id__clip_mp4_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     review_stop_api_stops__event_id__review_put: {
         parameters: {
             query?: never;
@@ -1412,6 +1493,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StopOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stop_snapshot_api_stops__event_id__snapshot_jpg_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

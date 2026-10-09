@@ -1,4 +1,5 @@
-import { formatCount } from "./format";
+import { classSingular } from "./classes";
+import { formatCount, formatDateTimeSeconds } from "./format";
 import { displayName, findElement } from "./profile";
 import type { Profile, ReviewState, StopOut, StopOutcome, StopSummary, StopTotals } from "./types";
 
@@ -88,6 +89,11 @@ export function numbersText(stop: Pick<StopOut, "hold_s" | "min_speed" | "observ
   if (stop.outcome !== "indeterminate" || stop.hold_s > 0) parts.unshift(`still for ${stop.hold_s.toFixed(1)} s`);
   if (stop.min_speed >= 0) parts.splice(parts.length - 1, 0, `slowest ${stop.min_speed.toFixed(1)} sizes a second`);
   return parts.join(" · ");
+}
+
+/** Which pass this is, in a few words, to say what a button or a picture belongs to: "car at Elm Street, 2026-10-09 14:05:09". */
+export function passText(stop: Pick<StopOut, "label" | "t">, sign: string, zone: string): string {
+  return `${classSingular(stop.label ?? "").toLowerCase()} at ${sign}, ${formatDateTimeSeconds(stop.t, zone)}`;
 }
 
 /** The name of a stop sign: its own, or its place in the list; a sign that was deleted since is said to be. */

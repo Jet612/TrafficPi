@@ -851,6 +851,100 @@ try {
       await page.getByRole("button", { name: "24 hours", exact: true }).click();
       await shot("stop-signs-card");
     });
+
+    await step("a pass that needs a look has its picture and clip, which open in a window where it can be reviewed", async () => {
+      await goTo("History");
+      const passes = page.getByRole("list", { name: "Passes at stop signs" });
+      const clipButtons = () => passes.getByRole("button", { name: /^Watch the clip of the / });
+      // The vision service writes the picture and the clip a few seconds after the pass, and the list is asked again every 15 s.
+      await eventually(async () => assert.ok((await clipButtons().count()) >= 1, "a pass is listed with its clip"), "evidence is kept of a pass", 90_000);
+
+      const opener = clipButtons().first();
+      const name = await opener.getAttribute("aria-label");
+      assert.ok(name, "the thumbnail says which pass it is of");
+      const picture = opener.locator("img");
+      await eventually(async () => assert.ok((await picture.evaluate((img) => img.complete && img.naturalWidth)) >= 320, "the picture has loaded"));
+      const snapshotUrl = await picture.getAttribute("src");
+      assert.match(snapshotUrl ?? "", /^\/api\/stops\/\d+\/snapshot\.jpg$/);
+      const clipUrl = (snapshotUrl ?? "").replace("snapshot.jpg", "clip.mp4");
+
+      // what the server sends is a real JPEG and a real MP4, as small as the detector's own picture
+      const fetched = await page.evaluate(
+        async ([jpeg, mp4]) => {
+          const look = async (url, headers = {}) => {
+            const response = await fetch(url, { headers });
+            const bytes = new Uint8Array(await response.arrayBuffer());
+            return { status: response.status, type: response.headers.get("content-type"), range: response.headers.get("content-range"), size: bytes.length, head: [...bytes.slice(0, 12)] };
+          };
+          return { jpeg: await look(jpeg), mp4: await look(mp4), part: await look(mp4, { Range: "bytes=0-99" }) };
+        },
+        [snapshotUrl, clipUrl],
+      );
+      assert.equal(fetched.jpeg.status, 200);
+      assert.equal(fetched.jpeg.type, "image/jpeg");
+      assert.deepEqual(fetched.jpeg.head.slice(0, 2), [0xff, 0xd8], "a JPEG begins like one");
+      assert.ok(fetched.jpeg.size > 5_000 && fetched.jpeg.size < 400_000, `a picture of a sensible size (${fetched.jpeg.size} bytes)`);
+      assert.equal(fetched.mp4.type, "video/mp4");
+      assert.equal(String.fromCharCode(...fetched.mp4.head.slice(4, 8)), "ftyp", "an MP4 begins like one");
+      assert.ok(fetched.mp4.size > 10_000 && fetched.mp4.size < 5_000_000, `a clip of a sensible size (${fetched.mp4.size} bytes)`);
+      assert.equal(fetched.part.status, 206, "a part of the clip can be asked for, which is how a browser seeks in it");
+      assert.match(fetched.part.range ?? "", /^bytes 0-99\//);
+      // asked outside the page, which would log the refusal as a problem
+      assert.equal((await context.request.get(`${base}/api/stops/999999/clip.mp4`)).status(), 404, "and a pass with no evidence has none");
+
+      // it opens in a window over the page, in which the clip is played
+      await opener.click();
+      const viewer = page.getByRole("dialog");
+      await viewer.waitFor();
+      const video = viewer.locator("video");
+      assert.equal(await video.getAttribute("src"), clipUrl);
+      assert.equal(await video.getAttribute("poster"), snapshotUrl, "the picture shows while the clip loads");
+      assert.match((await viewer.getByRole("link", { name: "Save the clip" }).getAttribute("download")) ?? "", /^stop-\d+\.mp4$/);
+      const canPlay = await page.evaluate(() => document.createElement("video").canPlayType('video/mp4; codecs="avc1.640028"'));
+      if (canPlay !== "") {
+        await eventually(async () => assert.ok((await video.evaluate((v) => v.readyState)) >= 1, "the browser has read the clip"), "the clip loads", 15_000);
+        const { width, height, seconds } = await video.evaluate((v) => ({ width: v.videoWidth, height: v.videoHeight, seconds: v.duration }));
+        assert.deepEqual([width, height], [640, 360]);
+        assert.ok(seconds > 2 && seconds < 12, `a few seconds long (${seconds} s)`);
+      } else {
+        console.log("     (this browser cannot play H.264, so the clip was checked as a file only)");
+      }
+      await shot("stop-viewer");
+
+      // the page behind is out of reach, and a pass can be reviewed from here
+      const confirm = viewer.getByRole("button", { name: /^Confirm: / });
+      await confirm.click();
+      await eventually(async () => assert.equal(await confirm.getAttribute("aria-pressed"), "true"));
+      await confirm.click(); // leave things as they were
+      await eventually(async () => assert.equal(await confirm.getAttribute("aria-pressed"), "false"));
+
+      // the other passes can be gone through; the newest has nothing newer
+      const newer = viewer.getByRole("button", { name: "Newer" });
+      const older = viewer.getByRole("button", { name: "Older" });
+      const timeShown = () => viewer.locator("time").innerText();
+      if (await older.isEnabled()) {
+        const before = await timeShown();
+        const wasNewest = await newer.isDisabled();
+        await older.click();
+        await eventually(async () => assert.equal(await newer.isEnabled(), true, "there is a newer one to go back to"));
+        if (wasNewest) {
+          await newer.click();
+          await eventually(async () => assert.equal(await timeShown(), before, "back at the pass that was opened"));
+          assert.equal(await newer.isDisabled(), true, "and the newest has nothing newer");
+        }
+      }
+
+      // Escape closes it, and the keyboard is where it was
+      await page.keyboard.press("Escape");
+      await viewer.waitFor({ state: "hidden" });
+      assert.equal(await passes.getByRole("button", { name: name ?? "" }).evaluate((el) => el === document.activeElement), true, "focus is back on the picture that was opened");
+
+      // the close button does as much, and so does opening it again
+      await passes.getByRole("button", { name: name ?? "" }).click();
+      await page.getByRole("dialog").waitFor();
+      await page.getByRole("dialog").getByRole("button", { name: "Close" }).click();
+      await page.getByRole("dialog").waitFor({ state: "hidden" });
+    });
   }
 
   await step("with no stop sign set up the card says how to add one, and a failed request is said", async () => {
@@ -1170,18 +1264,37 @@ try {
     const days = page.getByLabel("Keep trails for (days)");
     const people = page.getByRole("switch", { name: "Include people" });
     const enabled = page.getByRole("switch", { name: "Save the path of each vehicle" });
+    const evidence = page.getByRole("switch", { name: "Keep a picture and a clip of passes that need a look" });
+    const evidenceDays = page.getByLabel("Keep pictures and clips for (days)");
+    const evidenceMb = page.getByLabel("Keep at most (megabytes)");
     try {
       assert.equal(await zone.inputValue(), original.timezone, "the form shows what is saved");
       assert.equal(await days.inputValue(), String(original.trails_keep_days));
       assert.equal(await enabled.getAttribute("aria-checked"), String(original.trails_enabled));
+      assert.equal(await evidence.getAttribute("aria-checked"), String(original.evidence_enabled));
+      assert.equal(await evidenceDays.inputValue(), String(original.evidence_keep_days));
+      assert.equal(await evidenceMb.inputValue(), String(original.evidence_max_mb));
       assert.equal(await save.isDisabled(), true, "nothing to save yet");
 
       await days.fill("0");
-      await page.getByText("Enter a whole number of days from 1 to 3650.").first().waitFor();
+      await page.getByText("Enter a whole number of days from 1 to 3650 to keep trails.").first().waitFor();
       assert.equal(await save.isDisabled(), true, "a number of days that makes no sense cannot be saved");
       await days.fill("30");
       await page.getByText("Kept for 30 days. Older trails are deleted by themselves.").waitFor();
       await page.getByText("Settings not saved yet").waitFor();
+      assert.equal(await save.isEnabled(), true);
+
+      // the same for the room that evidence may take
+      await evidenceMb.fill("10");
+      await page.getByText("Enter a whole number of megabytes from 50 to 1000000 for pictures and clips.").first().waitFor();
+      assert.equal(await save.isDisabled(), true, "less room than a few clips need cannot be saved");
+      await evidenceDays.fill("");
+      await page.getByText("Enter a whole number of days from 1 to 3650 to keep pictures and clips.").first().waitFor();
+      assert.equal(await save.isDisabled(), true);
+      await evidenceDays.fill("7");
+      await page.getByText("Kept for 7 days. Older ones are deleted by themselves, also if none are being made.").waitFor();
+      await evidenceMb.fill("1500");
+      await page.getByText("Up to 1.5 GB on the disk. When there is more, the oldest are deleted first.").waitFor();
       assert.equal(await save.isEnabled(), true);
 
       // changes that are not saved are not lost without asking
@@ -1207,6 +1320,7 @@ try {
       await page.getByRole("button", { name: "km/h" }).click();
       if ((await people.getAttribute("aria-checked")) !== "true") await people.click();
       if ((await enabled.getAttribute("aria-checked")) === "true") await enabled.click();
+      if ((await evidence.getAttribute("aria-checked")) === "true") await evidence.click();
       await save.click();
       await page.getByRole("status").filter({ hasText: "Saved." }).waitFor();
       assert.deepEqual(await readSettings(), {
@@ -1215,6 +1329,9 @@ try {
         trails_enabled: false,
         trails_people: true,
         trails_keep_days: 30,
+        evidence_enabled: false,
+        evidence_keep_days: 7,
+        evidence_max_mb: 1500,
       });
       assert.equal(await save.isDisabled(), true, "saved, so nothing left to save");
       await page.reload();
@@ -1224,6 +1341,9 @@ try {
       assert.equal(await page.getByRole("button", { name: "km/h" }).getAttribute("aria-pressed"), "true");
       assert.equal(await people.getAttribute("aria-checked"), "true");
       assert.equal(await enabled.getAttribute("aria-checked"), "false");
+      assert.equal(await evidence.getAttribute("aria-checked"), "false");
+      assert.equal(await evidenceDays.inputValue(), "7");
+      assert.equal(await evidenceMb.inputValue(), "1500");
       await shot("settings");
     } finally {
       // the next steps (and the next run) expect the settings that were there

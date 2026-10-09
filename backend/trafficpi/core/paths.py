@@ -24,3 +24,9 @@ def default_data_dir(source: Path | None = None) -> Path:
         return Path(configured)
     backend = (source or Path(__file__)).resolve().parents[2]
     return backend / "data" if (backend / "pyproject.toml").is_file() else Path("data")
+
+
+def evidence_dir(data_dir: Path) -> Path:
+    """Where the pictures and clips of stop-sign passes are kept. Paths in the database are
+    relative to the data directory, so they begin with this folder's name."""
+    return data_dir / "evidence"

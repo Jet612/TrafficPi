@@ -184,7 +184,7 @@ Detected events will be stored for review.
 
 Users will be able to filter events by date, camera, event type, and vehicle classification.
 
-Where recording is enabled, supported events may include snapshots or short video clips for manual review.
+Where recording is enabled, supported events may include snapshots or short video clips for manual review. For stop signs, a vehicle that rolled through or did not stop gets a picture and a clip of about nine seconds around the moment it crossed the stop line, which you can watch and then confirm or call a false alarm; a vehicle that stopped gets none. They are kept for 30 days or 2 GB unless you choose otherwise, can be switched off, and are only as sharp as the detector's own picture (640 by 360 pixels), which is usually too small to read a number plate or a face (one very close to the camera can still be readable, so look at a few before you rely on that).
 
 ### Trails
 

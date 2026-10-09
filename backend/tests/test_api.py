@@ -638,6 +638,9 @@ def settings(**over: object) -> dict[str, object]:
         "trails_enabled": True,
         "trails_people": False,
         "trails_keep_days": 365,
+        "evidence_enabled": True,
+        "evidence_keep_days": 30,
+        "evidence_max_mb": 2048,
         **over,
     }
 
@@ -651,7 +654,21 @@ def test_settings_default_save_and_validate(logged_in: TestClient, vision: FakeV
         False,
         365,
     )
-    body = settings(timezone="Europe/Paris", units="kmh", trails_people=True, trails_keep_days=30)
+    # A picture and a clip of a pass that needs a look are kept for 30 days, up to 2 GB.
+    assert (first["evidence_enabled"], first["evidence_keep_days"], first["evidence_max_mb"]) == (
+        True,
+        30,
+        2048,
+    )
+    body = settings(
+        timezone="Europe/Paris",
+        units="kmh",
+        trails_people=True,
+        trails_keep_days=30,
+        evidence_enabled=False,
+        evidence_keep_days=7,
+        evidence_max_mb=500,
+    )
     saved = logged_in.put("/api/settings", json=body)
     assert saved.json() == body
     assert logged_in.get("/api/settings").json() == body
@@ -673,7 +690,25 @@ def test_the_keep_time_for_trails_must_be_a_sensible_number_of_days(
     assert logged_in.get("/api/settings").json()["trails_keep_days"] == 365
 
 
-@pytest.mark.parametrize("member", ["trails_enabled", "trails_people"])
+@pytest.mark.parametrize("days", [0, -5, 3651, 1.5, "a month", None, True])
+def test_the_keep_time_for_evidence_must_be_a_sensible_number_of_days(
+    logged_in: TestClient, days: object
+) -> None:
+    response = logged_in.put("/api/settings", json=settings(evidence_keep_days=days))
+    assert response.status_code == 422
+    assert logged_in.get("/api/settings").json()["evidence_keep_days"] == 30
+
+
+@pytest.mark.parametrize("megabytes", [0, 49, 1_000_001, 2.5, "2 GB", None, True])
+def test_the_most_evidence_that_may_be_kept_must_be_a_sensible_size(
+    logged_in: TestClient, megabytes: object
+) -> None:
+    response = logged_in.put("/api/settings", json=settings(evidence_max_mb=megabytes))
+    assert response.status_code == 422
+    assert logged_in.get("/api/settings").json()["evidence_max_mb"] == 2048
+
+
+@pytest.mark.parametrize("member", ["trails_enabled", "trails_people", "evidence_enabled"])
 @pytest.mark.parametrize("value", ["yes", "true", 1, 0, None])
 def test_the_trail_switches_must_be_true_or_false(
     logged_in: TestClient, member: str, value: object

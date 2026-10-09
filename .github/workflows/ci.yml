@@ -34,6 +34,10 @@ jobs:
       - name: Install locked dependencies
         run: uv sync --locked
 
+      # The evidence tests make real clips (they are skipped where there is no ffmpeg).
+      - name: Install ffmpeg
+        run: command -v ffmpeg || (sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg)
+
       - name: Ruff (lint)
         run: uv run ruff check .
 
@@ -146,6 +150,10 @@ jobs:
         run: |
           (cd backend && uv sync --locked)
           (cd dashboard && pnpm install --frozen-lockfile && pnpm build)
+
+      # The made-up street's passes at a stop sign get a picture and a clip, which the test checks.
+      - name: Install ffmpeg
+        run: command -v ffmpeg || (sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg)
 
       # No camera or accelerator here: `run --demo` plays a drawn street through the real tracker,
       # counting lines and database, and the API serves the built dashboard. --history-days gives

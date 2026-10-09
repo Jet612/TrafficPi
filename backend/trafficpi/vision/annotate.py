@@ -39,6 +39,10 @@ OUTCOME_COLORS = {  # a stop event's banner
 }
 FONT = cv2.FONT_HERSHEY_SIMPLEX
 BANNER_S = 2.0  # how long a count event stays on screen
+BANNER_SCALE = 0.6  # the size of the lettering of a banner ...
+BANNER_MIN_SCALE = 0.4  # ... which gets smaller, down to this, for a line that would not fit
+BANNER_ROW = 22  # the height of a banner's line and of the strip behind it, in pixels
+BANNER_SHADE = 0.55  # how much of the picture's light the strip behind a banner takes away
 
 
 @dataclass(slots=True)
@@ -86,7 +90,13 @@ def draw(
         tip = (round(mid[0] - way * dy / length * 30), round(mid[1] + way * dx / length * 30))
         cv2.arrowedLine(image, mid, tip, STOP_LINE_COLOR, 2, tipLength=0.4)
         cv2.putText(
-            image, f"stop {sign.id}", (a[0], max(14, a[1] - 8)), FONT, 0.5, STOP_LINE_COLOR, 1
+            image,
+            f"stop {sign.name or sign.id}",
+            (a[0], max(14, a[1] - 8)),
+            FONT,
+            0.5,
+            STOP_LINE_COLOR,
+            1,
         )
     for cfg in lines:
         a, b = _px(cfg.line.a, size), _px(cfg.line.b, size)
@@ -113,10 +123,28 @@ def draw(
     summary = ", ".join(
         f"{cfg.id}: +{totals.total(cfg.id, 1)} / -{totals.total(cfg.id, -1)}" for cfg in lines
     )
-    for i, text in enumerate([summary, *banners]):
-        if text:
-            cv2.putText(image, text, (10, 22 + 22 * i), FONT, 0.6, (255, 255, 255), 3)
-            cv2.putText(image, text, (10, 22 + 22 * i), FONT, 0.6, (0, 0, 0), 1)
+    for row, text in enumerate(
+        filter(None, [summary, *banners])
+    ):  # no gap where there is no summary
+        _banner(image, text, row)
+
+
+def _banner(image: np.ndarray, text: str, row: int) -> None:
+    """One line of white lettering on a darkened strip, at the top of the picture: it can be read
+    on any picture, and the letters are drawn once. (An outline drawn first, in thicker strokes, is
+    spaced wider than the letters on top of it, and on a long line the two drift apart.)"""
+    width = image.shape[1]
+    scale = BANNER_SCALE
+    text_w = cv2.getTextSize(text, FONT, scale, 1)[0][0]
+    if text_w > width - 20:  # a long line is made smaller to fit the picture
+        scale = max(BANNER_MIN_SCALE, scale * (width - 20) / text_w)
+        text_w = cv2.getTextSize(text, FONT, scale, 1)[0][0]
+    top = BANNER_ROW * row + 4
+    strip = image[top : top + BANNER_ROW, : text_w + 20]  # rows tile, so none is darkened twice
+    np.multiply(strip, 1 - BANNER_SHADE, out=strip, casting="unsafe")
+    cv2.putText(
+        image, text, (10, BANNER_ROW * (row + 1)), FONT, scale, (255, 255, 255), 1, cv2.LINE_AA
+    )
 
 
 def annotate_clip(

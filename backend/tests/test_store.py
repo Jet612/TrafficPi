@@ -5,6 +5,7 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 
 from trafficpi.core.clock import WallClock
+from trafficpi.core.evidence_settings import EvidenceSettings
 from trafficpi.db import create_db_engine, upgrade_to_head
 from trafficpi.db.store import Store
 from trafficpi.vision.rules import CountEvent, StopEvent
@@ -154,6 +155,48 @@ def test_only_a_stop_event_of_this_camera_can_be_reviewed(store: Store) -> None:
     assert store.stops_between(minute(0), minute(1)) == []  # and theirs are not ours to list
 
 
+def test_evidence_is_noted_on_a_stop_and_taken_off_again(store: Store) -> None:
+    event_id = store.record_stop(stop("rolling"), minute(0))
+    assert store.attach_evidence(event_id, "evidence/d/stop-1.jpg", "evidence/d/stop-1.mp4")
+    event = store.stop_event(event_id)
+    assert event is not None and event.evidence_path == "evidence/d/stop-1.jpg"
+    assert (event.details or {})["clip"] == "evidence/d/stop-1.mp4"
+    assert (event.details or {})["outcome"] == "rolling"  # what was there is still there
+    assert store.attach_evidence(event_id, "evidence/d/stop-1.jpg", None)  # the clip is gone
+    event = store.stop_event(event_id)
+    assert event is not None and "clip" not in (event.details or {})
+    assert (event.details or {})["outcome"] == "rolling" and event.evidence_path is not None
+    assert store.attach_evidence(event_id, None, None)
+    event = store.stop_event(event_id)
+    assert event is not None and event.evidence_path is None
+
+
+def test_evidence_can_only_be_noted_on_a_stop_of_this_camera(store: Store) -> None:
+    counted = store.record_count(count(), minute(0))
+    assert store.attach_evidence(counted, "evidence/x.jpg", None) is False
+    assert store.recent_events(type="count")[0].evidence_path is None
+    assert store.attach_evidence(9_999, "evidence/x.jpg", None) is False
+    other = Store(store._engine, camera_id="side")
+    other.ensure_camera("Side", now_ms=minute(0))
+    theirs = other.record_stop(stop(), minute(0))
+    assert store.attach_evidence(theirs, "evidence/x.jpg", None) is False
+    assert other.stop_event(theirs) is not None and other.stop_event(theirs).evidence_path is None  # type: ignore[union-attr]
+
+
+def test_one_stop_is_found_by_its_id_only_if_it_is_a_stop_of_this_camera(store: Store) -> None:
+    mine = store.record_stop(stop("did_not_stop"), minute(0))
+    counted = store.record_count(count(), minute(0))
+    other = Store(store._engine, camera_id="side")
+    other.ensure_camera("Side", now_ms=minute(0))
+    theirs = other.record_stop(stop(), minute(0))
+    found = store.stop_event(mine)
+    assert found is not None and found.id == mine and found.type == "stop"
+    assert (found.details or {})["outcome"] == "did_not_stop"
+    assert store.stop_event(counted) is None  # a count is not a stop
+    assert store.stop_event(theirs) is None  # nor is another camera's
+    assert store.stop_event(99_999) is None
+
+
 def test_the_summary_counts_each_outcome_by_review_and_leaves_out_what_is_outside_the_range(
     store: Store,
 ) -> None:
@@ -214,6 +257,26 @@ def test_recent_events_are_newest_first_and_paged(store: Store) -> None:
     assert [e.id for e in second] == ids[::-1][4:8]
     assert [e.id for e in store.recent_events(since_ms=minute(0) + 8)] == ids[::-1][:2]
     assert store.recent_events(type="stop") == []
+
+
+def test_evidence_settings_start_as_the_defaults_and_round_trip(store: Store) -> None:
+    assert store.get_evidence_settings() == EvidenceSettings(True, 30, 2048)
+    store.set_evidence_settings(EvidenceSettings(enabled=False, keep_days=7, max_mb=500))
+    assert store.get_evidence_settings() == EvidenceSettings(False, 7, 500)
+
+
+def test_an_evidence_setting_that_is_stored_but_makes_no_sense_is_ignored(store: Store) -> None:
+    for key, value in [
+        ("evidence_keep_days", 0),
+        ("evidence_max_mb", True),
+        ("evidence_enabled", "yes"),
+    ]:
+        store.set_setting(key, value)
+    # not a number of days, not a size, and not a plain "no": the defaults, and still on
+    assert store.get_evidence_settings() == EvidenceSettings(True, 30, 2048)
+    store.set_setting("evidence_keep_days", "30")
+    store.set_setting("evidence_max_mb", 10**9)
+    assert store.get_evidence_settings() == EvidenceSettings(True, 30, 2048)
 
 
 def test_settings_round_trip_and_overwrite(store: Store) -> None:

@@ -565,6 +565,22 @@
       "Settings": {
         "description": "Everything the Setup page can change. A PUT replaces all of it, so every member is given.",
         "properties": {
+          "evidence_enabled": {
+            "title": "Evidence Enabled",
+            "type": "boolean"
+          },
+          "evidence_keep_days": {
+            "maximum": 3650.0,
+            "minimum": 1.0,
+            "title": "Evidence Keep Days",
+            "type": "integer"
+          },
+          "evidence_max_mb": {
+            "maximum": 1000000.0,
+            "minimum": 50.0,
+            "title": "Evidence Max Mb",
+            "type": "integer"
+          },
           "timezone": {
             "title": "Timezone",
             "type": "string"
@@ -597,7 +613,10 @@
           "units",
           "trails_enabled",
           "trails_people",
-          "trails_keep_days"
+          "trails_keep_days",
+          "evidence_enabled",
+          "evidence_keep_days",
+          "evidence_max_mb"
         ],
         "title": "Settings",
         "type": "object"
@@ -636,6 +655,17 @@
       "StopOut": {
         "description": "What one vehicle did at one stop sign (plan.md D23), and what a person made of it.",
         "properties": {
+          "clip_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clip Url"
+          },
           "hold_s": {
             "title": "Hold S",
             "type": "number"
@@ -703,6 +733,17 @@
             "title": "Sign",
             "type": "string"
           },
+          "snapshot_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapshot Url"
+          },
           "t": {
             "title": "T",
             "type": "integer"
@@ -718,7 +759,9 @@
           "min_speed",
           "observed_s",
           "review",
-          "reviewed_at"
+          "reviewed_at",
+          "snapshot_url",
+          "clip_url"
         ],
         "title": "StopOut",
         "type": "object"
@@ -2053,6 +2096,44 @@
         "summary": "Stops Summary"
       }
     },
+    "/api/stops/{event_id}/clip.mp4": {
+      "get": {
+        "description": "The clip around that moment (when one is kept); it can be played and seeked in.",
+        "operationId": "stop_clip_api_stops__event_id__clip_mp4_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stop Clip"
+      }
+    },
     "/api/stops/{event_id}/review": {
       "put": {
         "description": "Say what a person made of a stop event: confirmed, a false positive, or null to undo.",
@@ -2101,6 +2182,44 @@
           }
         },
         "summary": "Review Stop"
+      }
+    },
+    "/api/stops/{event_id}/snapshot.jpg": {
+      "get": {
+        "description": "The picture of the moment a vehicle crossed the stop line (when one is kept).",
+        "operationId": "stop_snapshot_api_stops__event_id__snapshot_jpg_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stop Snapshot"
       }
     },
     "/api/trails": {

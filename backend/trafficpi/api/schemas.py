@@ -6,6 +6,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from trafficpi.core.evidence_settings import MAX_KEEP_DAYS as MAX_EVIDENCE_DAYS
+from trafficpi.core.evidence_settings import MAX_MAX_MB, MIN_MAX_MB
 from trafficpi.core.profile import Profile
 from trafficpi.core.trail_settings import MAX_KEEP_DAYS
 
@@ -87,6 +89,8 @@ class StopOut(BaseModel):
     observed_s: float  # how long it was watched in the zone before the line
     review: ReviewState | None  # None: not looked at yet
     reviewed_at: int | None
+    snapshot_url: str | None  # the picture of the moment it crossed the line; None: none is kept
+    clip_url: str | None  # the clip around that moment; None: none is kept
 
 
 class StopTotals(BaseModel):
@@ -148,6 +152,10 @@ class Settings(BaseModel):
     trails_enabled: bool = Field(strict=True)  # save the path each vehicle took (plan.md D21)
     trails_people: bool = Field(strict=True)  # and people's paths too (vehicles' only, if not)
     trails_keep_days: int = Field(strict=True, ge=1, le=MAX_KEEP_DAYS)  # older ones are deleted
+    # The same for the picture and clip kept of a stop-sign pass that needs a look (plan.md D24).
+    evidence_enabled: bool = Field(strict=True)
+    evidence_keep_days: int = Field(strict=True, ge=1, le=MAX_EVIDENCE_DAYS)
+    evidence_max_mb: int = Field(strict=True, ge=MIN_MAX_MB, le=MAX_MAX_MB)  # the oldest goes first
 
 
 class TrailHour(BaseModel):

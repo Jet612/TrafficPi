@@ -81,6 +81,8 @@ def test_a_stop_comes_back_with_what_was_seen_and_nothing_reviewed(
         "observed_s": 4.2,
         "review": None,
         "reviewed_at": None,
+        "snapshot_url": None,
+        "clip_url": None,
     }
 
 
@@ -206,10 +208,12 @@ def test_what_cannot_be_reviewed_is_refused(client: TestClient, store: Store) ->
     assert client.get("/api/stops", params=RANGE).json()[0]["review"] is None  # nothing changed
 
 
-def test_a_stop_event_without_its_details_is_shown_as_one_that_could_not_be_judged() -> None:
+def test_a_stop_event_without_its_details_is_shown_as_one_that_could_not_be_judged(
+    tmp_path: Path,
+) -> None:
     """Such a row should not exist; if one does (a damaged database), the list must not fail."""
     row = EventRow(5, BASE, "stop", 7, "car", "elm", None, None, None)
-    out = _stop_out(row)
+    out = _stop_out(row, tmp_path)
     assert (out.outcome, out.hold_s, out.min_speed, out.observed_s) == (
         "indeterminate",
         0.0,

@@ -67,7 +67,16 @@ describe("api", () => {
   });
 
   it("reads the settings and saves all of them at once", async () => {
-    const settings = { timezone: "UTC", units: "mph", trails_enabled: true, trails_people: false, trails_keep_days: 365 };
+    const settings = {
+      timezone: "UTC",
+      units: "mph",
+      trails_enabled: true,
+      trails_people: false,
+      trails_keep_days: 365,
+      evidence_enabled: true,
+      evidence_keep_days: 30,
+      evidence_max_mb: 2048,
+    };
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(respond(200, settings)));
     vi.stubGlobal("fetch", fetchMock);
     expect(await api.settings()).toEqual(settings);

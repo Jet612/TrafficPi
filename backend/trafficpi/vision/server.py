@@ -110,6 +110,9 @@ def create_app(
             "frames": service.frames,
             "events_recorded": service.events_recorded,
             "trails_recorded": service.trails_recorded,
+            "evidence_written": service.evidence_written,
+            "evidence_waiting": service.evidence_waiting,
+            "evidence_frames_dropped": service.evidence_frames_dropped,
             "profile_version": service.profile_version,
         }
 

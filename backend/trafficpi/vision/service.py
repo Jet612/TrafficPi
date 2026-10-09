@@ -13,19 +13,25 @@ import time
 from collections import deque
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import numpy as np
 
-from trafficpi.core.clock import WallClock
+from trafficpi.core.clock import WallClock, resolve_timezone
+from trafficpi.core.evidence_settings import EvidenceSettings
+from trafficpi.core.paths import evidence_dir
 from trafficpi.core.profile import Profile, ProfileError, empty_profile, parse_profile
 from trafficpi.core.trail_settings import DEFAULT_KEEP_DAYS
 from trafficpi.db.store import Store
+from trafficpi.vision import evidence as evidence_module
 from trafficpi.vision.detector import Detector
 from trafficpi.vision.engine import EngineResult, TrafficEngine
+from trafficpi.vision.evidence import EvidenceFiles, EvidenceJob, EvidenceRecorder
 from trafficpi.vision.metrics import SystemSample, SystemSampler, decode_throttled
 from trafficpi.vision.profile import DEFAULT_ASPECT, compile_profile
-from trafficpi.vision.rules import CountEvent, CountingRule, Rule, StopEvent, StopSignRule
+from trafficpi.vision.rules import CountEvent, CountingRule, Rule, StopEvent, StopSign, StopSignRule
 from trafficpi.vision.shutdown import StopRequest
 from trafficpi.vision.sources import EndOfStream, Frame, FrameSource
 from trafficpi.vision.tracker import ByteTracker, TrackerConfig, TrackUpdate
@@ -57,6 +63,7 @@ class ServiceConfig:
     trail_cleanup_every_s: float = (
         6 * 3600.0
     )  # how often trails older than the owner wants are deleted
+    evidence_cleanup_every_s: float = 3600.0  # and evidence that is too old or too much
 
 
 class LiveState:
@@ -245,7 +252,11 @@ class VisionService:
         tracker_config: TrackerConfig | None = None,
         config: ServiceConfig | None = None,
         perf_counter: Callable[[], float] = time.perf_counter,
+        data_dir: Path | None = None,
+        evidence: EvidenceRecorder | None = None,
     ) -> None:
+        """``data_dir`` is where evidence is kept (None: none is kept); a ``evidence`` recorder can
+        be given, instead of the one made from it, for tests."""
         self.source = source
         self.detector = detector
         self.store = store
@@ -273,6 +284,15 @@ class VisionService:
         self._next_trail_cleanup = 0.0  # time.monotonic(): delete old trails when this has passed
         self._keep_days = DEFAULT_KEEP_DAYS
         self.trails_recorded = 0
+        self._data_dir = data_dir
+        self._evidence: EvidenceRecorder | None = None  # None while evidence is switched off
+        self._given_evidence = evidence  # used whenever evidence is on, instead of making one
+        self._evidence_settings = EvidenceSettings()
+        self._evidence_waiting: list[EvidenceFiles] = []  # written, not yet noted in the database
+        self.evidence_written = 0  # events whose picture or clip was written and noted since start
+        self._dropped_by_finished = 0  # frames that finished recorders had no room for
+        self._next_evidence_cleanup = 0.0  # time.monotonic()
+        self._stop_signs: dict[str, StopSign] = {}
 
     # --- configuration ----------------------------------------------------------------------
 
@@ -318,6 +338,7 @@ class VisionService:
             rules.append(StopSignRule(compiled.stop_signs))
         self._engine.rules = rules
         self._engine.detection_filter = compiled.detection_filter
+        self._stop_signs = {sign.id: sign for sign in compiled.stop_signs}
         self._active_profile = profile
         self.profile_version = version
         self.live.set_profile(profile, version)
@@ -346,6 +367,7 @@ class VisionService:
         """
         self.load_profile()
         self._load_trail_settings()
+        self._load_evidence_settings()
         if not self._open_source(stop):
             return
         try:
@@ -353,6 +375,7 @@ class VisionService:
         finally:
             self._close_source()
             self._finish_trails()
+            self._finish_evidence()
 
     def _loop(self, stop: StopRequest, max_frames: int | None) -> None:
         sampler = SystemSampler()
@@ -364,6 +387,7 @@ class VisionService:
                 self._reload.clear()
                 self.load_profile()
                 self._load_trail_settings()
+                self._load_evidence_settings()
             try:
                 frame = self.source.read()
             except EndOfStream:
@@ -386,6 +410,10 @@ class VisionService:
                 if isinstance(event, CountEvent | StopEvent):
                     self._record(event, now_ms)
             self._follow_trails(result, now_ms)
+            if self._evidence is not None:
+                self._evidence.feed(frame.timestamp_ns, frame.image, result.tracks)
+            if self._evidence is not None or self._evidence_waiting:
+                self._note_evidence()
 
             now = self._perf_counter()
             gap = now - last
@@ -403,6 +431,8 @@ class VisionService:
                 next_metrics = time.monotonic() + self.config.metrics_every_s
             if time.monotonic() >= self._next_trail_cleanup:
                 self._clean_up_trails()
+            if self._data_dir is not None and time.monotonic() >= self._next_evidence_cleanup:
+                self._clean_up_evidence()
 
     # --- the frame source's life cycle ------------------------------------------------------
 
@@ -452,10 +482,11 @@ class VisionService:
         while self._pending:
             queued, at_ms = self._pending[0]
             try:
-                if isinstance(queued, CountEvent):
+                stored_id = (
                     self.store.record_count(queued, at_ms)
-                else:
-                    self.store.record_stop(queued, at_ms)
+                    if isinstance(queued, CountEvent)
+                    else self.store.record_stop(queued, at_ms)
+                )
             except Exception:
                 log.exception(
                     "could not store an event; will retry (%d waiting)", len(self._pending)
@@ -464,6 +495,7 @@ class VisionService:
             self._pending.popleft()
             self.events_recorded += 1
             if isinstance(queued, StopEvent):
+                self._ask_for_evidence(queued, stored_id, at_ms)
                 log.info(
                     "%s at %s: %s (still %.1f s, slowest %.2f, watched %.1f s)",
                     queued.label,
@@ -473,6 +505,108 @@ class VisionService:
                     queued.min_speed,
                     queued.observed_s,
                 )
+
+    # --- evidence (plan.md D8, D24) ---------------------------------------------------------
+
+    def _load_evidence_settings(self) -> None:
+        """Start or stop keeping evidence as the settings say (at start, and on every reload)."""
+        try:
+            settings = self.store.get_evidence_settings()
+        except Exception:
+            log.exception("could not read the evidence settings; keeping the ones in use")
+            return
+        self._evidence_settings = settings
+        self._next_evidence_cleanup = 0.0  # new limits are applied at once
+        if settings.enabled and self._data_dir is not None and self._evidence is None:
+            self._evidence = self._given_evidence or EvidenceRecorder(self._data_dir)
+            log.info("keeping evidence of passes that need a look in %s", self._evidence.folder)
+        elif not (settings.enabled and self._data_dir is not None) and self._evidence is not None:
+            self._finish_evidence()
+            log.info("evidence is switched off")
+
+    def _ask_for_evidence(self, event: StopEvent, event_id: int, at_ms: int) -> None:
+        """A stop that needs a look gets a picture and a clip, once the seconds after it are in."""
+        if self._evidence is None or event.outcome == "stopped":
+            return
+        try:
+            sign = self._stop_signs.get(event.sign_id)
+            tz = resolve_timezone(self.store.get_setting("timezone"))
+            when = datetime.fromtimestamp(at_ms / 1000, tz).strftime("%Y-%m-%d %H:%M:%S")
+            what = {"rolling": "rolled through", "did_not_stop": "did not stop"}.get(
+                event.outcome, "could not be judged"
+            )
+            name = (sign.name if sign else "") or "Stop sign"
+            day = datetime.fromtimestamp(at_ms / 1000, UTC).strftime("%Y-%m-%d")
+            self._evidence.request(
+                EvidenceJob(
+                    event_id=event_id,
+                    track_id=event.track_id,
+                    at_ns=event.timestamp_ns,
+                    caption=f"{name}: {event.label} #{event.track_id} {what} - {when}",
+                    sign=sign,
+                    stem=f"{day}/stop-{event_id}",
+                    deadline=time.monotonic() + evidence_module.GIVE_UP_AFTER_S,
+                )
+            )
+        except Exception:  # evidence helps the owner look; it must never stop the counting
+            log.exception("could not ask for evidence of event %d", event_id)
+
+    def _note_evidence(self) -> None:
+        """Note in the database where written evidence is (kept to retry if it is busy)."""
+        if self._evidence is not None:
+            self._evidence_waiting.extend(self._evidence.poll())
+        while self._evidence_waiting:
+            done = self._evidence_waiting[0]
+            try:
+                self.store.attach_evidence(done.event_id, done.snapshot, done.clip)
+            except Exception:
+                log.exception("could not note the evidence of event %d; will retry", done.event_id)
+                return
+            self._evidence_waiting.pop(0)
+            if done.snapshot or done.clip:
+                self.evidence_written += 1
+
+    def _finish_evidence(self) -> None:
+        """Stop the recorder, writing what the frames in hand are enough for, and note it."""
+        recorder = self._evidence
+        if recorder is None:
+            return
+        recorder.close()
+        self._note_evidence()
+        self._dropped_by_finished += recorder.frames_dropped
+        self._evidence = None
+
+    @property
+    def evidence_waiting(self) -> int:
+        """Events that wait for the seconds after them, to have their picture and clip made."""
+        return self._evidence.waiting if self._evidence is not None else 0
+
+    @property
+    def evidence_frames_dropped(self) -> int:
+        """Frames the recorder had no room for since start: a gap in a clip, if there were any."""
+        live = self._evidence.frames_dropped if self._evidence is not None else 0
+        return self._dropped_by_finished + live
+
+    def _clean_up_evidence(self) -> None:
+        """Delete evidence that is too old, and the oldest of it if there is too much.
+
+        This goes on while no more is being made: what was kept is kept for so long, and no longer.
+        """
+        self._next_evidence_cleanup = time.monotonic() + self.config.evidence_cleanup_every_s
+        if self._data_dir is None:
+            return
+        settings = self._evidence_settings
+        try:
+            files, freed = evidence_module.clean_up(
+                evidence_dir(self._data_dir),
+                keep_days=settings.keep_days,
+                max_bytes=settings.max_mb * 1_000_000,
+            )
+        except Exception:
+            log.exception("could not delete old evidence")
+            return
+        if files:
+            log.info("deleted %d old evidence file(s), %.1f MB", files, freed / 1e6)
 
     # --- trails (plan.md D21) ---------------------------------------------------------------
 

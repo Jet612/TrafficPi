@@ -471,7 +471,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         street = DemoStreet()
         detector: Detector = street
         model = "demo"
-        service = VisionService(street, street, store)
+        service = VisionService(street, street, store, data_dir=data_dir)
         log.warning(
             "DEMO: a made-up street instead of the camera; counts go to %s",
             data_dir / "trafficpi.db",
@@ -490,6 +490,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 RealtimeLoopSource(video),
                 detector,
                 store,
+                data_dir=data_dir,
                 timestamp_ms=lambda _frame: time.time_ns() // 1_000_000,  # the clip has no clock
             )
             log.warning(
@@ -499,7 +500,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             )
         else:
             camera = PiCameraSource(settings)
-            service = VisionService(camera, detector, store)
+            service = VisionService(camera, detector, store, data_dir=data_dir)
             snapshot = camera.capture_still
     service.live.set_detector(model)
     server = ServerThread(

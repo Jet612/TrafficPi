@@ -38,6 +38,8 @@ def test_health_and_state(service: VisionService) -> None:
     health = client.get("/health").json()
     assert health["status"] == "ok" and health["frames"] == 30 and health["profile_version"] == 0
     assert health["trails_recorded"] == 1  # the car that drove through was saved when the run ended
+    assert (health["evidence_written"], health["evidence_waiting"]) == (0, 0)
+    assert health["evidence_frames_dropped"] == 0
     state = client.get("/state").json()
     assert state["frame"] == 29 and state["camera"]["ok"] and len(state["tracks"]) == 1
 

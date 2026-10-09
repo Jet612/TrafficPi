@@ -2,7 +2,9 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Check, X } from "lucide-react";
+import { Play } from "lucide-react";
+import { ReviewButtons } from "@/components/review-buttons";
+import { StopViewer } from "@/components/stop-viewer";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Segmented } from "@/components/ui/segmented";
@@ -19,10 +21,10 @@ import {
   OUTCOME_LABEL,
   OUTCOME_LEVEL,
   PERIOD_OPTIONS,
-  REVIEW_LABEL,
   counted,
   nextReview,
   numbersText,
+  passText,
   periodRange,
   signLabel,
   summarySentence,
@@ -52,6 +54,7 @@ export function StopsCard() {
   const [answers, setAnswers] = useState<ReadonlyMap<number, StopOut>>(() => new Map());
   const [reviewing, setReviewing] = useState<ReadonlySet<number>>(() => new Set());
   const [problem, setProblem] = useState<string | null>(null);
+  const [viewing, setViewing] = useState<number | null>(null);
   const zone = useStats().today?.timezone ?? "UTC";
   const now = useNow(60_000); // 0 until the browser has the time: nothing is asked before that
   const { fromMs, toMs } = useMemo(() => periodRange(period, now), [period, now]);
@@ -96,6 +99,8 @@ export function StopsCard() {
     }
   }
 
+  const viewed = viewing === null ? -1 : rows.findIndex((row) => row.id === viewing);
+  const viewedRow = rows[viewed] ?? null; // null too when the pass has left the list since it was opened
   const everything = summary.data?.outcomes ?? [];
   const noSigns = profile.data !== null && signs.length === 0;
   const nothingEver = noSigns && everything.every((totals) => totals.total === 0);
@@ -222,6 +227,7 @@ export function StopsCard() {
                       sign={signLabel(profile.data?.profile ?? null, row.sign)}
                       busy={reviewing.has(row.id)}
                       onReview={(pressed) => void make(row, pressed)}
+                      onOpen={() => setViewing(row.id)}
                     />
                   ))}
                 </ol>
@@ -237,6 +243,19 @@ export function StopsCard() {
           </div>
         )}
       </CardBody>
+      {viewedRow !== null && (
+        <StopViewer
+          row={viewedRow}
+          sign={signLabel(profile.data?.profile ?? null, viewedRow.sign)}
+          zone={zone}
+          busy={reviewing.has(viewedRow.id)}
+          newer={rows[viewed - 1] ?? null}
+          older={rows[viewed + 1] ?? null}
+          onShow={(row) => setViewing(row.id)}
+          onReview={(pressed) => void make(viewedRow, pressed)}
+          onClose={() => setViewing(null)}
+        />
+      )}
     </Card>
   );
 }
@@ -247,18 +266,25 @@ function StopRow({
   sign,
   busy,
   onReview,
+  onOpen,
 }: {
   row: StopOut;
   zone: string;
   sign: string;
   busy: boolean;
   onReview: (pressed: ReviewState) => void;
+  onOpen: () => void;
 }) {
   const kind = row.label ?? "";
   const when = formatDateTimeSeconds(row.t, zone);
-  const what = `${classSingular(kind).toLowerCase()} at ${sign}, ${when}`;
+  const what = passText(row, sign, zone);
   return (
-    <li className="grid gap-x-4 gap-y-1.5 border-t border-grid py-3 text-sm first:border-t-0 first:pt-0 md:grid-cols-[minmax(0,1fr)_auto] md:items-center" data-outcome={row.outcome} data-review={row.review ?? "none"}>
+    <li
+      className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-2 border-t border-grid py-3 text-sm first:border-t-0 first:pt-0 md:grid-cols-[auto_minmax(0,1fr)_auto]"
+      data-outcome={row.outcome}
+      data-review={row.review ?? "none"}
+    >
+      <Thumbnail row={row} what={what} onOpen={onOpen} />
       <div className="min-w-0">
         <p className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <time className="tabular-nums text-ink-2" dateTime={new Date(row.t).toISOString()}>
@@ -273,24 +299,37 @@ function StopRow({
         </p>
         <p className="mt-1 text-ink-3">{numbersText(row)}</p>
       </div>
-      <div className="flex flex-wrap items-center gap-2" role="group" aria-label={`Your say on the ${what}`}>
-        {(["confirmed", "false_positive"] as const).map((state) => (
-          <Button
-            key={state}
-            size="sm"
-            variant="secondary"
-            disabled={busy}
-            aria-pressed={row.review === state}
-            aria-label={`${state === "confirmed" ? "Confirm" : "False alarm"}: ${what}`}
-            onClick={() => onReview(state)}
-            className={row.review === state ? "bg-accent-wash" : undefined}
-          >
-            {state === "confirmed" ? <Check className="size-4" aria-hidden="true" /> : <X className="size-4" aria-hidden="true" />}
-            {state === "confirmed" ? "Confirm" : "False alarm"}
-          </Button>
-        ))}
-        {row.review && <span className="sr-only">{REVIEW_LABEL[row.review]}</span>}
-      </div>
+      <ReviewButtons review={row.review} busy={busy} what={what} onReview={onReview} className="col-span-2 md:col-span-1" />
     </li>
+  );
+}
+
+/** The picture kept of a pass, to open and watch its clip; a box that says so where nothing is kept. */
+function Thumbnail({ row, what, onOpen }: { row: StopOut; what: string; onOpen: () => void }) {
+  const size = "h-[54px] w-24 sm:h-[63px] sm:w-28"; // 16 by 9, like the picture
+  if (row.snapshot_url === null && row.clip_url === null) {
+    return (
+      <div className={cn(size, "grid place-items-center rounded-md border border-dashed border-edge px-1 text-center text-xs leading-tight text-ink-3")}>
+        {row.outcome === "stopped" ? "None needed" : "No picture"}
+      </div>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      aria-label={`${row.clip_url !== null ? "Watch the clip of" : "Look at the picture of"} the ${what}`}
+      className={cn(size, "group relative block overflow-hidden rounded-md border border-edge bg-sunken")}
+    >
+      {row.snapshot_url !== null && (
+        // eslint-disable-next-line @next/next/no-img-element -- a picture from the API, kept as it is
+        <img src={row.snapshot_url} alt="" loading="lazy" decoding="async" className="size-full object-cover" />
+      )}
+      {row.clip_url !== null && (
+        <span className="absolute inset-0 grid place-items-center bg-black/25 text-white transition-colors group-hover:bg-black/40">
+          <Play className="size-5 fill-current" aria-hidden="true" />
+        </span>
+      )}
+    </button>
   );
 }

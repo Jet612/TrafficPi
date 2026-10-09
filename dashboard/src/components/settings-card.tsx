@@ -9,7 +9,20 @@ import { StatusBadge } from "@/components/ui/status";
 import { Switch } from "@/components/ui/switch";
 import { useUnsavedWarning } from "@/components/unsaved";
 import { ApiError, api } from "@/lib/api";
-import { MAX_KEEP_DAYS, fromDraft, isChanged, parseKeepDays, roughly, toDraft, zoneChoices, type SettingsDraft } from "@/lib/settings";
+import {
+  MAX_EVIDENCE_MB,
+  MAX_KEEP_DAYS,
+  MIN_EVIDENCE_MB,
+  fromDraft,
+  isChanged,
+  parseEvidenceMb,
+  parseKeepDays,
+  roughly,
+  sizeText,
+  toDraft,
+  zoneChoices,
+  type SettingsDraft,
+} from "@/lib/settings";
 import type { Settings } from "@/lib/types";
 
 type Outcome = { kind: "ok" | "error"; text: string } | null;
@@ -42,6 +55,10 @@ export function SettingsCard() {
   const zoneHelpId = useId();
   const daysId = useId();
   const daysHelpId = useId();
+  const evidenceDaysId = useId();
+  const evidenceDaysHelpId = useId();
+  const evidenceMbId = useId();
+  const evidenceMbHelpId = useId();
 
   useEffect(() => {
     const controller = new AbortController();
@@ -67,6 +84,8 @@ export function SettingsCard() {
   const zones = useMemo(() => (draft ? zoneChoices(knownZones(), draft.timezone.trim()) : []), [draft]);
   const here = draft ? browserZone() : null;
   const days = draft ? parseKeepDays(draft.keepDays) : null;
+  const evidenceDays = draft ? parseKeepDays(draft.evidenceDays) : null;
+  const evidenceMb = draft ? parseEvidenceMb(draft.evidenceMb) : null;
 
   function change(update: Partial<SettingsDraft>) {
     setOutcome(null);
@@ -151,29 +170,78 @@ export function SettingsCard() {
                 />
                 <p className="mt-1.5 text-sm text-ink-2">For speeds, once they are measured (a later step). Nothing shows them yet.</p>
               </div>
+
+              <fieldset className="grid content-start gap-3">
+                <legend className="mb-1 text-sm font-medium text-ink">Trails</legend>
+                <p className="text-sm text-ink-2">
+                  A trail is the path a vehicle took across the picture, saved when it leaves it: no picture of the vehicle, no number plate, no face.
+                </p>
+                <Switch label="Save the path of each vehicle" checked={draft.trailsEnabled} onChange={(trailsEnabled) => change({ trailsEnabled })} />
+                <Switch label="Include people" checked={draft.trailsPeople} onChange={(trailsPeople) => change({ trailsPeople })} />
+                <div>
+                  <Label htmlFor={daysId}>Keep trails for (days)</Label>
+                  <Input
+                    id={daysId}
+                    inputMode="numeric"
+                    autoComplete="off"
+                    value={draft.keepDays}
+                    onChange={(event) => change({ keepDays: event.target.value })}
+                    aria-invalid={days === null}
+                    aria-describedby={daysHelpId}
+                    className="w-28"
+                  />
+                  <p id={daysHelpId} className="mt-1.5 text-sm text-ink-2">
+                    {days === null ? `A whole number of days, from 1 to ${MAX_KEEP_DAYS}.` : `Kept for ${roughly(days)}. Older trails are deleted by themselves.`}
+                  </p>
+                </div>
+              </fieldset>
             </div>
 
             <fieldset className="grid content-start gap-3">
-              <legend className="mb-1 text-sm font-medium text-ink">Trails</legend>
+              <legend className="mb-1 text-sm font-medium text-ink">Evidence for stop signs</legend>
               <p className="text-sm text-ink-2">
-                A trail is the path a vehicle took across the picture, saved when it leaves it: no picture of the vehicle, no number plate, no face.
+                For each pass at a stop sign that needs a look (rolled through, did not stop, could not be told), a picture and a short clip are kept on this machine, for you to
+                see and decide. A vehicle that stopped as it should gets none. The pictures are small, 640 by 360 pixels, so far-off number plates and faces cannot be read in them (one close to the camera might be).
               </p>
-              <Switch label="Save the path of each vehicle" checked={draft.trailsEnabled} onChange={(trailsEnabled) => change({ trailsEnabled })} />
-              <Switch label="Include people" checked={draft.trailsPeople} onChange={(trailsPeople) => change({ trailsPeople })} />
+              <Switch
+                label="Keep a picture and a clip of passes that need a look"
+                checked={draft.evidenceEnabled}
+                onChange={(evidenceEnabled) => change({ evidenceEnabled })}
+              />
               <div>
-                <Label htmlFor={daysId}>Keep trails for (days)</Label>
+                <Label htmlFor={evidenceDaysId}>Keep pictures and clips for (days)</Label>
                 <Input
-                  id={daysId}
+                  id={evidenceDaysId}
                   inputMode="numeric"
                   autoComplete="off"
-                  value={draft.keepDays}
-                  onChange={(event) => change({ keepDays: event.target.value })}
-                  aria-invalid={days === null}
-                  aria-describedby={daysHelpId}
+                  value={draft.evidenceDays}
+                  onChange={(event) => change({ evidenceDays: event.target.value })}
+                  aria-invalid={evidenceDays === null}
+                  aria-describedby={evidenceDaysHelpId}
                   className="w-28"
                 />
-                <p id={daysHelpId} className="mt-1.5 text-sm text-ink-2">
-                  {days === null ? `A whole number of days, from 1 to ${MAX_KEEP_DAYS}.` : `Kept for ${roughly(days)}. Older trails are deleted by themselves.`}
+                <p id={evidenceDaysHelpId} className="mt-1.5 text-sm text-ink-2">
+                  {evidenceDays === null
+                    ? `A whole number of days, from 1 to ${MAX_KEEP_DAYS}.`
+                    : `Kept for ${roughly(evidenceDays)}. Older ones are deleted by themselves, also if none are being made.`}
+                </p>
+              </div>
+              <div>
+                <Label htmlFor={evidenceMbId}>Keep at most (megabytes)</Label>
+                <Input
+                  id={evidenceMbId}
+                  inputMode="numeric"
+                  autoComplete="off"
+                  value={draft.evidenceMb}
+                  onChange={(event) => change({ evidenceMb: event.target.value })}
+                  aria-invalid={evidenceMb === null}
+                  aria-describedby={evidenceMbHelpId}
+                  className="w-28"
+                />
+                <p id={evidenceMbHelpId} className="mt-1.5 text-sm text-ink-2">
+                  {evidenceMb === null
+                    ? `A whole number of megabytes, from ${MIN_EVIDENCE_MB} to ${MAX_EVIDENCE_MB}.`
+                    : `Up to ${sizeText(evidenceMb)} on the disk. When there is more, the oldest are deleted first.`}
                 </p>
               </div>
             </fieldset>

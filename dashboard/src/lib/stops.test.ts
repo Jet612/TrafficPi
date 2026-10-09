@@ -10,6 +10,7 @@ import {
   counted,
   nextReview,
   numbersText,
+  passText,
   periodRange,
   signLabel,
   summarySentence,
@@ -92,6 +93,15 @@ describe("the summary in words", () => {
   });
 });
 
+describe("which pass it is", () => {
+  it("names the vehicle, the stop sign and the second, in the zone of the camera", () => {
+    const at = Date.UTC(2026, 9, 9, 14, 5, 9);
+    expect(passText({ label: "car", t: at }, "Elm Street", "UTC")).toBe("car at Elm Street, 2026-10-09 14:05:09");
+    expect(passText({ label: "truck", t: at }, "Stop sign 2", "America/New_York")).toBe("truck at Stop sign 2, 2026-10-09 10:05:09");
+    expect(passText({ label: null, t: at }, "Elm Street", "UTC")).toBe("vehicle at Elm Street, 2026-10-09 14:05:09");
+  });
+});
+
 describe("the numbers behind a verdict", () => {
   const stop = (over: Partial<StopOut> = {}): StopOut => ({
     id: 1,
@@ -104,6 +114,8 @@ describe("the numbers behind a verdict", () => {
     observed_s: 4.2,
     review: null,
     reviewed_at: null,
+    snapshot_url: null,
+    clip_url: null,
     ...over,
   });
 

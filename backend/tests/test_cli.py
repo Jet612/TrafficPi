@@ -1,5 +1,6 @@
 import argparse
 import os
+import shutil
 import socket
 import threading
 import time
@@ -10,6 +11,7 @@ import httpx
 import numpy as np
 import pytest
 
+from tests.fakes import STOP_SIGN
 from trafficpi.db.store import open_store
 from trafficpi.vision import cli
 from trafficpi.vision.shutdown import StopRequest
@@ -145,8 +147,8 @@ def run_in_thread(argv: list[str]) -> tuple[threading.Thread, StopRequest, list[
     return thread, args.stop, result
 
 
-def wait_for(url: str, ready) -> dict:  # type: ignore[no-untyped-def,type-arg]
-    deadline = time.monotonic() + 20
+def wait_for(url: str, ready, seconds: float = 20) -> dict:  # type: ignore[no-untyped-def,type-arg]
+    deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
         try:
             body = httpx.get(url, timeout=2).json()
@@ -235,6 +237,40 @@ def test_run_demo_needs_no_camera_or_accelerator_and_keeps_its_own_database(
     assert result == [0]
     assert (tmp_path / "data" / "demo" / "trafficpi.db").exists()
     assert not (tmp_path / "data" / "trafficpi.db").exists()
+
+
+def test_run_demo_keeps_a_picture_and_a_clip_of_a_pass_that_needs_a_look(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The whole of it: the demo's traffic, a stop sign in the profile, the service given the data
+    directory by the command, the files written, and where they are noted in the database."""
+    monkeypatch.setattr(cli, "_make_detector", lambda args: pytest.fail("the demo needs none"))
+    data = tmp_path / "data"
+    store = open_store(data)
+    store.set_profile({"stop_signs": [STOP_SIGN]})  # the demo's cars do not stop at it
+    store.close()
+    port = free_port()
+    thread, stop, result = run_in_thread(
+        ["run", "--demo", "--port", str(port), "--data-dir", str(data)]
+    )
+    try:
+        health = wait_for(
+            f"http://127.0.0.1:{port}/health", lambda h: h["evidence_written"] >= 1, seconds=60
+        )
+        assert health["evidence_frames_dropped"] == 0
+    finally:
+        stop.request()
+        thread.join(timeout=30)
+    assert result == [0]
+    store = open_store(data)
+    kept = [e for e in store.recent_events(type="stop", limit=50) if e.evidence_path]
+    assert kept, "a pass was judged, and its picture is noted in the database"
+    picture = data / str(kept[0].evidence_path)
+    assert picture.read_bytes()[:2] == b"\xff\xd8"  # a JPEG
+    if shutil.which("ffmpeg"):
+        clip = data / str((kept[0].details or {}).get("clip"))
+        assert clip.read_bytes()[4:8] == b"ftyp"  # an MP4
+    store.close()
 
 
 def test_demo_and_replay_cannot_be_combined(capsys: pytest.CaptureFixture[str]) -> None:

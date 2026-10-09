@@ -12,7 +12,9 @@ from sqlalchemy import CursorResult, Engine, delete, func, select
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.orm import Session, sessionmaker
 
+from trafficpi.core import evidence_settings as ev
 from trafficpi.core.clock import WallClock
+from trafficpi.core.evidence_settings import EvidenceSettings
 from trafficpi.core.trail_settings import (
     DEFAULT_KEEP_DAYS,
     ENABLED_KEY,
@@ -297,6 +299,36 @@ class Store:
             totals[name][review or "unreviewed"] += count
         return totals
 
+    def stop_event(self, event_id: int) -> EventRow | None:
+        """One stop event, or None if there is no such one (a count has no evidence to show)."""
+        with self._session() as s:
+            row = s.execute(
+                select(Event).where(
+                    Event.id == event_id, Event.camera_id == self.camera_id, Event.type == "stop"
+                )
+            ).scalar_one_or_none()
+            return None if row is None else _event_row(row)
+
+    def attach_evidence(self, event_id: int, snapshot: str | None, clip: str | None) -> bool:
+        """Record where the picture and the clip of a stop event were written (paths relative to
+        the data directory; None for one that was not made). False if there is no such event."""
+        with self._session() as s:
+            row = s.execute(
+                select(Event).where(
+                    Event.id == event_id, Event.camera_id == self.camera_id, Event.type == "stop"
+                )
+            ).scalar_one_or_none()
+            if row is None:
+                return False
+            details = dict(row.details or {})
+            if clip is None:
+                details.pop("clip", None)
+            else:
+                details["clip"] = clip
+            row.evidence_path = snapshot
+            row.details = details  # a new dict: a change inside the old one would not be saved
+            return True
+
     def review_stop(
         self, event_id: int, state: str | None, *, now_ms: int | None = None
     ) -> EventRow | None:
@@ -470,6 +502,25 @@ class Store:
         self.set_setting(ENABLED_KEY, settings.enabled)
         self.set_setting(PEOPLE_KEY, settings.people)
         self.set_setting(KEEP_DAYS_KEY, settings.keep_days)
+
+    def get_evidence_settings(self) -> EvidenceSettings:
+        """Whether evidence is kept, how long and how much; unusable stored values are ignored."""
+
+        def whole(key: str, default: int, low: int, high: int) -> int:
+            value = self.get_setting(key, default)
+            usable = isinstance(value, int) and not isinstance(value, bool) and low <= value <= high
+            return value if usable else default
+
+        return EvidenceSettings(
+            enabled=self.get_setting(ev.ENABLED_KEY, True) is not False,
+            keep_days=whole(ev.KEEP_DAYS_KEY, ev.DEFAULT_KEEP_DAYS, 1, ev.MAX_KEEP_DAYS),
+            max_mb=whole(ev.MAX_MB_KEY, ev.DEFAULT_MAX_MB, ev.MIN_MAX_MB, ev.MAX_MAX_MB),
+        )
+
+    def set_evidence_settings(self, settings: EvidenceSettings) -> None:
+        self.set_setting(ev.ENABLED_KEY, settings.enabled)
+        self.set_setting(ev.KEEP_DAYS_KEY, settings.keep_days)
+        self.set_setting(ev.MAX_MB_KEY, settings.max_mb)
 
     # --- settings and profile --------------------------------------------------------------
 

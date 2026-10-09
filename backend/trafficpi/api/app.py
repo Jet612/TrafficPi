@@ -9,6 +9,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import date, datetime
+from pathlib import Path
 from typing import Annotated, Any, Literal
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -16,7 +17,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import websockets
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request, Response, WebSocket
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from trafficpi.api import stats, trail_views
@@ -56,6 +57,8 @@ from trafficpi.api.schemas import (
 from trafficpi.api.settings import ApiSettings, normalize_origin
 from trafficpi.api.vision_client import VisionClient, VisionUnavailable
 from trafficpi.core.clock import WallClock, resolve_timezone
+from trafficpi.core.evidence_settings import EvidenceSettings
+from trafficpi.core.paths import evidence_dir
 from trafficpi.core.profile import (
     Profile,
     ProfileError,
@@ -71,6 +74,7 @@ UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 WHERE_FROM = {"body", "query", "path", "header", "cookie"}  # the first part of a FastAPI error path
 SERIES_LIMITS_S = {"minute": 2 * 86400, "hour": 62 * 86400, "day": 1100 * 86400}
 MAX_STOP_RANGE_S = 366 * 86400
+EVIDENCE_CACHE = "private, max-age=86400"  # a picture or a clip is never changed once it is written
 SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
@@ -122,8 +126,20 @@ def _error_path(location: tuple[str | int, ...]) -> tuple[str | int, ...]:
     return tuple(location[1:]) if location and location[0] in WHERE_FROM else tuple(location)
 
 
-def _stop_out(event: EventRow) -> StopOut:
+def _evidence_file(data_dir: Path, relative: str | None) -> Path | None:
+    """The file that an event's evidence path names: None unless it is a real file that lies in
+    the evidence folder (the path is read from the database; nothing it says is trusted)."""
+    if not relative:
+        return None
+    folder = evidence_dir(data_dir).resolve()
+    path = (data_dir / relative).resolve()
+    return path if path.is_relative_to(folder) and path.is_file() else None
+
+
+def _stop_out(event: EventRow, data_dir: Path) -> StopOut:
     details = event.details or {}
+    has_snapshot = _evidence_file(data_dir, event.evidence_path) is not None
+    has_clip = _evidence_file(data_dir, details.get("clip")) is not None
     return StopOut(
         id=event.id,
         t=event.occurred_at,
@@ -135,6 +151,8 @@ def _stop_out(event: EventRow) -> StopOut:
         observed_s=details.get("observed_s", 0.0),
         review=event.review,  # type: ignore[arg-type]
         reviewed_at=event.reviewed_at,
+        snapshot_url=f"/api/stops/{event.id}/snapshot.jpg" if has_snapshot else None,
+        clip_url=f"/api/stops/{event.id}/clip.mp4" if has_clip else None,
     )
 
 
@@ -421,7 +439,7 @@ def create_app(
             limit=limit,
             before_id=before_id,
         )
-        return [_stop_out(event) for event in found]
+        return [_stop_out(event, settings.data_dir) for event in found]
 
     @app.get("/api/stops/summary", response_model=StopSummary)
     def stops_summary(
@@ -444,7 +462,36 @@ def create_app(
         reviewed = ctx.store.review_stop(event_id, body.state, now_ms=ctx.clock.now_ms())
         if reviewed is None:
             raise HTTPException(status_code=404, detail="no such stop event")
-        return _stop_out(reviewed)
+        return _stop_out(reviewed, settings.data_dir)
+
+    def evidence_response(event_id: int, kind: Literal["snapshot", "clip"]) -> FileResponse:
+        event = ctx.store.stop_event(event_id)
+        if event is not None:
+            relative = (
+                event.evidence_path if kind == "snapshot" else (event.details or {}).get("clip")
+            )
+            path = _evidence_file(settings.data_dir, relative)
+        else:
+            path = None
+        if path is None:
+            raise HTTPException(status_code=404, detail=f"no {kind} is kept for that stop")
+        return FileResponse(
+            path,
+            media_type="image/jpeg" if kind == "snapshot" else "video/mp4",
+            filename=f"stop-{event_id}{path.suffix}",
+            content_disposition_type="inline",  # shown where it is opened; "save as" keeps the name
+            headers={"Cache-Control": EVIDENCE_CACHE},
+        )
+
+    @app.get("/api/stops/{event_id}/snapshot.jpg")
+    def stop_snapshot(event_id: int, user: User) -> FileResponse:
+        """The picture of the moment a vehicle crossed the stop line (when one is kept)."""
+        return evidence_response(event_id, "snapshot")
+
+    @app.get("/api/stops/{event_id}/clip.mp4")
+    def stop_clip(event_id: int, user: User) -> FileResponse:
+        """The clip around that moment (when one is kept); it can be played and seeked in."""
+        return evidence_response(event_id, "clip")
 
     def reference_taken_at() -> int | None:
         try:
@@ -533,12 +580,16 @@ def create_app(
     def get_settings(user: User) -> Settings:
         units = ctx.store.get_setting("units", "mph")
         trails = ctx.store.get_trail_settings()
+        evidence = ctx.store.get_evidence_settings()
         return Settings(
             timezone=str(_timezone(ctx.store)),
             units="kmh" if units == "kmh" else "mph",
             trails_enabled=trails.enabled,
             trails_people=trails.people,
             trails_keep_days=trails.keep_days,
+            evidence_enabled=evidence.enabled,
+            evidence_keep_days=evidence.keep_days,
+            evidence_max_mb=evidence.max_mb,
         )
 
     @app.put("/api/settings", response_model=Settings)
@@ -558,7 +609,14 @@ def create_app(
                 keep_days=body.trails_keep_days,
             )
         )
-        await ctx.vision.reload()  # the vision service reads the trail settings when told to
+        ctx.store.set_evidence_settings(
+            EvidenceSettings(
+                enabled=body.evidence_enabled,
+                keep_days=body.evidence_keep_days,
+                max_mb=body.evidence_max_mb,
+            )
+        )
+        await ctx.vision.reload()  # the vision service reads these settings when told to
         return body
 
     # --- the camera, relayed from the vision service -------------------------------------------
