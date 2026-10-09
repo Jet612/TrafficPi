@@ -107,7 +107,7 @@ if (( ! dry && restart )); then
     fi
     sleep 2
   done
-  sudo -v
+  sudo -n true 2>/dev/null || sudo -v # the checks use sudo; ask only if it would ask
   "$root/scripts/check_boot.sh"
 elif (( ! dry )); then
   printf '\nNot restarted: the running services are still the old ones. When it suits:\n  sudo systemctl restart trafficpi-vision trafficpi-api\n'

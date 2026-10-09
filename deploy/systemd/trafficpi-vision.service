@@ -36,8 +36,8 @@ CPUWeight=300
 OOMScoreAdjust=-300
 
 # Sandboxing. The options below are the ones that cannot get in the way of libcamera, the closed
-# HailoRT or ffmpeg (tried with the made-up street, which runs ffmpeg; the camera and the
-# accelerator when this unit was first installed on the Pi). Left out on purpose, because a wrong guess
+# HailoRT or ffmpeg (tried with the made-up street, which runs ffmpeg, and on 2026-10-09 on the real
+# camera and accelerator: 30 fps, the temperature sampled, no warnings). Left out on purpose, because a wrong guess
 # costs the counting and the gain is small for a service that already runs as an ordinary user
 # without new privileges: PrivateDevices and DeviceAllow (the camera and accelerator need many
 # device nodes), SystemCallFilter (HailoRT cannot be audited), MemoryDenyWriteExecute,

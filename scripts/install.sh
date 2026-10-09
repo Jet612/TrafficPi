@@ -271,7 +271,7 @@ finish() {
   say "Checking that it works"
   if (( dry )); then printf '   + scripts/check_boot.sh\n'; return; fi
   local failed=0
-  sudo -v
+  sudo -n true 2>/dev/null || sudo -v # the checks use sudo; ask only if it would ask
   # The services need a few seconds to open the camera and the accelerator.
 
   for _ in $(seq 1 40); do
