@@ -466,6 +466,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/stops/hours": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get State */
+        get: operations["get_state_api_stops_hours_get"];
+        /** Put State */
+        put: operations["put_state_api_stops_hours_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/stops/hours/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Check */
+        post: operations["check_api_stops_hours_check_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/stops/summary": {
         parameters: {
             query?: never;
@@ -1176,6 +1211,96 @@ export interface components {
             /** Timezone */
             timezone: string;
             vision: components["schemas"]["VisionStatus"];
+        };
+        /**
+         * StopHoursConfig
+         * @description When stop signs are judged (plan.md D42). A PUT replaces all of it, so every member is given:
+         *     a client that does not know one cannot reset it by leaving it out. Checked in full again by
+         *     ``StopHours``.
+         */
+        StopHoursConfig: {
+            /** After Sunset Min */
+            after_sunset_min: number;
+            /** Before Sunrise Min */
+            before_sunrise_min: number;
+            /** Clock */
+            clock: boolean;
+            /** Daylight */
+            daylight: boolean;
+            /** Days */
+            days: number[];
+            /** Latitude */
+            latitude: number | null;
+            /** Longitude */
+            longitude: number | null;
+            /** Ranges */
+            ranges: components["schemas"]["StopHoursRange"][];
+        };
+        /**
+         * StopHoursDay
+         * @description The sun on one date of the camera's clock, at the place in the config.
+         */
+        StopHoursDay: {
+            /** Date */
+            date: string;
+            /** End */
+            end: number | null;
+            /** Noon Offset Min */
+            noon_offset_min: number;
+            /** Polar */
+            polar: ("day" | "night") | null;
+            /** Start */
+            start: number | null;
+            /** Sunrise */
+            sunrise: number | null;
+            /** Sunset */
+            sunset: number | null;
+        };
+        /**
+         * StopHoursRange
+         * @description From ``start`` to just before ``end`` on the camera's clock; ``end`` before ``start`` runs
+         *     through midnight.
+         */
+        StopHoursRange: {
+            /** End */
+            end: string;
+            /** Start */
+            start: string;
+        };
+        /**
+         * StopHoursSaved
+         * @description What a save answers: the new state, and whether the vision service was told to read it. If
+         *     it could not be reached, the hours are saved all the same and it reads them when it starts.
+         */
+        StopHoursSaved: {
+            config: components["schemas"]["StopHoursConfig"];
+            status: components["schemas"]["StopHoursStatus"];
+            /** Vision Notified */
+            vision_notified: boolean;
+        };
+        /** StopHoursState */
+        StopHoursState: {
+            config: components["schemas"]["StopHoursConfig"];
+            status: components["schemas"]["StopHoursStatus"];
+        };
+        /**
+         * StopHoursStatus
+         * @description What the hours in a config mean right now.
+         */
+        StopHoursStatus: {
+            day: components["schemas"]["StopHoursDay"] | null;
+            /** Description */
+            description: string;
+            /** Judging */
+            judging: boolean;
+            /** Limited */
+            limited: boolean;
+            /** Next Change */
+            next_change: number | null;
+            /** Now */
+            now: number;
+            /** Timezone */
+            timezone: string;
         };
         /**
          * StopOut
@@ -2351,6 +2476,92 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StopOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_state_api_stops_hours_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StopHoursState"];
+                };
+            };
+        };
+    };
+    put_state_api_stops_hours_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StopHoursConfig"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StopHoursSaved"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    check_api_stops_hours_check_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StopHoursConfig"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StopHoursStatus"];
                 };
             };
             /** @description Validation Error */

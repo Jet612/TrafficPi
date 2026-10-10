@@ -4,8 +4,10 @@ from pathlib import Path
 import pytest
 from sqlalchemy.exc import IntegrityError
 
+from trafficpi.core import stop_hours as sh
 from trafficpi.core.clock import WallClock
 from trafficpi.core.evidence_settings import EvidenceSettings
+from trafficpi.core.stop_hours import StopHours, TimeRange
 from trafficpi.db import create_db_engine, upgrade_to_head
 from trafficpi.db.models import Event
 from trafficpi.db.store import Store
@@ -309,6 +311,67 @@ def test_an_evidence_setting_that_is_stored_but_makes_no_sense_is_ignored(store:
     store.set_setting("evidence_keep_days", "30")
     store.set_setting("evidence_max_mb", 10**9)
     assert store.get_evidence_settings() == EvidenceSettings(True, 30, 2048)
+
+
+def test_the_stop_hours_start_as_no_limit_at_all_and_round_trip(store: Store) -> None:
+    assert store.get_stop_hours() == StopHours()
+    assert not store.get_stop_hours().limited
+    both = StopHours(
+        daylight=True,
+        latitude=40.7128,
+        longitude=-74.006,
+        before_sunrise_min=45,
+        after_sunset_min=-15,
+        clock=True,
+        ranges=(TimeRange(7 * 60 + 30, 9 * 60), TimeRange(22 * 60, 6 * 60)),
+        days=frozenset({0, 1, 2, 3, 4}),
+    )
+    store.set_stop_hours(both)
+    assert store.get_stop_hours() == both
+
+
+def test_a_place_is_kept_while_its_limit_is_off_and_a_limit_can_be_turned_off_again(
+    store: Store,
+) -> None:
+    on = StopHours(daylight=True, latitude=40.7, longitude=-74.0)
+    store.set_stop_hours(on)
+    store.set_stop_hours(StopHours(daylight=False, latitude=40.7, longitude=-74.0))
+    off = store.get_stop_hours()
+    assert (off.daylight, off.latitude, off.longitude) == (False, 40.7, -74.0)
+    store.set_stop_hours(StopHours())  # no place at all
+    cleared = store.get_stop_hours()
+    assert (cleared.latitude, cleared.longitude) == (None, None)
+
+
+def test_the_stop_hours_are_stored_as_plain_settings_a_backup_and_a_person_can_read(
+    store: Store,
+) -> None:
+    store.set_stop_hours(
+        StopHours(clock=True, ranges=(TimeRange(7 * 60, 19 * 60),), days=frozenset({4, 0}))
+    )
+    assert store.get_setting(sh.CLOCK_KEY) is True
+    assert store.get_setting(sh.RANGES_KEY) == [{"start": "07:00", "end": "19:00"}]
+    assert store.get_setting(sh.DAYS_KEY) == [0, 4]  # in order, Monday first
+    assert store.get_setting(sh.DAYLIGHT_KEY) is False
+
+
+def test_stop_hours_that_are_stored_but_make_no_sense_judge_everything(store: Store) -> None:
+    for key, value in [
+        (sh.DAYLIGHT_KEY, "yes"),
+        (sh.LATITUDE_KEY, "40.7"),
+        (sh.LONGITUDE_KEY, 500),
+        (sh.CLOCK_KEY, 1),
+        (sh.RANGES_KEY, "07:00-19:00"),
+        (sh.DAYS_KEY, "weekdays"),
+        (sh.BEFORE_SUNRISE_KEY, "30"),
+        (sh.AFTER_SUNSET_KEY, 10**6),
+    ]:
+        store.set_setting(key, value)
+    assert store.get_stop_hours() == StopHours()
+    # a limit that is on, but has nothing to work with, is off rather than a made-up one
+    store.set_setting(sh.DAYLIGHT_KEY, True)
+    store.set_setting(sh.CLOCK_KEY, True)
+    assert not store.get_stop_hours().limited
 
 
 def test_stop_rows_carry_what_the_sums_need_oldest_first_and_only_those_in_range(

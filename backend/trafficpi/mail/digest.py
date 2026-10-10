@@ -52,6 +52,10 @@ class DigestInput:
     link_url: str = ""
     kind: Literal["daily", "test"] = "daily"
     units: str = "mph"  # "mph" or "kmh": how a speed is told
+    # The hours stop signs are judged in, in words ("from 30 minutes before sunrise to ..."), or
+    # empty when they are judged at every hour (plan.md D42): what is outside them is not in the
+    # numbers, and a quiet night must not be read as a safe one.
+    judged_hours: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -342,6 +346,11 @@ def build_digest(data: DigestInput) -> Digest:
         )
     elif facts.judged == 0 and data.down_minutes < 0.95 * period_minutes:
         notes.append("No pass was judged at a stop sign in this period.")
+    if data.has_stop_sign and data.judged_hours:
+        notes.append(
+            f"Stop signs are judged only {data.judged_hours}, so passes at other times are not "
+            "in these numbers."
+        )
 
     caveat = (
         "A speed is an estimate: how fast a vehicle crossed the picture, compared with its own "

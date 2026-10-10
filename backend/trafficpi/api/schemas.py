@@ -9,6 +9,8 @@ from pydantic import BaseModel, Field, SecretStr
 from trafficpi.core.evidence_settings import MAX_CLIP_HOURS, MAX_MAX_MB, MIN_MAX_MB
 from trafficpi.core.evidence_settings import MAX_KEEP_DAYS as MAX_EVIDENCE_DAYS
 from trafficpi.core.profile import Profile
+from trafficpi.core.stop_hours import MAX_MARGIN_MIN, MIN_MARGIN_MIN
+from trafficpi.core.stop_hours import MAX_RANGES as MAX_STOP_HOURS_RANGES
 from trafficpi.core.trail_settings import MAX_KEEP_DAYS
 
 
@@ -286,6 +288,68 @@ class Settings(BaseModel):
     # Does the camera look for people at all? Off: no box, no track, no trail and no count for them
     # (plan.md D34). Vehicles are unaffected.
     detect_people: bool = Field(strict=True)
+
+
+CLOCK_PATTERN = r"^([01]\d|2[0-3]):[0-5]\d$"  # HH:MM on a 24-hour clock
+
+
+class StopHoursRange(BaseModel):
+    """From ``start`` to just before ``end`` on the camera's clock; ``end`` before ``start`` runs
+    through midnight."""
+
+    start: str = Field(strict=True, pattern=CLOCK_PATTERN)
+    end: str = Field(strict=True, pattern=CLOCK_PATTERN)
+
+
+class StopHoursConfig(BaseModel):
+    """When stop signs are judged (plan.md D42). A PUT replaces all of it, so every member is given:
+    a client that does not know one cannot reset it by leaving it out. Checked in full again by
+    ``StopHours``."""
+
+    daylight: bool = Field(strict=True)  # limit 1: only from before sunrise to after sunset
+    latitude: float | None = Field(strict=True, ge=-90, le=90)  # the camera's place; kept while
+    longitude: float | None = Field(strict=True, ge=-180, le=180)  # the limit is off; or null
+    before_sunrise_min: int = Field(strict=True, ge=MIN_MARGIN_MIN, le=MAX_MARGIN_MIN)
+    after_sunset_min: int = Field(strict=True, ge=MIN_MARGIN_MIN, le=MAX_MARGIN_MIN)
+    clock: bool = Field(strict=True)  # limit 2: only in these ranges of the day, on these days
+    ranges: list[StopHoursRange] = Field(min_length=1, max_length=MAX_STOP_HOURS_RANGES)
+    days: list[Annotated[int, Field(strict=True, ge=0, le=6)]] = Field(min_length=1, max_length=14)
+
+
+class StopHoursDay(BaseModel):
+    """The sun on one date of the camera's clock, at the place in the config."""
+
+    date: str  # YYYY-MM-DD
+    sunrise: int | None  # ms since the epoch; null on a day the sun does not rise (or does not set)
+    sunset: int | None
+    start: int | None  # the daylight window: sunrise less the margin ...
+    end: int | None  # ... to sunset plus the margin
+    polar: Literal["day", "night"] | None  # the sun stays up ("day") or down ("night") all day
+    noon_offset_min: int  # minutes from 12:00 on the camera's clock to the sun's highest point
+
+
+class StopHoursStatus(BaseModel):
+    """What the hours in a config mean right now."""
+
+    now: int  # ms since the epoch
+    timezone: str  # the camera's, which "today" and the set hours go by
+    limited: bool  # some pass is turned away at some time of day
+    judging: bool  # whether a pass at ``now`` would be judged
+    next_change: int | None  # ms: when ``judging`` next changes; null if it does not within days
+    description: str  # the limits in words ("at all hours" when there are none)
+    day: StopHoursDay | None  # null until a place is given
+
+
+class StopHoursState(BaseModel):
+    config: StopHoursConfig
+    status: StopHoursStatus
+
+
+class StopHoursSaved(StopHoursState):
+    """What a save answers: the new state, and whether the vision service was told to read it. If
+    it could not be reached, the hours are saved all the same and it reads them when it starts."""
+
+    vision_notified: bool
 
 
 class TrailHour(BaseModel):

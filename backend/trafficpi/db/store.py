@@ -13,9 +13,11 @@ from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.orm import Session, sessionmaker
 
 from trafficpi.core import evidence_settings as ev
+from trafficpi.core import stop_hours as sh
 from trafficpi.core.clock import WallClock
 from trafficpi.core.evidence_settings import EvidenceSettings
 from trafficpi.core.paths import ensure_private_dir
+from trafficpi.core.stop_hours import StopHours, ranges_as_stored, read_stop_hours
 from trafficpi.core.trail_settings import (
     DEFAULT_KEEP_DAYS,
     ENABLED_KEY,
@@ -749,6 +751,20 @@ class Store:
         self.set_setting(ev.DID_NOT_STOP_CLIP_HOURS_KEY, settings.did_not_stop_clip_hours)
         self.set_setting(ev.KEEP_ROLLING_KEY, settings.keep_rolling)
         self.set_setting(ev.KEEP_DID_NOT_STOP_KEY, settings.keep_did_not_stop)
+
+    def get_stop_hours(self) -> StopHours:
+        """When stop signs are judged (plan.md D42); nothing usable stored is no limit at all."""
+        return read_stop_hours(self.get_setting)
+
+    def set_stop_hours(self, hours: StopHours) -> None:
+        self.set_setting(sh.DAYLIGHT_KEY, hours.daylight)
+        self.set_setting(sh.LATITUDE_KEY, hours.latitude)
+        self.set_setting(sh.LONGITUDE_KEY, hours.longitude)
+        self.set_setting(sh.BEFORE_SUNRISE_KEY, hours.before_sunrise_min)
+        self.set_setting(sh.AFTER_SUNSET_KEY, hours.after_sunset_min)
+        self.set_setting(sh.CLOCK_KEY, hours.clock)
+        self.set_setting(sh.RANGES_KEY, ranges_as_stored(hours.ranges))
+        self.set_setting(sh.DAYS_KEY, sorted(hours.days))
 
     # --- settings and profile --------------------------------------------------------------
 

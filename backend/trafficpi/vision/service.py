@@ -13,7 +13,7 @@ import time
 from collections import deque
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, tzinfo
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +25,14 @@ from trafficpi.core.detection_settings import DETECT_PEOPLE_KEY, people_wanted
 from trafficpi.core.evidence_settings import EvidenceSettings
 from trafficpi.core.paths import evidence_dir, reference_file
 from trafficpi.core.profile import Profile, ProfileError, empty_profile, parse_profile
+from trafficpi.core.stop_hours import (
+    CLOCK_KEY,
+    DAYLIGHT_KEY,
+    StopHours,
+    describe_hours,
+    judging_at,
+    next_change_ms,
+)
 from trafficpi.core.trail_settings import DEFAULT_KEEP_DAYS
 from trafficpi.db.store import Store
 from trafficpi.vision import evidence as evidence_module
@@ -311,6 +319,14 @@ class VisionService:
         self._tracker_config = tracker_config
         self._reload = threading.Event()
         self._detect_people = True  # read from the settings at start and on every reload
+        # When stop signs are judged (plan.md D42): read at start and on every reload. A pass
+        # outside the hours is not judged at all, so nothing about it is stored or kept.
+        self._stop_hours = StopHours()
+        self._stop_zone: tzinfo = UTC  # the camera's time zone, which the set hours are on
+        self._stop_hours_seen: tuple[StopHours, tzinfo] | None = None  # what the journal said
+        self._stops_paused = False  # whether the hours were closed when last looked at
+        self._stop_check_failing = False  # so that a check that always fails says so once
+        self.stops_skipped = 0  # passes turned away by the hours since the service started
         self._pending: deque[tuple[CountEvent | StopEvent, int]] = deque(maxlen=MAX_PENDING_WRITES)
         self.profile_version = 0
         self._active_profile: Profile | None = None  # what the engine is running on right now
@@ -447,6 +463,7 @@ class VisionService:
         self._load_trail_settings()
         self._load_evidence_settings()
         self._load_detection_settings()
+        self._load_stop_hours()
         self._start_drift()
         if not self._open_source(stop):
             self._finish_health()
@@ -469,6 +486,7 @@ class VisionService:
         if self._sampler is None or time.monotonic() < self._next_metrics:
             return
         self._next_metrics = time.monotonic() + self.config.metrics_every_s
+        self._note_stop_hours()
         sample = self._sampler.sample()
         self.live.set_system(sample)
         if self._inference_ms:
@@ -502,6 +520,7 @@ class VisionService:
                 self._load_trail_settings()
                 self._load_evidence_settings()
                 self._load_detection_settings()
+                self._load_stop_hours()
             try:
                 frame = self.source.read()
             except EndOfStream:
@@ -529,6 +548,9 @@ class VisionService:
 
             now_ms = self._timestamp_ms(frame)
             for event in result.events:
+                if isinstance(event, StopEvent) and not self._judging_stops(now_ms):
+                    self.stops_skipped += 1  # outside the hours the owner set: not judged at all
+                    continue
                 if isinstance(event, CountEvent | StopEvent):
                     self._record(event, now_ms)
             self._follow_trails(result, now_ms)
@@ -762,6 +784,86 @@ class VisionService:
             return
         if files:
             log.info("deleted %d old evidence file(s), %.1f MB", files, freed / 1e6)
+
+    # --- when stop signs are judged (plan.md D42) --------------------------------------------
+
+    def _load_stop_hours(self) -> None:
+        """Read when stop signs are judged and the zone their set hours are on (the owner may
+        have changed either). What cannot be used is said in the journal and judges every pass."""
+        try:
+            hours = self.store.get_stop_hours()
+            zone = resolve_timezone(self.store.get_setting("timezone"))
+            asked_daylight = self.store.get_setting(DAYLIGHT_KEY) is True
+            asked_clock = self.store.get_setting(CLOCK_KEY) is True
+        except Exception:
+            log.exception("could not read the stop-sign hours; keeping the ones in use")
+            return
+        if asked_daylight and not hours.daylight:
+            log.warning(
+                "judging stop signs only in daylight is switched on, but the camera's latitude "
+                "and longitude are missing or unusable, so it is ignored"
+            )
+        if asked_clock and not hours.clock:
+            log.warning(
+                "judging stop signs only in set hours is switched on, but the hours cannot be "
+                "used, so it is ignored"
+            )
+        seen = self._stop_hours_seen
+        self._stop_hours, self._stop_zone = hours, zone
+        self._stop_hours_seen = (hours, zone)
+        if seen != (hours, zone):
+            if hours.limited:
+                log.info("stop signs are judged only %s", describe_hours(hours))
+            elif seen is not None and seen[0].limited:
+                log.info("stop signs are judged at all hours")
+        self._stops_paused = hours.limited and not self._judging_stops(self._clock.now_ms())
+        if self._stops_paused and seen != (hours, zone):
+            self._say_paused(self._clock.now_ms())
+
+    def _judging_stops(self, at_ms: int) -> bool:
+        """Whether a stop-sign pass at this time is judged. A check that fails judges the pass: a
+        mistake here must never cost the owner a pass or stop the counting."""
+        if not self._stop_hours.limited:
+            return True
+        try:
+            judged = judging_at(self._stop_hours, at_ms, self._stop_zone)
+        except Exception:
+            if not self._stop_check_failing:
+                log.exception("could not tell whether stop signs are being judged; judging them")
+            self._stop_check_failing = True
+            return True
+        self._stop_check_failing = False
+        return judged
+
+    def _note_stop_hours(self) -> None:
+        """Say in the journal when the hours close and when they open again."""
+        if not self._stop_hours.limited:
+            self._stops_paused = False
+            return
+        now = self._clock.now_ms()
+        paused = not self._judging_stops(now)
+        if paused == self._stops_paused:
+            return
+        self._stops_paused = paused
+        if paused:
+            self._say_paused(now)
+        else:
+            log.info("stop-sign judging has resumed")
+
+    def _say_paused(self, now_ms: int) -> None:
+        try:
+            change = next_change_ms(self._stop_hours, now_ms, self._stop_zone)
+            when = (
+                datetime.fromtimestamp(change / 1000, self._stop_zone).strftime("%a %H:%M")
+                if change is not None
+                else None
+            )
+        except Exception:
+            when = None
+        log.info(
+            "stop-sign judging is paused: outside the hours set for it%s",
+            f"; it resumes {when}" if when else "",
+        )
 
     # --- trails (plan.md D21) ---------------------------------------------------------------
 

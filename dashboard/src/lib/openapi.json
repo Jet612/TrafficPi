@@ -1585,6 +1585,288 @@
         "title": "StatusResponse",
         "type": "object"
       },
+      "StopHoursConfig": {
+        "description": "When stop signs are judged (plan.md D42). A PUT replaces all of it, so every member is given:\na client that does not know one cannot reset it by leaving it out. Checked in full again by\n``StopHours``.",
+        "properties": {
+          "after_sunset_min": {
+            "maximum": 180.0,
+            "minimum": -120.0,
+            "title": "After Sunset Min",
+            "type": "integer"
+          },
+          "before_sunrise_min": {
+            "maximum": 180.0,
+            "minimum": -120.0,
+            "title": "Before Sunrise Min",
+            "type": "integer"
+          },
+          "clock": {
+            "title": "Clock",
+            "type": "boolean"
+          },
+          "daylight": {
+            "title": "Daylight",
+            "type": "boolean"
+          },
+          "days": {
+            "items": {
+              "maximum": 6.0,
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "maxItems": 14,
+            "minItems": 1,
+            "title": "Days",
+            "type": "array"
+          },
+          "latitude": {
+            "anyOf": [
+              {
+                "maximum": 90.0,
+                "minimum": -90.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latitude"
+          },
+          "longitude": {
+            "anyOf": [
+              {
+                "maximum": 180.0,
+                "minimum": -180.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Longitude"
+          },
+          "ranges": {
+            "items": {
+              "$ref": "#/components/schemas/StopHoursRange"
+            },
+            "maxItems": 6,
+            "minItems": 1,
+            "title": "Ranges",
+            "type": "array"
+          }
+        },
+        "required": [
+          "daylight",
+          "latitude",
+          "longitude",
+          "before_sunrise_min",
+          "after_sunset_min",
+          "clock",
+          "ranges",
+          "days"
+        ],
+        "title": "StopHoursConfig",
+        "type": "object"
+      },
+      "StopHoursDay": {
+        "description": "The sun on one date of the camera's clock, at the place in the config.",
+        "properties": {
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "end": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End"
+          },
+          "noon_offset_min": {
+            "title": "Noon Offset Min",
+            "type": "integer"
+          },
+          "polar": {
+            "anyOf": [
+              {
+                "enum": [
+                  "day",
+                  "night"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Polar"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start"
+          },
+          "sunrise": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sunrise"
+          },
+          "sunset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sunset"
+          }
+        },
+        "required": [
+          "date",
+          "sunrise",
+          "sunset",
+          "start",
+          "end",
+          "polar",
+          "noon_offset_min"
+        ],
+        "title": "StopHoursDay",
+        "type": "object"
+      },
+      "StopHoursRange": {
+        "description": "From ``start`` to just before ``end`` on the camera's clock; ``end`` before ``start`` runs\nthrough midnight.",
+        "properties": {
+          "end": {
+            "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+            "title": "End",
+            "type": "string"
+          },
+          "start": {
+            "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+            "title": "Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ],
+        "title": "StopHoursRange",
+        "type": "object"
+      },
+      "StopHoursSaved": {
+        "description": "What a save answers: the new state, and whether the vision service was told to read it. If\nit could not be reached, the hours are saved all the same and it reads them when it starts.",
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/StopHoursConfig"
+          },
+          "status": {
+            "$ref": "#/components/schemas/StopHoursStatus"
+          },
+          "vision_notified": {
+            "title": "Vision Notified",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "config",
+          "status",
+          "vision_notified"
+        ],
+        "title": "StopHoursSaved",
+        "type": "object"
+      },
+      "StopHoursState": {
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/StopHoursConfig"
+          },
+          "status": {
+            "$ref": "#/components/schemas/StopHoursStatus"
+          }
+        },
+        "required": [
+          "config",
+          "status"
+        ],
+        "title": "StopHoursState",
+        "type": "object"
+      },
+      "StopHoursStatus": {
+        "description": "What the hours in a config mean right now.",
+        "properties": {
+          "day": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StopHoursDay"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "judging": {
+            "title": "Judging",
+            "type": "boolean"
+          },
+          "limited": {
+            "title": "Limited",
+            "type": "boolean"
+          },
+          "next_change": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Change"
+          },
+          "now": {
+            "title": "Now",
+            "type": "integer"
+          },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "now",
+          "timezone",
+          "limited",
+          "judging",
+          "next_change",
+          "description",
+          "day"
+        ],
+        "title": "StopHoursStatus",
+        "type": "object"
+      },
       "StopOut": {
         "description": "What one vehicle did at one stop sign (plan.md D23), and what a person made of it.",
         "properties": {
@@ -3764,6 +4046,98 @@
           }
         },
         "summary": "Stops"
+      }
+    },
+    "/api/stops/hours": {
+      "get": {
+        "operationId": "get_state_api_stops_hours_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StopHoursState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get State"
+      },
+      "put": {
+        "operationId": "put_state_api_stops_hours_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StopHoursConfig"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StopHoursSaved"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put State"
+      }
+    },
+    "/api/stops/hours/check": {
+      "post": {
+        "operationId": "check_api_stops_hours_check_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StopHoursConfig"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StopHoursStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Check"
       }
     },
     "/api/stops/summary": {

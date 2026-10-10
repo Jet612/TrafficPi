@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from trafficpi.core.stop_hours import StopHours, TimeRange
 from trafficpi.db import create_db_engine, upgrade_to_head
 from trafficpi.db.mail_store import MailStore
 from trafficpi.db.store import Store
@@ -851,6 +852,18 @@ def test_the_preview_is_the_mail_as_it_would_be_made_now_and_sends_nothing(
     assert digest.subject.startswith("[Test] ")
     assert "Thursday 8 Oct, 7:00 pm to Friday 9 Oct, 7:00 pm" in digest.text
     assert mailer.attempts == [] and mail.sends() == []
+
+
+def test_a_mail_says_which_hours_stop_signs_are_judged_in_when_the_owner_limited_them(
+    store: Store, service: MailService, mail: MailStore, mailer: FakeMailer, clock: Clock
+) -> None:
+    ready_to_send(mail, clock)
+    assert "judged only" not in service.preview().text  # no limit: nothing to say
+    store.set_stop_hours(StopHours(clock=True, ranges=(TimeRange(7 * 60, 19 * 60),)))
+    text = service.preview().text
+    assert "Stop signs are judged only from 07:00 to 19:00 every day" in text
+    store.set_stop_hours(StopHours())  # and a change is followed by the next mail
+    assert "judged only" not in service.preview().text
 
 
 def test_the_fastest_estimate_in_the_mail_is_in_the_units_the_owner_chose(

@@ -1,0 +1,690 @@
+{
+ "source": "U.S. Naval Observatory, Astronomical Applications Department, Complete Sun and Moon Data for One Day (https://aa.usno.navy.mil/api/rstt/oneday), fetched 2026-10-09 with dst=false, so every time is local standard time at utc_offset_hours. The entries are the service's own, word for word.",
+ "how_to_read": "Times are minutes-resolution clock readings on the date given. 'Rise' and 'Set' are the sun's upper limb at the horizon with refraction. A 'Set' may belong to the day before (the sun sets after midnight), which is why the test matches by time, not by name.",
+ "cases": [
+  {
+   "name": "newyork",
+   "why": "New York, the owner's own time zone, the day this feature was built",
+   "date": "2026-10-09",
+   "latitude": 40.7128,
+   "longitude": -74.006,
+   "utc_offset_hours": -4.0,
+   "sundata": [
+    {
+     "phen": "Begin Civil Twilight",
+     "time": "06:33"
+    },
+    {
+     "phen": "Rise",
+     "time": "07:01"
+    },
+    {
+     "phen": "Upper Transit",
+     "time": "12:43"
+    },
+    {
+     "phen": "Set",
+     "time": "18:25"
+    },
+    {
+     "phen": "End Civil Twilight",
+     "time": "18:52"
+    }
+   ]
+  },
+  {
+   "name": "newyork_dec",
+   "why": "New York, shortest day",
+   "date": "2026-12-21",
+   "latitude": 40.7128,
+   "longitude": -74.006,
+   "utc_offset_hours": -5.0,
+   "sundata": [
+    {
+     "phen": "Begin Civil Twilight",
+     "time": "06:46"
+    },
+    {
+     "phen": "Rise",
+     "time": "07:17"
+    },
+    {
+     "phen": "Upper Transit",
+     "time": "11:54"
+    },
+    {
+     "phen": "Set",
+     "time": "16:32"
+    },
+    {
+     "phen": "End Civil Twilight",
+     "time": "17:03"
+    }
+   ]
+  },
+  {
+   "name": "newyork_jun",
+   "why": "New York, longest day",
+   "date": "2026-06-21",
+   "latitude": 40.7128,
+   "longitude": -74.006,
+   "utc_offset_hours": -4.0,
+   "sundata": [
+    {
+     "phen": "Begin Civil Twilight",
+     "time": "04:52"
+    },
+    {
+     "phen": "Rise",
+     "time": "05:25"
+    },
+    {
+     "phen": "Upper Transit",
+     "time": "12:58"
+    },
+    {
+     "phen": "Set",
+     "time": "20:31"
+    },
+    {
+     "phen": "End Civil Twilight",
+     "time": "21:04"
+    }
+   ]
+  },
+  {
+   "name": "miami_jun",
+   "why": "Miami, midsummer",
+   "date": "2026-06-21",
+   "latitude": 25.7617,
+   "longitude": -80.1918,
+   "utc_offset_hours": -4.0,
+   "sundata": [
+    {
+     "phen": "Begin Civil Twilight",
+     "time": "06:04"
+    },
+    {
+     "phen": "Rise",
+     "time": "06:30"
+    },
+    {
+     "phen": "Upper Transit",
+     "time": "13:23"
+    },
+    {
+     "phen": "Set",
+     "time": "20:15"
+    },
+    {
+     "phen": "End Civil Twilight",
+     "time": "20:41"
+    }
+   ]
+  },
+  {
+   "name": "anchorage_dec",
+   "why": "Anchorage, short midwinter day at 61 N",
+   "date": "2026-12-21",
+   "latitude": 61.2181,
+   "longitude": -149.9003,
+   "utc_offset_hours": -9.0,
+   "sundata": [
+    {
+     "phen": "Begin Civil Twilight",
+     "time": "09:12"
+    },
+    {
+     "phen": "Rise",
+     "time": "10:14"
+    },
+    {
+     "phen": "Upper Transit",
+     "time": "12:58"
+    },
+    {
+     "phen": "Set",
+     "time": "15:41"
+    },
+    {
+     "phen": "End Civil Twilight",
+     "time": "16:44"
+    }
+   ]
+  },
+  {
+   "name": "sydney_jan",
+   "why": "Sydney, southern summer",
+   "date": "2026-01-15",
+   "latitude": -33.8688,
+   "longitude": 151.2093,
+   "utc_offset_hours": 11.0,
+   "sundata": [
+    {
+     "phen": "Begin Civil Twilight",
+     "time": "05:31"
+    },
+    {
+     "phen": "Rise",
+     "time": "05:59"
+    },
+    {
+     "phen": "Upper Transit",
+     "time": "13:04"
+    },
+    {
+     "phen": "Set",
+     "time": "20:09"
+    },
+    {
+     "phen": "End Civil Twilight",
+     "time": "20:37"
+    }
+   ]
+  },
+  {
+   "name": "london_mar",
+   "why": "London, around the equinox",
+   "date": "2026-03-20",
+   "latitude": 51.5074,
+   "longitude": -0.1278,
+   "utc_offset_hours": 0.0,
+   "sundata": [
+    {
+     "phen": "Begin Civil Twilight",
+     "time": "05:30"
+    },
+    {
+     "phen": "Rise",
+     "time": "06:03"
+    },
+    {
+     "phen": "Upper Transit",
+     "time": "12:08"
+    },
+    {
+     "phen": "Set",
+     "time": "18:13"
+    },
+    {
+     "phen": "End Civil Twilight",
+     "time": "18:47"
+    }
+   ]
+  },
+  {
+   "name": "quito_sep",
+   "why": "Quito, on the equator",
+   "date": "2026-09-22",
+   "latitude": -0.1807,
+   "longitude": -78.4678,
+   "utc_offset_hours": -5.0,
+   "sundata": [
+    {
+     "phen": "Begin Civil Twilight",
+     "time": "05:43"
+    },
+    {
+     "phen": "Rise",
+     "time": "06:03"
+    },
+    {
+     "phen": "Upper Transit",
+     "time": "12:07"
+    },
+    {
+     "phen": "Set",
+     "time": "18:10"
+    },
+    {
+     "phen": "End Civil Twilight",
+     "time": "18:30"
+    }
+   ]
+  },
+  {
+   "name": "auckland_dec",
+   "why": "Auckland, UTC+13: sunrise falls on the previous UTC day",
+   "date": "2026-12-21",
+   "latitude": -36.8485,
+   "longitude": 174.7633,
+   "utc_offset_hours": 13.0,
+   "sundata": [
+    {
+     "phen": "Begin Civil Twilight",
+     "time": "05:27"
+    },
+    {
+     "phen": "Rise",
+     "time": "05:58"
+    },
+    {
+     "phen": "Upper Transit",
+     "time": "13:19"
+    },
+    {
+     "phen": "Set",
+     "time": "20:40"
+    },
+    {
+     "phen": "End Civil Twilight",
+     "time": "21:10"
+    }
+   ]
+  },
+  {
+   "name": "urumqi_oct",
+   "why": "Urumqi, clock 2.2 h ahead of the sun (China uses one zone)",
+   "date": "2026-10-09",
+   "latitude": 43.8256,
+   "longitude": 87.6168,
+   "utc_offset_hours": 8.0,
+   "sundata": [
+    {
+     "phen": "Begin Civil Twilight",
+     "time": "07:47"
+    },
+    {
+     "phen": "Rise",
+     "time": "08:16"
+    },
+    {
+     "phen": "Upper Transit",
+     "time": "13:57"
+    },
+    {
+     "phen": "Set",
+     "time": "19:37"
+    },
+    {
+     "phen": "End Civil Twilight",
+     "time": "20:06"
+    }
+   ]
+  },
+  {
+   "name": "honolulu_jul",
+   "why": "Honolulu, far west",
+   "date": "2026-07-04",
+   "latitude": 21.3069,
+   "longitude": -157.8583,
+   "utc_offset_hours": -10.0,
+   "sundata": [
+    {
+     "phen": "Begin Civil Twilight",
+     "time": "05:29"
+    },
+    {
+     "phen": "Rise",
+     "time": "05:54"
+    },
+    {
+     "phen": "Upper Transit",
+     "time": "12:36"
+    },
+    {
+     "phen": "Set",
+     "time": "19:18"
+    },
+    {
+     "phen": "End Civil Twilight",
+     "time": "19:42"
+    }
+   ]
+  },
+  {
+   "name": "seattle_dec",
+   "why": "Seattle, midwinter",
+   "date": "2026-12-21",
+   "latitude": 47.6062,
+   "longitude": -122.3321,
+   "utc_offset_hours": -8.0,
+   "sundata": [
+    {
+     "phen": "Begin Civil Twilight",
+     "time": "07:19"
+    },
+    {
+     "phen": "Rise",
+     "time": "07:55"
+    },
+    {
+     "phen": "Upper Transit",
+     "time": "12:08"
+    },
+    {
+     "phen": "Set",
+     "time": "16:20"
+    },
+    {
+     "phen": "End Civil Twilight",
+     "time": "16:56"
+    }
+   ]
+  },
+  {
+   "name": "chicago_mar",
+   "why": "Chicago, the day the clocks go forward",
+   "date": "2026-03-08",
+   "latitude": 41.8781,
+   "longitude": -87.6298,
+   "utc_offset_hours": -6.0,
+   "sundata": [
+    {
+     "phen": "Begin Civil Twilight",
+     "time": "05:46"
+    },
+    {
+     "phen": "Rise",
+     "time": "06:14"
+    },
+    {
+     "phen": "Upper Transit",
+     "time": "12:01"
+    },
+    {
+     "phen": "Set",
+     "time": "17:49"
+    },
+    {
+     "phen": "End Civil Twilight",
+     "time": "18:17"
+    }
+   ]
+  },
+  {
+   "name": "reykjavik_jun",
+   "why": "Reykjavik, the sun sets just after midnight",
+   "date": "2026-06-21",
+   "latitude": 64.1466,
+   "longitude": -21.9426,
+   "utc_offset_hours": 0.0,
+   "sundata": [
+    {
+     "phen": "Object continuously above the Twilight Limit",
+     "time": null
+    },
+    {
+     "phen": "Set",
+     "time": "00:04"
+    },
+    {
+     "phen": "Rise",
+     "time": "02:55"
+    },
+    {
+     "phen": "Upper Transit",
+     "time": "13:30"
+    }
+   ]
+  },
+  {
+   "name": "reykjavik_jun22",
+   "why": "Reykjavik, the day after",
+   "date": "2026-06-22",
+   "latitude": 64.1466,
+   "longitude": -21.9426,
+   "utc_offset_hours": 0.0,
+   "sundata": [
+    {
+     "phen": "Object continuously above the Twilight Limit",
+     "time": null
+    },
+    {
+     "phen": "Set",
+     "time": "00:04"
+    },
+    {
+     "phen": "Rise",
+     "time": "02:56"
+    },
+    {
+     "phen": "Upper Transit",
+     "time": "13:30"
+    }
+   ]
+  },
+  {
+   "name": "tromso_dec",
+   "why": "Tromso, polar night: the sun stays below the horizon",
+   "date": "2026-12-21",
+   "latitude": 69.6492,
+   "longitude": 18.9553,
+   "utc_offset_hours": 1.0,
+   "sundata": [
+    {
+     "phen": "Object continuously below the Horizon",
+     "time": null
+    },
+    {
+     "phen": "Begin Civil Twilight",
+     "time": "09:31"
+    },
+    {
+     "phen": "End Civil Twilight",
+     "time": "13:53"
+    }
+   ]
+  },
+  {
+   "name": "tromso_jun",
+   "why": "Tromso, midnight sun: the sun stays above the horizon",
+   "date": "2026-06-21",
+   "latitude": 69.6492,
+   "longitude": 18.9553,
+   "utc_offset_hours": 2.0,
+   "sundata": [
+    {
+     "phen": "Object continuously above the Horizon",
+     "time": null
+    },
+    {
+     "phen": "Object continuously above the Twilight Limit",
+     "time": null
+    },
+    {
+     "phen": "Lower Transit",
+     "time": "00:46"
+    },
+    {
+     "phen": "Upper Transit",
+     "time": "12:46"
+    }
+   ]
+  },
+  {
+   "name": "tromso_may17",
+   "why": "Tromso, three days before the midnight sun begins",
+   "date": "2026-05-17",
+   "latitude": 69.6492,
+   "longitude": 18.9553,
+   "utc_offset_hours": 2.0,
+   "sundata": [
+    {
+     "phen": "Object continuously above the Twilight Limit",
+     "time": null
+    },
+    {
+     "phen": "Set",
+     "time": "00:02"
+    },
+    {
+     "phen": "Rise",
+     "time": "01:18"
+    },
+    {
+     "phen": "Upper Transit",
+     "time": "12:41"
+    }
+   ]
+  },
+  {
+   "name": "tromso_may18",
+   "why": "Tromso, the sun rises but does not set that night",
+   "date": "2026-05-18",
+   "latitude": 69.6492,
+   "longitude": 18.9553,
+   "utc_offset_hours": 2.0,
+   "sundata": [
+    {
+     "phen": "Object continuously above the Twilight Limit",
+     "time": null
+    },
+    {
+     "phen": "Set",
+     "time": "00:27"
+    },
+    {
+     "phen": "Rise",
+     "time": "00:53"
+    },
+    {
+     "phen": "Upper Transit",
+     "time": "12:41"
+    }
+   ]
+  },
+  {
+   "name": "tromso_may19",
+   "why": "Tromso, first day of the midnight sun",
+   "date": "2026-05-19",
+   "latitude": 69.6492,
+   "longitude": 18.9553,
+   "utc_offset_hours": 2.0,
+   "sundata": [
+    {
+     "phen": "Object continuously above the Horizon",
+     "time": null
+    },
+    {
+     "phen": "Object continuously above the Twilight Limit",
+     "time": null
+    },
+    {
+     "phen": "Lower Transit",
+     "time": "00:41"
+    },
+    {
+     "phen": "Upper Transit",
+     "time": "12:41"
+    }
+   ]
+  },
+  {
+   "name": "tromso_may20",
+   "why": "Tromso, midnight sun",
+   "date": "2026-05-20",
+   "latitude": 69.6492,
+   "longitude": 18.9553,
+   "utc_offset_hours": 2.0,
+   "sundata": [
+    {
+     "phen": "Object continuously above the Horizon",
+     "time": null
+    },
+    {
+     "phen": "Object continuously above the Twilight Limit",
+     "time": null
+    },
+    {
+     "phen": "Lower Transit",
+     "time": "00:41"
+    },
+    {
+     "phen": "Upper Transit",
+     "time": "12:41"
+    }
+   ]
+  },
+  {
+   "name": "tromso_jan20",
+   "why": "Tromso, the sun is back",
+   "date": "2026-01-20",
+   "latitude": 69.6492,
+   "longitude": 18.9553,
+   "utc_offset_hours": 1.0,
+   "sundata": [
+    {
+     "phen": "Begin Civil Twilight",
+     "time": "08:42"
+    },
+    {
+     "phen": "Rise",
+     "time": "10:36"
+    },
+    {
+     "phen": "Upper Transit",
+     "time": "11:55"
+    },
+    {
+     "phen": "Set",
+     "time": "13:15"
+    },
+    {
+     "phen": "End Civil Twilight",
+     "time": "15:09"
+    }
+   ]
+  },
+  {
+   "name": "tromso_jan21",
+   "why": "Tromso, the sun is back",
+   "date": "2026-01-21",
+   "latitude": 69.6492,
+   "longitude": 18.9553,
+   "utc_offset_hours": 1.0,
+   "sundata": [
+    {
+     "phen": "Begin Civil Twilight",
+     "time": "08:39"
+    },
+    {
+     "phen": "Rise",
+     "time": "10:29"
+    },
+    {
+     "phen": "Upper Transit",
+     "time": "11:55"
+    },
+    {
+     "phen": "Set",
+     "time": "13:23"
+    },
+    {
+     "phen": "End Civil Twilight",
+     "time": "15:13"
+    }
+   ]
+  },
+  {
+   "name": "tromso_jan22",
+   "why": "Tromso, the sun is back",
+   "date": "2026-01-22",
+   "latitude": 69.6492,
+   "longitude": 18.9553,
+   "utc_offset_hours": 1.0,
+   "sundata": [
+    {
+     "phen": "Begin Civil Twilight",
+     "time": "08:36"
+    },
+    {
+     "phen": "Rise",
+     "time": "10:22"
+    },
+    {
+     "phen": "Upper Transit",
+     "time": "11:56"
+    },
+    {
+     "phen": "Set",
+     "time": "13:31"
+    },
+    {
+     "phen": "End Civil Twilight",
+     "time": "15:16"
+    }
+   ]
+  }
+ ]
+}

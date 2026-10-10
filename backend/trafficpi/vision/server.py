@@ -113,6 +113,7 @@ def create_app(
             "evidence_written": service.evidence_written,
             "evidence_waiting": service.evidence_waiting,
             "evidence_frames_dropped": service.evidence_frames_dropped,
+            "stops_skipped": service.stops_skipped,  # passes the owner's hours turned away
             "profile_version": service.profile_version,
             "drift": state["drift"].get("state"),  # ok, drifted, unknown, no_reference; None: off
         }

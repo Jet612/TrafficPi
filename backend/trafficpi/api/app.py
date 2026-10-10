@@ -23,7 +23,15 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from starlette.concurrency import run_in_threadpool
 
-from trafficpi.api import analytics, machine, mail_routes, stats, system_history, trail_views
+from trafficpi.api import (
+    analytics,
+    machine,
+    mail_routes,
+    stats,
+    stop_hours_routes,
+    system_history,
+    trail_views,
+)
 from trafficpi.api.auth import (
     COOKIE_NAME,
     Busy,
@@ -347,6 +355,7 @@ def create_app(
     )
     app.state.ctx = ctx
     app.include_router(mail_routes.build_router(_ctx, require_user))
+    app.include_router(stop_hours_routes.build_router(_ctx, require_user))
 
     @app.exception_handler(RequestValidationError)
     async def unusable_request(_request: Request, exc: RequestValidationError) -> JSONResponse:

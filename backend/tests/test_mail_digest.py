@@ -525,3 +525,35 @@ def test_a_vehicle_that_never_moved_has_a_speed_of_almost_still() -> None:
 def test_the_caveat_about_estimates_is_there_only_when_a_speed_is_shown() -> None:
     assert "not a measurement" not in build(passes(did_not_stop=2)).text
     assert "not a measurement" in build([stop("did_not_stop", max_speed=3.0)]).text
+
+
+# --- the hours stop signs are judged in (plan.md D42) ---------------------------------------------
+
+HOURS = "from 30 minutes before sunrise to 30 minutes after sunset"
+
+
+def test_with_no_hours_set_the_mail_says_nothing_about_hours() -> None:
+    digest = build(passes(did_not_stop=1))
+    assert "judged only" not in digest.text and "judged only" not in digest.html
+
+
+def test_a_mail_says_the_hours_stop_signs_are_judged_in_so_a_quiet_night_is_not_read_as_safe() -> (
+    None
+):
+    digest = build(passes(did_not_stop=1), judged_hours=HOURS)
+    sentence = (
+        f"Stop signs are judged only {HOURS}, so passes at other times are not in these numbers."
+    )
+    assert sentence in digest.text
+    assert sentence in digest.html
+
+
+def test_the_note_about_hours_is_kept_out_of_a_mail_for_a_street_with_no_stop_sign() -> None:
+    # nothing is judged anywhere there, so the hours would only confuse
+    digest = build(has_stop_sign=False, judged_hours=HOURS)
+    assert "judged only" not in digest.text
+
+
+def test_the_note_about_hours_comes_after_the_notes_about_the_camera() -> None:
+    digest = build(passes(did_not_stop=1), down_minutes=90, judged_hours=HOURS)
+    assert digest.text.index("The camera was not counting") < digest.text.index("judged only")

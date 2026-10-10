@@ -30,6 +30,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 from trafficpi.core.clock import resolve_timezone
+from trafficpi.core.stop_hours import describe_hours
 from trafficpi.db.mail_store import DueDelivery, MailStore
 from trafficpi.db.store import Store
 from trafficpi.mail.digest import (
@@ -369,6 +370,8 @@ class MailService:
         before = comparison_start(start, end)
         profile = store.get_profile()
         document = profile[0] if profile else {}
+        hours = store.get_stop_hours()
+        judged_hours = describe_hours(hours) if hours.limited else ""
         return build_digest(
             DigestInput(
                 start_ms=start,
@@ -392,6 +395,7 @@ class MailService:
                 link_url=schedule.link_url,
                 kind="test" if kind == "test" else "daily",
                 units="kmh" if store.get_setting("units", "mph") == "kmh" else "mph",
+                judged_hours=judged_hours,
             )
         )
 
