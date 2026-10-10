@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security problem
+    url: https://github.com/Jet612/TrafficPi/security/advisories/new
+    about: Report a vulnerability privately, not as a public issue. docs/security.md says what is protected from whom.

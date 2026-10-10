@@ -1,0 +1,43 @@
+name: Bug report
+description: Something does not work as it should
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+      description: One thing per report. Say what you did, what you saw and what you expected to see.
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where did you see it?
+      options:
+        - On a Raspberry Pi 5 with the camera and the accelerator
+        - On the made-up street (`trafficpi-vision run --demo`)
+        - In the dashboard only (which page?)
+        - In the tests or in CI
+        - Somewhere else
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "The output of `git log -1 --oneline`, and the browser if it is about the dashboard."
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and what the System page says
+      description: "`journalctl -u trafficpi-vision -u trafficpi-api -n 100` is the usual place. Remove anything private first (a tunnel token, a mail key, a real road's pictures)."
+      render: text
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Before you send
+      options:
+        - label: I removed secrets and private pictures from what I pasted
+          required: true
