@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Play } from "lucide-react";
 import { ReviewButtons } from "@/components/review-buttons";
+import { StopHoursNote } from "@/components/stop-hours-note";
 import { StopViewer } from "@/components/stop-viewer";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
@@ -137,6 +138,7 @@ export function StopsCard() {
           </p>
         ) : (
           <div className="grid gap-4">
+            <StopHoursNote />
             <ul aria-label="Outcomes" className="grid grid-cols-2 gap-2 md:grid-cols-4">
               {OUTCOMES.map((outcome) => {
                 const totals = everything.find((candidate) => candidate.outcome === outcome);

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { StopHoursNote } from "@/components/stop-hours-note";
 import { StopStatsSection } from "@/components/stop-stats";
 import { TrafficStatsSection } from "@/components/traffic-stats";
 import { Button } from "@/components/ui/button";
@@ -66,6 +67,7 @@ export function DataPage() {
         <h2 id="data-stops-heading" className="text-base font-semibold text-ink">
           Stop signs
         </h2>
+        <StopHoursNote />
         {noSigns ? (
           <Card>
             <CardBody>

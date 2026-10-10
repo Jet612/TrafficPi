@@ -1900,6 +1900,183 @@ try {
     assert.equal(restored.recipients.length, 0);
   });
 
+  await step("the stop-sign hours are set by the sun and by the clock, shown as they are typed, saved, noted where the passes are, and kept by the vision service", async () => {
+    await goTo("Setup");
+    const readHours = () => page.evaluate(async () => (await fetch("/api/stops/hours")).json());
+    const putJson = (path, body) =>
+      page.evaluate(async ([where, what]) => (await fetch(where, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(what) })).status, [path, body]);
+    const originalSettings = await page.evaluate(async () => (await fetch("/api/settings")).json());
+    const original = (await readHours()).config;
+    // The sun's times are told by the camera's clock, so the camera's zone has to be the place's: the
+    // step sets it (and puts it back), which also makes it the same on a machine that keeps UTC.
+    assert.equal(await putJson("/api/settings", { ...originalSettings, timezone: "America/New_York" }), 200);
+    try {
+      await page.reload();
+      const card = page.locator("section").filter({ has: page.getByRole("heading", { level: 2, name: "Stop-sign hours", exact: true }) });
+      const form = card.getByRole("form", { name: "Stop-sign hours" });
+      await form.waitFor();
+      const daylight = form.getByRole("switch", { name: "Judge stop signs only in daylight" });
+      const timed = form.getByRole("switch", { name: "Judge stop signs only at set times" });
+      const latitude = form.getByLabel("Latitude");
+      const longitude = form.getByLabel("Longitude");
+      const before = form.getByLabel("Start (minutes before sunrise)");
+      const after = form.getByLabel("End (minutes after sunset)");
+      const save = form.getByRole("button", { name: "Save the hours" });
+      const meaning = form.getByRole("region", { name: "What these hours mean" });
+      const saved = form.getByRole("status").filter({ hasText: "Saved." });
+      const rangeFrom = (n) => form.getByLabel(`Range ${n} from`);
+      const rangeTo = (n) => form.getByLabel(`Range ${n} to`);
+      const clockIn = (ms) => new Intl.DateTimeFormat("en-GB", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(ms));
+      const place = { latitude: 40.7128, longitude: -74.006 };
+
+      // to begin with nothing is limited, and there is nothing to save
+      assert.deepEqual([original.daylight, original.clock], [false, false]);
+      await card.getByText("Every hour", { exact: true }).waitFor();
+      await meaning.getByText("Every pass is judged, at every hour.").waitFor();
+      assert.equal(await save.isDisabled(), true, "nothing to save yet");
+
+      // the daylight limit needs a place, and says so
+      await daylight.click();
+      await form.getByText("Enter the camera's latitude and longitude to judge only in daylight.").waitFor();
+      assert.equal(await save.isDisabled(), true, "no place, no daylight limit");
+
+      // a longitude with the wrong sign puts the sun hours from midday: the card says so, and what to do
+      await latitude.fill("40.7128");
+      await longitude.fill("74.006");
+      await meaning.getByText("far from midday", { exact: false }).waitFor();
+      await meaning.getByText("negative longitude", { exact: false }).waitFor();
+
+      // the right sign: the warning goes, and the sun's times for today come in the camera's clock
+      await longitude.fill("-74.006");
+      await meaning.getByText("far from midday", { exact: false }).waitFor({ state: "detached" });
+      const sunLine = meaning.getByText(/the sun rises at \d\d:\d\d and sets at \d\d:\d\d, so the daylight window is \d\d:\d\d to \d\d:\d\d\./);
+      await sunLine.waitFor();
+      const words = (await sunLine.textContent()) ?? "";
+      const [, rise, set, from, to] = words.match(/rises at (\d\d:\d\d) and sets at (\d\d:\d\d), so the daylight window is (\d\d:\d\d) to (\d\d:\d\d)/) ?? [];
+      assert.ok(rise && set && rise < "12:00" && set > "12:00", `the sun rises before midday and sets after it: ${words}`);
+      const asked = await page.evaluate(
+        async (config) => (await fetch("/api/stops/hours/check", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(config) })).json(),
+        { ...original, daylight: true, ...place },
+      );
+      assert.deepEqual([rise, set, from, to], [asked.day.sunrise, asked.day.sunset, asked.day.start, asked.day.end].map(clockIn), "the card tells the server's times, by the camera's clock");
+      assert.equal(asked.day.sunrise - asked.day.start, 30 * 60_000, "the window starts half an hour before sunrise");
+      assert.equal(asked.day.end - asked.day.sunset, 30 * 60_000, "and ends half an hour after sunset");
+      assert.equal(asked.day.noon_offset_min > -180 && asked.day.noon_offset_min < 180, true, "the sun is highest within a few hours of noon");
+
+      // the margins: none is the sun itself; a typo is refused in words; 30 and 30 are the owner's own
+      await before.fill("0");
+      await after.fill("0");
+      await meaning.getByText(`the daylight window is ${rise} to ${set}.`).waitFor();
+      await before.fill("abc");
+      await form.getByText("The start must be a whole number of minutes from -120 to 180 before sunrise", { exact: false }).waitFor();
+      assert.equal(await save.isDisabled(), true, "a start that is not a number cannot be saved");
+      await before.fill("30");
+      await after.fill("30");
+      await meaning.getByText(`the daylight window is ${from} to ${to}.`).waitFor();
+      await shot("stop-hours");
+
+      // saved: the server has it, the card says whether stop signs are being judged now, and it survives a reload
+      await save.click();
+      await saved.waitFor();
+      const daylightOnly = { ...original, daylight: true, ...place };
+      const afterSave = await readHours();
+      assert.deepEqual(afterSave.config, daylightOnly);
+      assert.equal(afterSave.status.limited, true);
+      await card.getByText(afterSave.status.judging ? "Judging now" : "Paused now", { exact: true }).waitFor();
+      assert.equal(await save.isDisabled(), true, "saved, so nothing left to save");
+      await page.reload();
+      await form.waitFor();
+      assert.equal(await daylight.getAttribute("aria-checked"), "true");
+      assert.equal(await timed.getAttribute("aria-checked"), "false");
+      assert.equal(await latitude.inputValue(), "40.7128");
+      assert.equal(await longitude.inputValue(), "-74.006");
+      assert.equal(await before.inputValue(), "30");
+
+      // the pages that show the passes say that they are judged only at some hours
+      const only = "Stop signs are judged only from 30 minutes before sunrise to 30 minutes after sunset";
+      await goTo("History");
+      await page.getByTestId("stop-hours-note").getByText(only, { exact: false }).waitFor();
+      await goTo("Data");
+      await page.getByTestId("stop-hours-note").getByText(only, { exact: false }).waitFor();
+
+      // set times: ranges (one through midnight), and the days they apply on
+      await goTo("Setup");
+      await form.waitFor();
+      await timed.click();
+      await rangeFrom(1).fill("07:30");
+      await rangeTo(1).fill("09:00");
+      await form.getByRole("button", { name: "Add another range" }).click();
+      assert.equal(await rangeFrom(2).inputValue(), "09:00", "the next range begins where the last one ended");
+      assert.equal(await rangeTo(2).inputValue(), "10:00");
+      await rangeFrom(2).fill("22:00");
+      await rangeTo(2).fill("06:00");
+      await form.getByText("through midnight", { exact: true }).waitFor();
+      for (const name of ["Saturday", "Sunday"]) await form.getByRole("button", { name, exact: true }).click();
+      for (const [name, picked] of [["Monday", "true"], ["Friday", "true"], ["Saturday", "false"], ["Sunday", "false"]]) {
+        assert.equal(await form.getByRole("button", { name, exact: true }).getAttribute("aria-pressed"), picked, `${name} is ${picked === "true" ? "" : "not "}picked`);
+      }
+
+      // a range that starts and ends together is refused in words
+      await rangeTo(2).fill("22:00");
+      await form.getByText("Range 2 starts and ends at the same time.").waitFor();
+      assert.equal(await save.isDisabled(), true);
+      await rangeTo(2).fill("06:00");
+
+      // a range can be taken out but never the last one
+      await form.getByRole("button", { name: "Remove range 2" }).click();
+      assert.equal(await rangeFrom(2).count(), 0);
+      assert.equal(await form.getByRole("button", { name: "Remove range 1" }).isDisabled(), true, "one range is always left");
+      await form.getByRole("button", { name: "Add another range" }).click();
+      await rangeFrom(2).fill("22:00");
+      await rangeTo(2).fill("06:00");
+
+      // both limits are told in one sentence, and saved
+      const both = `${only}, and from 07:30 to 09:00 and from 22:00 to 06:00 on weekdays.`;
+      await meaning.getByText(both).waitFor();
+      await save.click();
+      await saved.waitFor();
+      const ranges = [{ start: "07:30", end: "09:00" }, { start: "22:00", end: "06:00" }];
+      assert.deepEqual((await readHours()).config, { ...daylightOnly, clock: true, ranges, days: [0, 1, 2, 3, 4] });
+      await goTo("History");
+      await page.getByTestId("stop-hours-note").getByText(both, { exact: false }).waitFor();
+
+      // both off again: every pass is judged, and the pages say nothing about hours
+      await goTo("Setup");
+      await form.waitFor();
+      await daylight.click();
+      await timed.click();
+      await save.click();
+      await saved.waitFor();
+      await card.getByText("Every hour", { exact: true }).waitFor();
+      const answered = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/stops/hours");
+      await goTo("History");
+      await answered;
+      await page.getByTestId("stops-headline").waitFor();
+      await page.waitForTimeout(200);
+      assert.equal(await page.getByTestId("stop-hours-note").count(), 0, "with no limit there is nothing to note");
+
+      // and the vision service obeys: with hours that do not hold the present no pass is recorded,
+      // and with the limit off they come again (the made-up street's vehicles do not stop, every few seconds)
+      const newestStop = () => page.evaluate(async () => (await (await fetch("/api/events?type=stop&limit=1")).json())[0]?.id ?? 0);
+      const hourNow = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "America/New_York", hour: "2-digit", hourCycle: "h23" }).format(new Date()));
+      const oClock = (hour) => `${String(hour % 24).padStart(2, "0")}:00`;
+      let mark = await newestStop();
+      await eventually(async () => assert.ok((await newestStop()) > mark), "vehicles are judged while no limit is on", 90_000);
+      assert.equal(await putJson("/api/stops/hours", { ...original, clock: true, ranges: [{ start: oClock(hourNow + 3), end: oClock(hourNow + 4) }] }), 200);
+      await page.waitForTimeout(3000); // a pass that was on its way when the limit came may still be recorded
+      mark = await newestStop();
+      await page.waitForTimeout(12_000);
+      assert.equal(await newestStop(), mark, "no pass is judged outside the hours");
+      assert.equal(await putJson("/api/stops/hours", original), 200);
+      await eventually(async () => assert.ok((await newestStop()) > mark), "vehicles are judged again once the limit is off", 90_000);
+    } finally {
+      // the next steps (and the next run) expect what was there
+      await putJson("/api/stops/hours", original);
+      await putJson("/api/settings", originalSettings);
+    }
+    assert.deepEqual((await readHours()).config, original);
+  });
+
   await step("a viewer who comes through Cloudflare gets a still picture and not the stream, until the owner allows it", async () => {
     // A second browser whose every request carries what Cloudflare adds to those it passes on.
     const remoteContext = await browser.newContext({

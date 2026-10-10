@@ -22,7 +22,7 @@ Users will be able to customize their camera configuration directly from a web d
 - **Vehicle Tracking:** Track individual vehicles across frames to estimate movement and prevent duplicate counting.
 - **Traffic Analytics:** Monitor traffic volume, directions, vehicle classifications, and trends over time.
 - **Speed Estimation:** Estimate vehicle speeds using camera calibration and real-world distance measurements.
-- **Stop-Sign Monitoring:** Identify vehicles that may have failed to stop at a configured stop line.
+- **Stop-Sign Monitoring:** Identify vehicles that may have failed to stop at a configured stop line, around the clock or only in the hours you choose (in daylight, or at set times of day).
 - **Custom Detection Zones:** Visually configure roads, lanes, intersections, and monitoring areas.
 - **Web Dashboard:** View live traffic statistics, historical trends, camera feeds, and recorded events.
 - **Remote Access:** Securely access the dashboard from outside the local network.
@@ -123,6 +123,8 @@ No stop sign or traffic light is required.
 Designed for intersections controlled by stop signs.
 
 Users configure an approach zone, stop line, and stopping criteria. TrafficPi then evaluates vehicle movement to identify potential rolling stops or failures to stop.
+
+Because detection works poorly in the dark, and a pass judged badly counts against a driver, the hours in which stop signs are judged can be limited, with a switch for each limit (Setup page, "Stop-sign hours"). **In daylight** judges from some minutes before sunrise to some minutes after sunset (30 and 30 to begin with), worked out from the camera's latitude and longitude with no network and no account, so it follows the seasons by itself; the card shows the sun's times for the place as it is typed. **At set times** judges only in ranges of the day you choose (more than one, and a range may run through midnight), on the days of the week you choose, for the cases the sun does not fit. With both on a pass must be inside both; with both off every pass is judged. Outside the hours nothing is recorded about a stop sign (no row, no picture, no clip), while vehicles are still counted at the counting lines and their paths still saved; the Stop signs card, the Data page and the daily email say that the hours are limited.
 
 **Speed Monitoring Mode**
 
@@ -267,6 +269,8 @@ TrafficPi is intended for traffic research, educational use, and general traffic
 The project will prioritize local processing and configurable data retention. Aggregate statistics can be retained separately from identifiable footage, and video recording can be disabled.
 
 TrafficPi does not read license plates and does not recognize faces or identify individual people or vehicles. It classifies road users by kind (car, truck, bus, motorcycle, bicycle, person) so that it can count them. Looking for people at all can be switched off in the dashboard's Settings, and then they get no box, no path and no count.
+
+If you use the daylight limit, the camera's latitude and longitude are kept in the settings (so in the database and its backups) and used only to work out sunrise and sunset; they are not sent anywhere, and two decimals (about a kilometre) is plenty.
 
 TrafficPi is not intended to function as a certified speed enforcement system or automatically issue traffic citations.
 

@@ -46,6 +46,12 @@ export type StopTotals = Schemas["StopTotals"];
 export type StopStats = Schemas["StopStats"];
 export type SpeedEstimate = Schemas["SpeedEstimate"];
 export type TrafficStats = Schemas["TrafficStats"];
+export type StopHoursConfig = Schemas["StopHoursConfig"];
+export type StopHoursRange = Schemas["StopHoursRange"];
+export type StopHoursDay = Schemas["StopHoursDay"];
+export type StopHoursStatus = Schemas["StopHoursStatus"];
+export type StopHoursState = Schemas["StopHoursState"];
+export type StopHoursSaved = Schemas["StopHoursSaved"];
 export type StopOutcome = StopOut["outcome"];
 export type ReviewState = NonNullable<StopOut["review"]>;
 

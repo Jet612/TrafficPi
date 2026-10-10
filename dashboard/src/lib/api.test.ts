@@ -91,6 +91,33 @@ describe("api", () => {
     expect([path, init.method, init.body]).toEqual(["/api/settings", "PUT", JSON.stringify(settings)]);
   });
 
+  it("reads the stop-sign hours, saves the whole setting, and checks one that is not saved without saving it", async () => {
+    const config = {
+      daylight: true,
+      latitude: 40.7128,
+      longitude: -74.006,
+      before_sunrise_min: 30,
+      after_sunset_min: 30,
+      clock: false,
+      ranges: [{ start: "07:00", end: "19:00" }],
+      days: [0, 1, 2, 3, 4, 5, 6],
+    };
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(respond(200, { config })));
+    vi.stubGlobal("fetch", fetchMock);
+    await api.stopHours();
+    await api.saveStopHours(config);
+    await api.checkStopHours(config);
+    const seen = fetchMock.mock.calls.map((call) => {
+      const [path, init] = call as [string, RequestInit];
+      return [path, init.method, init.body];
+    });
+    expect(seen).toEqual([
+      ["/api/stops/hours", "GET", undefined],
+      ["/api/stops/hours", "PUT", JSON.stringify(config)],
+      ["/api/stops/hours/check", "POST", JSON.stringify(config)],
+    ]);
+  });
+
   it("lists the latest counts without the stops, and reviews a stop with a PUT", async () => {
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(respond(200, [])));
     vi.stubGlobal("fetch", fetchMock);

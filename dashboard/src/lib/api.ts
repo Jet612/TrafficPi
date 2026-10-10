@@ -15,6 +15,10 @@ import type {
   SeriesPoint,
   Settings,
   StatusResponse,
+  StopHoursConfig,
+  StopHoursSaved,
+  StopHoursState,
+  StopHoursStatus,
   StopOut,
   StopStats,
   StopSummary,
@@ -148,6 +152,12 @@ export const api = {
     request<StopStats>("GET", `/api/stats/stops?days=${days}${sign === undefined ? "" : `&sign=${encodeURIComponent(sign)}`}`, undefined, signal),
   /** Vehicles counted over the last `days` local days, today included (0: since the first count). */
   trafficStats: (days: number, signal?: AbortSignal) => request<TrafficStats>("GET", `/api/stats/traffic?days=${days}`, undefined, signal),
+  /** When stop signs are judged (plan.md D42): what is saved, and what it means right now. */
+  stopHours: (signal?: AbortSignal) => request<StopHoursState>("GET", "/api/stops/hours", undefined, signal),
+  /** The whole setting, which replaces what is stored; the vision service is told (and the answer says whether it could be), and the new state comes back. */
+  saveStopHours: (config: StopHoursConfig) => request<StopHoursSaved>("PUT", "/api/stops/hours", config),
+  /** What a setting that is not saved yet would mean now (the sun's times for a place as it is typed); nothing is saved. */
+  checkStopHours: (config: StopHoursConfig, signal?: AbortSignal) => request<StopHoursStatus>("POST", "/api/stops/hours/check", config, signal),
   /** What a person made of a stop event; null takes it back. */
   reviewStop: (id: number, state: ReviewState | null) => request<StopOut>("PUT", `/api/stops/${id}/review`, { state }),
   profile: (signal?: AbortSignal) => request<ProfileOut>("GET", "/api/profile", undefined, signal),
