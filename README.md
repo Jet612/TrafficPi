@@ -4,6 +4,44 @@
 
 TrafficPi is an open-source traffic monitoring system that uses computer vision and edge AI to detect, track, and analyze vehicles in real time.
 
+![The Live page: vehicles boxed and labelled on the camera picture, with the counting lines and the day's counts](docs/images/live.png)
+
+*The dashboard on the made-up street that the tests and screenshots use ([docs/dev-setup.md](docs/dev-setup.md)). Nothing in the pictures is a real road.*
+
+## At a glance
+
+- **Edge AI on a Raspberry Pi 5.** A Hailo-8L accelerator detects vehicles at about 30 frames a second; a tracker of my own (ByteTrack-style) follows them; everything runs on the device and no video goes to a cloud service.
+- **A rule engine you configure by drawing.** Counting lines, stop signs (approach zone and stop line), detection and exclusion zones, and a speed calibration are drawn on the camera picture in the browser and saved as a versioned profile, with undo and no code.
+- **Stop-sign monitoring with evidence.** Each pass is judged as stopped, rolled through, did not stop, or unclear; those that need a look get a picture and a short clip and a review step.
+- **Analytics.** Stop rates by hour, day, kind of vehicle and sign; traffic counts; the path every vehicle took, drawn as paths or a heat map; an optional daily e-mail report.
+- **Built to run unattended.** systemd services with a watchdog (it has restarted a hung camera loop on its own), a health history, nightly backups, a security pass on the API, and a remote-access guide.
+- **Tested.** Over 800 backend tests and over 700 dashboard tests, a browser test that drives every page, and CI on GitHub that runs on every push.
+
+```mermaid
+flowchart LR
+    cam["Camera Module 3<br/>Picamera2"] --> det["Hailo-8L<br/>object detection"]
+    det --> trk["Tracker<br/>(ByteTrack-style)"]
+    trk --> rules["Rule engine<br/>counting lines, stop signs,<br/>speed"]
+    rules --> db[("SQLite<br/>events, counts, trails")]
+    rules --> ev["Evidence recorder<br/>picture and clip"]
+    db --> api["FastAPI<br/>REST and WebSocket"]
+    ev --> api
+    api --> dash["Next.js dashboard<br/>Live · Review · Data · Setup · System"]
+```
+
+### Problems solved along the way
+
+Short versions; the reasoning is in [plan.md](plan.md)'s decision log.
+
+- **Random crashes that were a defective RAM page.** Programs crashed or computed wrong results at random. A memory scan found one bad physical page; a device-tree overlay now keeps the kernel from using it, and a boot check confirms it.
+- **A native library that crashes when it is closed.** HailoRT crashes a thread on teardown and again in its own exit code. The detector is never closed in a running process, and the service leaves through `os._exit`.
+- **CI that passed on the Pi and failed on GitHub.** The Pi has libraries a runner does not. A rehearsal script now runs the four CI jobs from a fresh clone, and CI and the rehearsal start the test street with the same script.
+- **A camera that hung.** The vision service reports to systemd's watchdog only while its loop makes progress; when the camera stopped delivering, the service was restarted and was counting again within about a minute.
+- **Speed from one camera.** A homography from a measured rectangle on the road, an error estimate found by shaking the inputs, and pages that say the calibration has not been checked against vehicles of known speed until it has.
+- **Privacy.** No plate reading, no face recognition; evidence is small, expires, and can be switched off.
+
+More: [docs/showcase.md](docs/showcase.md) (how to present the project), [docs/operations.md](docs/operations.md) and [docs/security.md](docs/security.md).
+
 **Project Status:** In development, and running on one Raspberry Pi 5 with a Hailo-8L and a Camera Module 3. It counts vehicles at counting lines, watches stop signs (a picture and a short clip of every pass that needs review), keeps the paths vehicles took, and shows all of it in a password-protected dashboard that also reports on the machine's health. It can e-mail a daily report of how the stop signs did (built, and tried with a stand-in sender; not yet with a real mail provider's key). Speed measurement is built but not yet checked: once the camera is calibrated on the Setup page ([docs/speed-calibration.md](docs/speed-calibration.md)) it gives each counted vehicle's speed and the stop-sign passes' speeds, and until a calibration has been checked against vehicles of known speed every page says so; before that, the Data page and the e-mail give a rough estimate of the fastest speed at a stop sign, good to about 40%. A release is not done. [docs/install.md](docs/install.md) takes a blank Raspberry Pi OS Lite card to a working system, but has not yet been tried on a clean image. See [plan.md](plan.md) for the roadmap and [todo.md](todo.md) for current tasks.
 
 ---
