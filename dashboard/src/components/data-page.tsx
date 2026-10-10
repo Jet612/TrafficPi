@@ -40,7 +40,7 @@ export function DataPage() {
   const noSigns = profile.data !== null && signs.length === 0 && stops.data !== null && totalOf(stops.data.totals) === 0 && stops.data.review.false_alarms === 0;
 
   return (
-    <div className="grid gap-6">
+    <div className="grid grid-cols-1 gap-6">
       <h1 className="sr-only">Data</h1>
 
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">

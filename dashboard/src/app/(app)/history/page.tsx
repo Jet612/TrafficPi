@@ -7,7 +7,7 @@ export const metadata: Metadata = { title: "History" };
 
 export default function HistoryPage() {
   return (
-    <div className="grid gap-4">
+    <div className="grid grid-cols-1 gap-4">
       <h1 className="sr-only">History</h1>
       <HourlyChart />
       <StopsCard />

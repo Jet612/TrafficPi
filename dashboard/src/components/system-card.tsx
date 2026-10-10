@@ -25,7 +25,7 @@ function Group({ title, children }: { title: string; children: React.ReactNode }
       <h3 id={id} className="mb-2 text-sm font-semibold text-ink">
         {title}
       </h3>
-      <dl className="grid grid-cols-[repeat(auto-fill,minmax(11.5rem,1fr))] gap-3">{children}</dl>
+      <dl className="grid grid-cols-2 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(11.5rem,1fr))]">{children}</dl>
     </section>
   );
 }
@@ -80,6 +80,7 @@ export function SystemCard() {
             value={data === null ? "–" : data.vision.status === "unreachable" ? "–" : chipName(accelerator?.architecture)}
             note={data !== null && data.vision.status === "unreachable" ? "vision service not running" : undefined}
             wrap
+            className="col-span-2 sm:col-span-1"
           >
             {accelerator && <Facts items={acceleratorFacts(accelerator)} />}
           </StatTile>
@@ -117,7 +118,7 @@ export function SystemCard() {
             <StatTile label="Data on disk" value={formatMegabytes(data.data.database_mb + data.data.evidence_mb + data.data.backups_mb)} wrap className="col-span-2">
               <Facts items={dataFacts(data.data, data.events_total)} />
             </StatTile>
-            <StatTile label="Last backup" value={backup?.value ?? "–"} note={backup?.note} wrap>
+            <StatTile label="Last backup" value={backup?.value ?? "–"} note={backup?.note} wrap className="col-span-2 sm:col-span-1">
               {backupState === "warning" && <StatusBadge level="warning">older than a day and a half</StatusBadge>}
               {backupState === "none" && <StatusBadge level="warning">not backed up</StatusBadge>}
             </StatTile>

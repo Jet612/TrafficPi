@@ -16,7 +16,7 @@ const SECTIONS = [
 
 export default function SetupPage() {
   return (
-    <div className="grid gap-4">
+    <div className="grid grid-cols-1 gap-4">
       <h1 className="sr-only">Setup</h1>
       <PageNav sections={SECTIONS} />
       {/* The cards keep their own code; the page gives each an address to jump to, below the header and the strip of links. */}

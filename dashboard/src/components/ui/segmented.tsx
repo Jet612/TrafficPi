@@ -22,7 +22,7 @@ export function Segmented<T extends string>({
     <div
       role="group"
       aria-label={label}
-      className={cn("flex max-w-full overflow-x-auto rounded-lg border border-edge p-0.5 text-sm [scrollbar-width:none]", className)}
+      className={cn("flex min-w-0 max-w-full overflow-x-auto rounded-lg border border-edge p-0.5 text-sm [scrollbar-width:none]", className)}
     >
       {options.map((option) => {
         const pressed = value === option.value;

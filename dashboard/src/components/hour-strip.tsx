@@ -116,7 +116,7 @@ export function HourStrip({
               onSelect(spanBetween(anchor.current, index));
             }}
             className={cn(
-              "flex h-16 min-w-0 flex-col rounded-md border px-0.5 pb-1 pt-1 text-[11px] leading-none tabular-nums transition-colors",
+              "flex h-16 min-w-0 flex-col rounded-md border px-0.5 pb-1 pt-1 text-xs leading-none tabular-nums transition-colors",
               marked ? "border-accent bg-accent-wash text-ink" : "border-edge bg-surface text-ink-2 hover:bg-sunken",
             )}
           >

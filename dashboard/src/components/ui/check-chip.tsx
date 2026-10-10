@@ -3,7 +3,7 @@ import { cn } from "@/lib/cn";
 
 /**
  * A checkbox shown as a chip, for choosing among several (which kinds to show). It is a real checkbox:
- * the box is hidden and the chip draws its state, with the wash and edge that every selected thing has
+ * the box is invisible and the chip draws its state, with the wash and edge that every selected thing has
  * and a check. The space for the check is always there, so that turning a chip on does not move the
  * others.
  */
@@ -26,7 +26,8 @@ export function CheckChip({
         className,
       )}
     >
-      <input type="checkbox" className="peer sr-only" checked={checked} onChange={(event) => onChange(event.target.checked)} />
+      {/* The box lies invisibly over the whole chip, so that a press anywhere on it (and the browser test's) is a press on the box itself. */}
+      <input type="checkbox" className="absolute inset-0 size-full cursor-pointer opacity-0" checked={checked} onChange={(event) => onChange(event.target.checked)} />
       <span className="grid size-4 shrink-0 place-items-center" aria-hidden="true">
         {checked && <Check className="size-4" />}
       </span>

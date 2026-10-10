@@ -115,6 +115,8 @@
   html {
     background: var(--page);
     color: var(--ink);
+    /* Room for the header that sticks to the top: a link to a card, a focused field and a find-in-page all leave what they scroll to clear of it. */
+    scroll-padding-top: 4.5rem;
   }
   body {
     margin: 0;

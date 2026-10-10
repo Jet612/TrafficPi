@@ -1,4 +1,5 @@
 import { ChevronRight } from "lucide-react";
+import { useState } from "react";
 import { cn } from "@/lib/cn";
 
 /**
@@ -21,8 +22,10 @@ export function Disclosure({
   className?: string;
   children: React.ReactNode;
 }) {
+  // Open or shut at first and then the visitor's: a state that never changes keeps the page from closing it again (a saved sender would).
+  const [open] = useState(defaultOpen);
   return (
-    <details open={defaultOpen} className={cn("group rounded-lg border border-edge", className)}>
+    <details open={open} className={cn("group rounded-lg border border-edge", className)}>
       <summary className="flex cursor-pointer list-none items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium text-ink [&::-webkit-details-marker]:hidden">
         <ChevronRight className="size-4 shrink-0 text-ink-3 transition-transform group-open:rotate-90" aria-hidden="true" />
         {title}

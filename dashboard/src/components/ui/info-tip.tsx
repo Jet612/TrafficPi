@@ -134,7 +134,7 @@ export function InfoTip({ children, id, className }: { children: React.ReactNode
           setFocus(false);
           setPressed(false);
         }}
-        className={cn("grid size-6 shrink-0 place-items-center rounded-full transition-colors hover:text-ink", open ? "text-ink" : "text-ink-3")}
+        className={cn("relative grid size-6 shrink-0 place-items-center rounded-full transition-colors hover:text-ink pointer-coarse:before:absolute pointer-coarse:before:-inset-2 pointer-coarse:before:content-['']", open ? "text-ink" : "text-ink-3")}
       >
         <Info className="size-4" aria-hidden="true" />
       </button>

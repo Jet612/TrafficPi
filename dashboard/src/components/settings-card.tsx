@@ -55,8 +55,8 @@ function Section({ title, hint, className, children }: { title: string; hint?: R
   const id = useId();
   return (
     <div role="group" aria-labelledby={id} className={cn("grid content-start gap-4", className)}>
-      <h3 id={id} className="flex items-center gap-1 border-b border-edge pb-2 text-base font-semibold text-ink">
-        {title}
+      <h3 className="flex items-center gap-1 border-b border-edge pb-2 text-base font-semibold text-ink">
+        <span id={id}>{title}</span>
         {hint && <InfoTip className="-my-0.5">{hint}</InfoTip>}
       </h3>
       {children}

@@ -9,7 +9,7 @@ export const metadata: Metadata = { title: "System" };
 
 export default function SystemPage() {
   return (
-    <div className="grid gap-4">
+    <div className="grid grid-cols-1 gap-4">
       <h1 className="sr-only">System</h1>
       <ThrottleBanner />
       <SystemCard />

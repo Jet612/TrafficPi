@@ -237,11 +237,11 @@ async function eventually(check, what, timeoutMs = 10_000) {
   }
 }
 
-/** "Thursday 8 October 2026", as the card writes a day. */
-const dayTitle = (day) =>
-  new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" })
-    .format(new Date(`${day}T00:00:00Z`))
-    .replace(",", "");
+/** "Thu, Oct 8", as the card writes a day (with the year, "Thu, Oct 8, 2025", only when it is not this year). */
+const dayTitle = (day) => {
+  const text = new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(`${day}T12:00:00Z`));
+  return Number(day.slice(0, 4)) === new Date().getFullYear() ? text : `${text}, ${day.slice(0, 4)}`;
+};
 
 /** The card has finished fetching: nothing is dimmed or on its way. */
 const settled = () =>
@@ -275,6 +275,7 @@ try {
     await page.goto(base);
     await page.getByRole("heading", { name: "Sign in" }).waitFor();
     assert.equal(await page.getByLabel("Username").inputValue(), "admin");
+    await eventually(async () => assert.equal(await page.evaluate(() => document.activeElement?.id), "password"), "the cursor is in the password box, the username being filled in");
   });
 
   await step("a wrong password is refused, with words and no clue which part was wrong", async () => {
@@ -300,8 +301,8 @@ try {
     await page.waitForFunction(() => !/Connecting|Waiting/.test(document.querySelector("header [role=status]")?.textContent ?? ""));
     const text = await badge.innerText();
     console.log(`     header says: ${text}`);
-    if (expectLive) assert.match(text, /^Live/);
-    else assert.match(text, /Live|offline|lost/i);
+    if (expectLive) assert.match(text, /^Live/i);
+    else assert.match(text, /Live|offline|lost|Throttled|Weak power/i); // a Pi that is hot or short of power says so instead of Live
   });
 
   await step("today's total is a number", async () => {
@@ -908,7 +909,7 @@ try {
     assert.equal(await page.getByRole("dialog").count(), 0);
   });
 
-  await step("what deleted lines counted is one note under the table, not a row for each", async () => {
+  await step("what deleted lines counted is one row under the lines, not a row for each", async () => {
     await goTo("Live");
     const today = (over) => ({
       date: "2026-10-09",
@@ -926,14 +927,15 @@ try {
     await page.reload();
     await eventually(async () => assert.equal(await page.getByTestId("today-total").innerText(), "15"));
     const rows = page.getByRole("table", { name: "Crossings by counting line" }).locator("tbody tr");
-    assert.equal(await rows.count(), 1, "one row, for the one line that exists");
-    assert.match(await rows.first().innerText(), /Northbound\s+8\s+2/);
-    assert.equal(await page.getByTestId("removed-lines-note").innerText(), "5 more were counted by lines that have since been removed.");
+    assert.equal(await rows.count(), 2, "a row for the one line that exists, and one for the lines that were removed");
+    assert.match(await rows.first().innerText(), /Northbound\s+8\s+2\s+10/);
+    assert.match(await page.getByTestId("removed-lines-note").innerText(), /^Removed lines\s+–\s+–\s+5$/);
+    assert.match(await page.getByRole("table", { name: "Crossings by counting line" }).locator("tfoot").innerText(), /Total\s+8\s+2\s+15/, "the table adds up to the headline");
 
     await page.unroute(route);
     await page.route(route, answer(today({ removed: 1, total: 11 })));
     await page.reload();
-    await eventually(async () => assert.equal(await page.getByTestId("removed-lines-note").innerText(), "1 more was counted by a line that has since been removed."));
+    await eventually(async () => assert.match(await page.getByTestId("removed-lines-note").innerText(), /^Removed lines\s+–\s+–\s+1$/));
 
     await page.unroute(route);
     await page.route(route, answer(today({ removed: 7, total: 7, by_class: { car: 7 }, lines: [] })));
@@ -1000,7 +1002,7 @@ try {
       await goTo("History");
       const passes = page.getByRole("list", { name: "Passes at stop signs" });
       const rowsOf = () => passes.getByRole("listitem");
-      await eventually(async () => assert.match(await page.getByTestId("stops-headline").innerText(), /judged: /), "the summary says what was seen");
+      await eventually(async () => assert.match(await page.getByTestId("stops-headline").innerText(), /reached a stop sign: /), "the summary says what was seen");
       const tile = (outcome) => page.getByRole("list", { name: "Outcomes" }).getByRole("button", { name: new RegExp(`^${outcome}`) });
       assert.equal(await tile("Did not stop").getAttribute("aria-pressed"), "true", "what needs a look is shown to begin with");
       assert.equal(await tile("Stopped").getAttribute("aria-pressed"), "false", "and a clean stop is not");
@@ -1017,49 +1019,51 @@ try {
       await tile("Did not stop").click();
       await eventually(async () => assert.ok((await rowsOf().evaluateAll((items) => items.some((i) => i.getAttribute("data-outcome") === "did_not_stop"))) === true));
 
-      // the quick choice of outcome does the same in one press: only rolls, only passes that did not stop, both
-      const focus = (name) => page.getByRole("group", { name: "Outcome" }).getByRole("button", { name, exact: true });
+      // the tiles are the one control for the outcomes: pressing the other two off leaves only passes that did not stop
       const shown = async () => [...new Set(await rowsOf().evaluateAll((items) => items.map((item) => item.getAttribute("data-outcome"))))].sort();
-      await focus("Did not stop").click();
-      assert.equal(await focus("Did not stop").getAttribute("aria-pressed"), "true");
-      assert.equal(await tile("Did not stop").getAttribute("aria-pressed"), "true", "the tile follows");
+      assert.equal(await page.getByRole("group", { name: "Outcome" }).count(), 0, "there is no second control for the outcomes");
+      assert.equal(await page.getByRole("button", { name: "Reset", exact: true }).count(), 0, "nothing to reset while the view is the usual one");
+      await tile("Rolled through").click();
+      await tile("Unclear").click();
+      assert.equal(await tile("Did not stop").getAttribute("aria-pressed"), "true");
       assert.equal(await tile("Rolled through").getAttribute("aria-pressed"), "false");
+      assert.equal(await tile("Unclear").getAttribute("aria-pressed"), "false");
       await eventually(async () => assert.deepEqual(await shown(), ["did_not_stop"]), "only passes that did not stop");
-      await focus("Rolled through").click();
-      await eventually(async () => assert.ok((await shown()).every((kind) => kind === "rolling"), `only rolls: ${await shown()}`));
-      await focus("Both of those").click();
-      assert.equal(await tile("Could not tell").getAttribute("aria-pressed"), "false", "both leaves out what could not be told");
-      await eventually(async () => assert.ok((await shown()).every((kind) => kind === "rolling" || kind === "did_not_stop")));
-      await focus("All that need a look").click();
-      assert.equal(await tile("Could not tell").getAttribute("aria-pressed"), "true", "and the usual list is one press away");
+      await eventually(async () => assert.match(await page.getByTestId("stops-showing").innerText(), /Showing [\d,]+ passes? · newest first/), "the line says how many are listed");
+      // Reset brings back the usual view: the three that need review, any review status, every sign
+      await page.getByRole("button", { name: "Reset", exact: true }).click();
+      assert.equal(await tile("Rolled through").getAttribute("aria-pressed"), "true", "the usual view is back");
+      assert.equal(await tile("Unclear").getAttribute("aria-pressed"), "true");
+      assert.equal(await page.getByRole("button", { name: "Reset", exact: true }).count(), 0, "and the way back is gone again");
       // the rows on show are those of the choice before until the answer for this one comes, and the made-up street has
       // passed another vehicle by then: wait for it, or the pass that is read below is not the one that is pressed
       await eventually(async () => assert.equal(await passes.getAttribute("aria-busy"), "false"), "the list has caught up with the choice");
 
       // the newest pass is called a false alarm: it is kept, found under "False alarms", and taken back
       const first = rowsOf().first();
-      const when = await first.locator("time").innerText();
-      const alarm = first.getByRole("button", { name: /^False alarm: / });
-      await alarm.click();
-      await eventually(async () => assert.equal(await alarm.getAttribute("aria-pressed"), "true"));
+      const when = await first.locator("time").getAttribute("datetime");
+      const pass = () => rowsOf().filter({ has: page.locator(`time[datetime="${when}"]`) }).first();
+      await first.getByRole("button", { name: /^False alarm: / }).click();
+      await eventually(async () => assert.equal(await pass().getAttribute("data-review"), "false_positive"));
+      assert.match(await pass().innerText(), /False alarm/, "the row says what it was reviewed as");
       await reload();
       await page.getByRole("button", { name: "False alarms", exact: true }).click();
-      await eventually(async () => assert.ok((await passes.locator("time", { hasText: when }).count()) >= 1, "the reviewed pass is under False alarms, after a reload"));
-      const marked = rowsOf().filter({ has: page.locator("time", { hasText: when }) }).first();
-      assert.equal(await marked.getAttribute("data-review"), "false_positive");
-      await marked.getByRole("button", { name: /^False alarm: / }).click(); // pressed again: taken back
-      await eventually(async () => assert.equal(await passes.locator("time", { hasText: when }).count(), 0, "it is no longer a false alarm"));
+      await eventually(async () => assert.ok((await passes.locator(`time[datetime="${when}"]`).count()) >= 1, "the reviewed pass is under False alarms, after a reload"));
+      assert.equal(await pass().getAttribute("data-review"), "false_positive");
+      await pass().getByRole("button", { name: /^Undo the review: / }).click(); // taken back
+      await eventually(async () => assert.equal(await passes.locator(`time[datetime="${when}"]`).count(), 0, "it is no longer a false alarm"));
 
       // and one is confirmed, which is a different button and a different state
       await page.getByRole("button", { name: "All", exact: true }).click();
       await eventually(async () => assert.ok((await rowsOf().count()) >= 1));
       // pinned by its time: a review asks for the list again, and a newer pass may be on top of it by then
-      const confirmedWhen = await rowsOf().first().locator("time").innerText();
-      const second = rowsOf().filter({ has: page.locator("time", { hasText: confirmedWhen }) }).first();
+      const confirmedWhen = await rowsOf().first().locator("time").getAttribute("datetime");
+      const second = rowsOf().filter({ has: page.locator(`time[datetime="${confirmedWhen}"]`) }).first();
       await second.getByRole("button", { name: /^Confirm: / }).click();
       await eventually(async () => assert.equal(await second.getAttribute("data-review"), "confirmed"));
-      assert.equal(await second.getByRole("button", { name: /^False alarm: / }).getAttribute("aria-pressed"), "false");
-      await second.getByRole("button", { name: /^Confirm: / }).click(); // leave things as they were
+      assert.match(await second.innerText(), /Confirmed/, "the row says it was confirmed");
+      assert.equal(await second.getByRole("button", { name: /^False alarm: / }).count(), 0, "a reviewed pass has its state and an Undo, not the two buttons");
+      await second.getByRole("button", { name: /^Undo the review: / }).click(); // leave things as they were
       await eventually(async () => assert.equal(await second.getAttribute("data-review"), "none"));
 
       // the period is kept
@@ -1339,7 +1343,7 @@ try {
     assert.equal(await linesSwitch().getAttribute("aria-checked"), "false");
     await settled();
     assert.ok((await drawnPixels()) > 500, "the paths are drawn");
-    assert.match(await trailHeadline().innerText(), /^[\d,]+ vehicles?\b.* · \w+ \d+ \w+ \d{4} · All day$/);
+    assert.match(await trailHeadline().innerText(), /^[\d,]+ vehicles?\b.* · \w{3}, \w{3} \d+(, \d{4})? · All day$/);
     assert.equal(await pickedHours().count(), await hourButtons().count(), "the whole day is picked");
     assert.equal(await hourStrip().locator('button[tabindex="0"]').count(), 1, "one stop for the Tab key in the row of hours");
     assert.match((await trailCanvas().getAttribute("aria-label")) ?? "", /^Paths of .* drawn on the camera picture\.$/);
@@ -1372,7 +1376,8 @@ try {
       "the count is of all the hours picked",
     );
 
-    // dragging across the row picks the hours it passes over
+    // dragging across the row picks the hours it passes over (with the row in the middle of the window: the header sticks to the top of it, and a drag that begins under it would not reach the row)
+    await hourStrip().evaluate((element) => element.scrollIntoView({ block: "center" }));
     const from = await centreOf(hourButtons().nth(2));
     const to = await centreOf(hourButtons().nth(5));
     await page.mouse.move(from.x, from.y);
@@ -1624,18 +1629,19 @@ try {
     await page.getByRole("form", { name: "Settings" }).waitFor();
     const readSettings = () => page.evaluate(async () => (await fetch("/api/settings")).json());
     const original = await readSettings();
-    const save = page.getByRole("button", { name: "Save settings" });
+    const form = page.getByRole("form", { name: "Settings" });
+    const save = form.getByRole("button", { name: "Save changes" });
     const zone = page.getByLabel("Time zone");
     const days = page.getByLabel("Keep trails for (days)");
     const people = page.getByRole("switch", { name: "Include people" });
     const enabled = page.getByRole("switch", { name: "Save the path of each vehicle" });
-    const evidence = page.getByRole("switch", { name: "Keep a picture and a clip of passes that need a look" });
+    const evidence = page.getByRole("switch", { name: "Save evidence for stop-sign passes" });
     const evidenceDays = page.getByLabel("Keep pictures and clips for (days)");
     const evidenceMb = page.getByLabel("Keep at most (megabytes)");
     const rollingHours = page.getByLabel("Keep the clip of a rolled-through stop for (hours)");
     const didNotStopHours = page.getByLabel("Keep the clip of a vehicle that did not stop for (hours)");
-    const keepRolling = page.getByRole("switch", { name: "Keep a picture and a clip of rolled-through stops", exact: true });
-    const keepDidNotStop = page.getByRole("switch", { name: "Keep a picture and a clip of vehicles that did not stop", exact: true });
+    const keepRolling = page.getByRole("switch", { name: "Rolled-through passes", exact: true });
+    const keepDidNotStop = page.getByRole("switch", { name: "Passes that did not stop", exact: true });
     try {
       assert.equal(await zone.inputValue(), original.timezone, "the form shows what is saved");
       assert.equal(await days.inputValue(), String(original.trails_keep_days));
@@ -1657,7 +1663,7 @@ try {
       await days.fill("30");
       assert.equal(await explained(days), "Kept for 30 days. Older trails are deleted by themselves.");
       await page.getByText("A whole number of days, from 1 to 3650.").waitFor({ state: "detached" });
-      await page.getByText("Settings not saved yet").waitFor();
+      await form.getByText("Unsaved changes").waitFor();
       assert.equal(await save.isEnabled(), true);
 
       // the same for the room that evidence may take
@@ -1678,7 +1684,7 @@ try {
       await page.getByText("Enter a whole number of hours from 1 to 87600 to keep the clips of rolled-through stops.").first().waitFor();
       assert.equal(await save.isDisabled(), true, "no hours cannot be saved");
       await rollingHours.fill("6");
-      assert.match(await explained(rollingHours), /^Clips of rolled-through stops are deleted after 6 hours/);
+      assert.match(await explained(rollingHours), /^Clips of rolled-through passes are deleted after 6 hours/);
       await didNotStopHours.fill("72");
       assert.match(await explained(didNotStopHours), /^Clips of vehicles that did not stop are deleted after 3 days/);
       assert.equal(await save.isEnabled(), true);
@@ -1712,7 +1718,7 @@ try {
       if ((await evidence.getAttribute("aria-checked")) === "true") await evidence.click();
       assert.equal(await keepRolling.isDisabled(), true, "with evidence off, the outcomes' switches are greyed out");
       assert.equal(await keepDidNotStop.isDisabled(), true);
-      await page.getByText("Nothing is kept while the switch above is off, whatever these say.").waitFor();
+      await page.getByText("Off: nothing is saved, whatever these say.").waitFor();
       await save.click();
       await page.getByRole("status").filter({ hasText: "Saved." }).waitFor();
       assert.deepEqual(await readSettings(), {
@@ -1829,7 +1835,7 @@ try {
     await page.mouse.move(0, 0);
     await page.waitForTimeout(400);
     assert.equal(await bubble.isVisible(), true, "pressed, it stays");
-    await page.getByRole("heading", { name: "Settings", exact: true }).click();
+    await page.getByRole("heading", { name: "General & storage", exact: true }).click();
     await bubble.waitFor({ state: "hidden" });
     await icon.click();
     await page.mouse.move(0, 0);
@@ -1896,10 +1902,58 @@ try {
       await tappedBubble.waitFor({ state: "hidden" });
       await tapped.tap();
       await tappedBubble.waitFor({ state: "visible" });
-      await touch.getByRole("heading", { name: "Settings", exact: true }).tap();
+      await touch.getByRole("heading", { name: "General & storage", exact: true }).tap();
       await tappedBubble.waitFor({ state: "hidden" });
     } finally {
       await touchContext.close();
+    }
+  });
+
+  await step("on a phone the pages are in a bar at the bottom of the window, the header is one row, no page scrolls sideways and no text is under 12 px", async () => {
+    const phoneContext = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    try {
+      const phone = await phoneContext.newPage();
+      phone.setDefaultTimeout(20_000);
+      phone.on("pageerror", (error) => problems.push(`uncaught (phone): ${error.message}`));
+      phone.on("console", (message) => {
+        if (message.type() === "error") problems.push(`console (phone): ${message.text()}`);
+      });
+      await phone.goto(`${base}/`);
+      await phone.getByLabel("Username").fill(user);
+      await phone.getByLabel("Password").fill(password);
+      await phone.getByRole("button", { name: "Sign in" }).click();
+      await phone.getByRole("navigation", { name: "Pages" }).waitFor();
+      for (const [path, heading] of [["/", "Live"], ["/history/", "History"], ["/data/", "Data"], ["/setup/", "Setup"], ["/system/", "System"]]) {
+        await phone.goto(`${base}${path}`);
+        await phone.getByRole("heading", { level: 1, name: heading }).waitFor({ state: "attached" });
+        await phone.waitForTimeout(1500); // the cards fill in
+        const nav = await phone.getByRole("navigation", { name: "Pages" }).boundingBox();
+        assert.ok(nav && nav.y + nav.height >= 843, `${heading}: the pages are in a bar at the bottom of the window`);
+        assert.equal((await phone.getByRole("navigation", { name: "Pages" }).getByRole("link").count()), 5);
+        assert.ok(((await phone.locator("header").boundingBox())?.height ?? 999) <= 64, `${heading}: the header is one row`);
+        const found = await phone.evaluate(() => {
+          const small = [];
+          for (const el of document.querySelectorAll("body *")) {
+            const style = getComputedStyle(el);
+            if (style.display === "none" || style.visibility === "hidden" || el.closest("svg")) continue;
+            const box = el.getBoundingClientRect();
+            if (box.width === 0 || box.height === 0) continue;
+            const own = [...el.childNodes].filter((n) => n.nodeType === 3 && n.textContent.trim()).map((n) => n.textContent.trim()).join(" ");
+            if (own && parseFloat(style.fontSize) < 12) small.push(`${style.fontSize} "${own.slice(0, 30)}"`);
+          }
+          return { sideways: document.documentElement.scrollWidth - document.documentElement.clientWidth, small: [...new Set(small)].slice(0, 5) };
+        });
+        assert.ok(found.sideways <= 1, `${heading}: the page scrolls sideways by ${found.sideways} px`);
+        assert.deepEqual(found.small, [], `${heading}: text under 12 px`);
+        assert.equal(await phone.locator("[role=group][aria-label] button[aria-pressed]").evaluateAll((buttons) => buttons.filter((b) => !b.closest("[data-testid=hour-strip]") && b.getBoundingClientRect().height > 60).length), 0, `${heading}: no segmented label wraps onto lines`);
+      }
+      // the account is behind one button on a phone
+      await phone.getByRole("button", { name: "Account" }).click();
+      await phone.getByRole("button", { name: "Sign out" }).waitFor();
+      await phone.keyboard.press("Escape");
+      await phone.getByRole("button", { name: "Sign out" }).waitFor({ state: "hidden" });
+    } finally {
+      await phoneContext.close();
     }
   });
 
@@ -1911,15 +1965,16 @@ try {
     const recipients = mailCard.getByRole("region", { name: "Recipients" });
     const addInput = mailCard.getByLabel("Add an address");
     const addButton = mailCard.getByRole("button", { name: "Add", exact: true });
-    const saveSchedule = mailCard.getByRole("button", { name: "Save the schedule" });
+    const saveSchedule = mailCard.getByRole("button", { name: "Save changes" });
     const original = await readMail();
     // Twelve hours from now, so that no scheduled time can come while the test runs and make a real mail.
     const sendAt = `${String((new Date().getHours() + 12) % 24).padStart(2, "0")}:30`;
     try {
       assert.equal(original.transport, "file", "the demo sends nothing: it writes files");
+      await mailCard.getByText("How this works", { exact: true }).click(); // the longer words are behind one line
       await mailCard.getByText("Demo mode:").waitFor();
       assert.equal(await mailCard.getByRole("region", { name: "Resend API key" }).count(), 0, "no key is asked for where none is needed");
-      await mailCard.getByText("The daily email is off.", { exact: false }).first().waitFor();
+      await mailCard.getByText("Off", { exact: true }).first().waitFor(); // said once, by the chip in the heading
       await recipients.getByText("Nobody yet.").waitFor();
 
       // addresses: a wrong one is refused in words, a right one is listed in lower case, and a repeat is one
@@ -1962,7 +2017,7 @@ try {
         "Goes out weekdays. The first mail after a weekend covers the weekend too.",
         "the days picked are told in words by the bubble of the (i) beside them",
       );
-      await mailCard.getByText("Not saved yet").waitFor();
+      await mailCard.getByText("Unsaved changes").waitFor();
       await saveSchedule.click();
       await mailCard.getByRole("status").filter({ hasText: "Saved." }).waitFor();
       assert.deepEqual((await readMail()).schedule, {
@@ -1973,7 +2028,7 @@ try {
         sender_address: "report@mail.example.com",
         link_url: "https://traffic.example.com",
       });
-      await mailCard.getByText("On. The next one goes out").waitFor();
+      await mailCard.getByText(/^The next one goes out /).waitFor(); // under the time it is about
       await reload();
       await mailCard.waitFor();
       assert.equal(await mailCard.getByLabel("Send it at").inputValue(), sendAt);
@@ -1983,11 +2038,11 @@ try {
       // a test goes out (to a file here) and the result is told next to the address; one that is refused says why
       await recipients.getByRole("button", { name: "Send a test to owner@example.com" }).click();
       await recipients.getByText("Sent. Look in that inbox").waitFor();
-      await recipients.getByText("The test mail was sent at").waitFor();
+      await recipients.getByText(/^Test mail sent /).waitFor();
       await page.waitForTimeout(5_200); // tests are limited to one every five seconds
       await recipients.getByRole("button", { name: "Send a test to fail@example.com" }).click();
       await recipients.getByRole("alert").filter({ hasText: "The test did not get through" }).waitFor();
-      await recipients.getByText("The test mail did not get through at").waitFor();
+      await recipients.getByText(/^Test mail did not get through /).waitFor();
       const afterTests = await readMail();
       const byAddress = Object.fromEntries(afterTests.recipients.map((r) => [r.address, r]));
       assert.equal(byAddress["owner@example.com"].last_status, "sent");
@@ -2017,8 +2072,8 @@ try {
       // the System page says it in a line, and a removed address is gone
       await goTo("System");
       const summary = page.locator("section").filter({ has: page.getByRole("heading", { level: 2, name: "Daily email", exact: true }) });
-      await summary.getByText("On. The next one goes out").waitFor();
-      await summary.getByTestId("last-mail").getByText("No daily email has been due yet.").waitFor();
+      await summary.getByText("On", { exact: true }).waitFor(); // one line, and more only when something is wrong
+      assert.equal(await summary.getByTestId("last-mail").count(), 0, "no mail has failed, so nothing is said of the latest");
       await summary.getByText("Some addresses did not get their last mail").waitFor();
       await summary.getByRole("link", { name: "Daily email settings" }).click();
       await mailCard.waitFor();
@@ -2059,7 +2114,7 @@ try {
       const longitude = form.getByLabel("Longitude");
       const before = form.getByLabel("Start (minutes before sunrise)");
       const after = form.getByLabel("End (minutes after sunset)");
-      const save = form.getByRole("button", { name: "Save the hours" });
+      const save = form.getByRole("button", { name: "Save changes" });
       const meaning = form.getByRole("region", { name: "What these hours mean" });
       const saved = form.getByRole("status").filter({ hasText: "Saved." });
       const rangeFrom = (n) => form.getByLabel(`Range ${n} from`);
@@ -2069,8 +2124,8 @@ try {
 
       // to begin with nothing is limited, and there is nothing to save
       assert.deepEqual([original.daylight, original.clock], [false, false]);
-      await card.getByText("Every hour", { exact: true }).waitFor();
       await meaning.getByText("Every pass is judged, at every hour.").waitFor();
+      await meaning.getByTestId("hours-timeline").waitFor();
       assert.equal(await save.isDisabled(), true, "nothing to save yet");
 
       // the daylight limit needs a place, and says so
@@ -2120,7 +2175,9 @@ try {
       const afterSave = await readHours();
       assert.deepEqual(afterSave.config, daylightOnly);
       assert.equal(afterSave.status.limited, true);
-      await card.getByText(afterSave.status.judging ? "Judging now" : "Paused now", { exact: true }).waitFor();
+      await meaning.getByText(afterSave.status.judging ? /Stop signs are being judged now/ : /Stop signs are not being judged now/).waitFor();
+      // the strip says the same as the words: the judged stretch is drawn, with the sun's moments on the daylight row
+      assert.match((await meaning.getByTestId("hours-timeline").getAttribute("aria-label")) ?? "", /Daylight \d\d:\d\d to \d\d:\d\d\..*Judged \d\d:\d\d to \d\d:\d\d\./);
       assert.equal(await save.isDisabled(), true, "saved, so nothing left to save");
       await page.reload();
       await form.waitFor();
@@ -2185,7 +2242,7 @@ try {
       await timed.click();
       await save.click();
       await saved.waitFor();
-      await card.getByText("Every hour", { exact: true }).waitFor();
+      await meaning.getByText("Every pass is judged, at every hour.").waitFor();
       const answered = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/stops/hours");
       await goTo("History");
       await answered;
@@ -2281,8 +2338,8 @@ try {
       const allow = page.getByRole("switch", { name: "Allow live video for viewers who come through Cloudflare" });
       assert.equal(await allow.getAttribute("aria-checked"), "false");
       await allow.click();
-      await page.getByText("Settings not saved yet").waitFor();
-      await page.getByRole("button", { name: "Save settings" }).click();
+      await page.getByRole("form", { name: "Settings" }).getByText("Unsaved changes").waitFor();
+      await page.getByRole("form", { name: "Settings" }).getByRole("button", { name: "Save changes" }).click();
       await page.getByRole("status").filter({ hasText: "Saved." }).waitFor();
       assert.equal((await readSettings()).remote_live_video, true);
       assert.equal(await statusOfStream(remote), 200, "the stream is open to the remote viewer now");
@@ -2308,13 +2365,15 @@ try {
     await tile("Accelerator").waitFor();
     // the made-up street has no chip, and says so; the model it uses is named
     assert.match(await tile("Accelerator").innerText(), /simulated/);
-    assert.match(await tile("Accelerator").innerText(), /model demo/);
-    assert.match(await tile("Data on disk").innerText(), /database .* MB · pictures and clips .* \(\d+ files?\) · backups .* \(\d+\)/);
+    assert.match(await tile("Accelerator").innerText(), /Model\s+demo/);
+    assert.match(await tile("Data on disk").innerText(), /Database\s+[\d.]+ [MG]B\s+Pictures and clips\s+[\d.]+ [MG]B \(\d+ files?\)\s+Backups\s+[\d.]+ [MG]B \(\d+\)/);
     // a fresh stack has no daily backup and no memory test on record, and says what to do or what that means
     assert.match(await tile("Last backup").innerText(), /none yet/);
     assert.match(await tile("Last backup").innerText(), /not backed up/);
-    assert.match(await tile("Memory test").innerText(), /not run/);
-    assert.match(await tile("Uptime").innerText(), /dashboard server/);
+    assert.equal(await page.locator("dt", { hasText: "Memory test" }).count(), 0, "a memory test that was not run is not a tile: it only speaks when it found a problem");
+    assert.match(await tile("Service uptime").innerText(), /Dashboard server/);
+    // the readings are grouped by what they are about
+    for (const group of ["Pipeline", "Host", "Storage"]) await page.getByRole("heading", { level: 3, name: group, exact: true }).waitFor();
     await shot("system-machine");
   });
 
@@ -2326,38 +2385,44 @@ try {
     // the demo made up three days (a slowdown, a weak supply, a camera that went away, a hole in the record) and a day shows all of them
     await tile("Hottest").waitFor();
     assert.match(await tile("Hottest").innerText(), /\d+\.\d °C/);
-    assert.match(await tile("Hottest").innerText(), /past 80 °C/, "the hot afternoon is told in words, not only by colour");
-    assert.match(await tile("Slowed down").innerText(), /\d+ min/);
-    assert.match(await tile("Camera working").innerText(), /\d+\.\d%/);
+    const banner = page.getByTestId("throttle-banner");
+    await banner.waitFor();
+    assert.match(await banner.innerText(), /Throttled for \d+ (min|h)/, "the first thing the page says is that the Pi was throttled, and for how long");
+    assert.match(await tile("Hottest").innerText(), /past (80|85) °C/, "the hot afternoon is told in words, not only by colour");
+    assert.match(await tile("Throttled").innerText(), /\d+ min/);
+    assert.match(await tile("Throttled").innerText(), /See \d+ events?/, "and where to read about them");
+    assert.match(await tile("Camera uptime").innerText(), /\d+\.\d%/);
+    assert.match(await tile("Monitored").innerText(), /\d+ h \d\d min|\d+ min/);
     const episodes = card.getByTestId("system-history-episodes");
-    for (const title of ["Slowed itself down", "Power supply too weak", "Camera not working", "Nothing recorded"]) {
+    for (const title of ["Throttled", "Weak power", "Camera not working", "Nothing recorded"]) {
       await episodes.getByText(title).first().waitFor();
     }
-    assert.match(await episodes.innerText(), /Up to 8\d\.\d °C/, "the slowdown says how hot it got");
+    assert.match(await episodes.getByTestId("system-history-summary").innerText(), /Throttled \d+ times?, .*up to 8\d\.\d °C/, "one line sums up what happened");
+    assert.match(await episodes.getByRole("table").innerText(), /8\d\.\d °C/, "and the table says how hot each slowdown got");
     assert.equal(await card.locator(".recharts-wrapper").count(), 2, "a chart of the temperature and one of the frame rate");
     assert.ok((await card.locator(".recharts-line-curve").count()) >= 2, "lines are drawn");
     await shot("system-history");
 
     // the same numbers as a table, newest first
     await card.getByRole("button", { name: "Table", exact: true }).click();
-    const table = card.getByRole("table");
+    const table = card.getByRole("table", { name: /load and frame rate/ });
     await table.waitFor();
     assert.ok((await table.locator("tbody tr").count()) > 100, "a row for each stretch that was recorded");
     assert.match(await table.locator("thead").innerText(), /The Pi says/);
-    assert.match(await table.locator("tbody").innerText(), /the CPU is being slowed down/, "the Pi's flags are in words");
+    assert.match(await table.locator("tbody").innerText(), /the CPU is throttled/, "the Pi's flags are in words");
     await card.getByRole("button", { name: "Chart", exact: true }).click();
 
     // a shorter period has less to tell: the made-up troubles are hours back (a real slowdown of this very board may be in the last hour, since the demo
     // records the machine it runs on, so "nothing to report" cannot be asked for), and the choice is kept
     await card.getByRole("button", { name: "1 hour", exact: true }).click();
-    await episodes.getByText("Power supply too weak").waitFor({ state: "detached" });
+    await episodes.getByText("Weak power").waitFor({ state: "detached" });
     for (const title of ["Camera not working", "Nothing recorded"]) assert.equal(await episodes.getByText(title).count(), 0, `${title} was hours ago`);
     assert.equal(await card.getByRole("button", { name: "1 hour", exact: true }).getAttribute("aria-pressed"), "true");
     await page.reload();
     await card.waitFor();
     assert.equal(await card.getByRole("button", { name: "1 hour", exact: true }).getAttribute("aria-pressed"), "true", "the period survives a reload");
     await card.getByRole("button", { name: "24 hours", exact: true }).click(); // as the next runs expect
-    await episodes.getByText("Slowed itself down").first().waitFor();
+    await episodes.getByText("Throttled").first().waitFor();
   });
 
   await step("the pages are real addresses: links, deep links, a missing slash, reload and back all work", async () => {
@@ -2368,8 +2433,8 @@ try {
     await goTo("System");
     assert.equal(pagePath(), "/system/");
     assert.equal(await pagesNav().getByRole("link", { name: "Live", exact: true }).getAttribute("aria-current"), null);
-    assert.equal(await page.getByRole("heading", { name: "System", level: 2 }).count(), 1, "the system card");
-    assert.match(await status(), /Live|offline|lost/i, `the header still reports the camera (it said: ${before})`);
+    assert.equal(await page.getByRole("heading", { name: "Right now", level: 2 }).count(), 1, "the system card");
+    assert.match(await status(), /Live|offline|lost|Throttled|Weak power/i, `the header still reports the camera (it said: ${before})`);
 
     await page.reload();
     await page.getByRole("heading", { level: 1, name: "System" }).waitFor({ state: "attached" });
@@ -2425,7 +2490,7 @@ try {
 
     await goTo("System"); // the notice follows to the other pages
     await banner.waitFor();
-    await page.getByRole("heading", { name: "Camera view", level: 2 }).waitFor();
+    await page.getByRole("heading", { name: "Camera position check", level: 2 }).waitFor();
     const text = await page.getByTestId("drift-message").innerText();
     assert.match(text, /off by up to 2\.4%/);
     assert.ok((await page.getByText("Has moved", { exact: true }).count()) >= 1, "the badge says it has moved");
@@ -2443,8 +2508,8 @@ try {
     await page.getByText("In place", { exact: true }).waitFor();
 
     fakeDrift = finding("unknown", { shift_pct: null, dx_pct: null, dy_pct: null, rotation_deg: null, scale: null, alignment: null, sure_at: null, unsure_because: "too few features to compare: the view is too dark, plain or blurred", message: "Checking against the new reference picture." });
-    await page.getByText("Not sure yet", { exact: true }).waitFor();
-    assert.match(await page.locator("main").innerText(), /could not tell: too few features/);
+    await page.getByText("Can't tell", { exact: true }).waitFor();
+    assert.match(await page.locator("main").innerText(), /Too few features to compare: the view is too dark/);
     assert.equal(await banner.count(), 0, "not being sure is not a warning");
 
     fakeDrift = null; // what the vision service says itself, from here on

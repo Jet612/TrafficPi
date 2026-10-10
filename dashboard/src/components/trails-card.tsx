@@ -409,7 +409,8 @@ function KindFilter({
         <CheckChip key={kind} checked={!hidden.has(kind)} onChange={() => onToggle(kind)}>
           <ClassIcon name={kind} />
           {classLabel(kind)}
-          <span className="tabular-nums text-ink-3">{formatCount(totals.get(kind) ?? 0)}</span>
+          {/* A fixed width for the number: picking hours changes the counts, and chips that shrink would let the toolbar lose a line, which moves the row of hours (and a drag on it) up. */}
+          <span className="min-w-[5ch] text-right tabular-nums text-ink-3">{formatCount(totals.get(kind) ?? 0)}</span>
         </CheckChip>
       ))}
     </fieldset>

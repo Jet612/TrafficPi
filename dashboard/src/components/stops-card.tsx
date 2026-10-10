@@ -152,7 +152,7 @@ export function StopsCard() {
             to see whether vehicles stop before its line.
           </p>
         ) : (
-          <div className="grid gap-4">
+          <div className="grid grid-cols-1 gap-4">
             <StopHoursNote />
             {/* The tiles are the one control for which outcomes to list: each can be pressed on or off. */}
             <ul aria-label="Outcomes" className="grid grid-cols-2 gap-2 md:grid-cols-4">
@@ -219,7 +219,7 @@ export function StopsCard() {
                   </>
                 )}
               </p>
-              <div className="flex flex-wrap items-center gap-3">
+              <div className="flex min-w-0 max-w-full flex-wrap items-center gap-3">
                 <Segmented
                   label="Review status"
                   value={review}
@@ -391,7 +391,7 @@ function StopRow({
             )}
           </span>
         )}
-        <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
+        <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 sm:gap-x-3">
           <time className="tabular-nums text-ink" dateTime={new Date(row.t).toISOString()} title={fullTimeText(row.t, zone)}>
             {momentText(row.t, zone, now)}
           </time>
@@ -403,7 +403,7 @@ function StopRow({
           {showSign && <span className="truncate text-ink-2">{sign}</span>}
           <span className="text-ink-3">{numbersText(row, units)}</span>
         </span>
-        <ChevronRight className="size-4 shrink-0 text-ink-3 transition-colors group-hover:text-ink" aria-hidden="true" />
+        <ChevronRight className="hidden size-4 shrink-0 text-ink-3 transition-colors group-hover:text-ink sm:block" aria-hidden="true" />
       </button>
       <ReviewButtons compact review={row.review} busy={busy} what={what} onReview={onReview} className="shrink-0" />
     </li>
