@@ -210,7 +210,7 @@ function HoursForm({ state, apply }: { state: StopHoursState; apply: (next: Stop
                 <Label
                   htmlFor={longitudeId}
                   hintId={longitudeHintId}
-                  hint="How far east (positive) or west (negative) of Greenwich the camera is, like -74.01 for New York: a place in the Americas has a negative longitude. A wrong sign puts the sun's day in the middle of the night, and the box below the form warns when it sees that."
+                  hint="How far east (positive) or west (negative) of Greenwich the camera is, like -74.01 for New York: a place in the Americas has a negative longitude. A wrong sign puts the sun's day in the middle of the night, and the box under the options warns when it sees that."
                 >
                   Longitude
                 </Label>
