@@ -126,10 +126,22 @@ def shares_of(counts: Mapping[str, int]) -> dict[str, int]:
     that did not happen. All 0 when nothing was judged. The daily email says these numbers, so
     that it and the Data page cannot disagree.
     """
-    total = sum(counts.get(o, 0) for o in STOP_OUTCOMES)
-    shares = dict.fromkeys(STOP_OUTCOMES, 0)
+    outcomes = list[str](STOP_OUTCOMES)  # plain strings: the result is keyed by them
+    total = sum(counts.get(o, 0) for o in outcomes)
+    shares = dict.fromkeys(outcomes, 0)
     if total == 0:
         return shares
+    exact = {o: counts.get(o, 0) / total * 100 for o in outcomes}
+    for outcome, value in exact.items():
+        shares[outcome] = math.floor(value + 1e-9)
+    left = 100 - sum(shares.values())
+    for outcome in sorted(outcomes, key=lambda o: -(exact[o] - math.floor(exact[o] + 1e-9))):
+        if left <= 0:
+            break
+        if counts.get(outcome, 0) > 0:
+            shares[outcome] += 1
+            left -= 1
+    return shares
     exact = {o: counts.get(o, 0) / total * 100 for o in STOP_OUTCOMES}
     for outcome, value in exact.items():
         shares[outcome] = math.floor(value + 1e-9)

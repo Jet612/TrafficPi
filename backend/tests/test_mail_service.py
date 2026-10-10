@@ -740,6 +740,25 @@ def test_a_test_goes_to_the_one_recipient_at_once_and_says_it_is_one(
     assert mail.sends() == []  # a test is not a scheduled mail
 
 
+def test_a_test_is_said_in_the_journal_without_the_address(
+    service: MailService,
+    mail: MailStore,
+    mailer: FakeMailer,
+    clock: Clock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    (a,) = ready_to_send(mail, clock)
+    with caplog.at_level(logging.INFO, logger="trafficpi.mail"):
+        service.send_test(a)
+        clock.after(6_000)
+        mailer.script["owner@example.com"] = [SendOutcome("failed", "Resend refused it (403)")]
+        service.send_test(a)
+    said = [r.message for r in caplog.records]
+    assert any("test mail to recipient" in m and "was sent" in m for m in said)
+    assert any("did not get through" in m and "403" in m for m in said)
+    assert not any("owner@example.com" in m for m in said)
+
+
 def test_a_test_that_fails_says_why_to_the_one_who_pressed_it_and_next_to_the_recipient(
     service: MailService, mail: MailStore, mailer: FakeMailer, clock: Clock
 ) -> None:

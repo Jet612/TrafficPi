@@ -161,6 +161,14 @@ class MailService:
         if outcome.kind == "retry":
             outcome = SendOutcome("failed", outcome.detail)
         ok = outcome.kind == "sent"
+        if ok:
+            log.info("daily email: a test mail to recipient %d was sent", recipient.id)
+        else:
+            log.warning(
+                "daily email: a test mail to recipient %d did not get through: %s",
+                recipient.id,
+                outcome.detail,
+            )
         self._mail.note_result(
             recipient.id, "test", "sent" if ok else "failed", None if ok else outcome.detail, now
         )

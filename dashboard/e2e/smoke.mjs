@@ -2004,8 +2004,9 @@ try {
     assert.equal(status, 401);
   });
 
-  // The browser logs every refused request; the ones above were provoked on purpose.
-  const real = problems.filter((problem) => !/Failed to load resource: the server responded with a status of (401|403|422|503)/.test(problem));
+  // The browser logs every refused request; the ones above were provoked on purpose (a 409 is the daily
+  // email step asking for a test before the sender address was saved).
+  const real = problems.filter((problem) => !/Failed to load resource: the server responded with a status of (401|403|409|422|503)/.test(problem));
   assert.deepEqual(real, [], `the page reported problems:\n${real.join("\n")}`);
   console.log("all steps passed");
 } catch (error) {
