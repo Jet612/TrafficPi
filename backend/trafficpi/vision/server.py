@@ -198,9 +198,15 @@ class ServerThread:
                 )
             time.sleep(0.02)
 
-    def stop(self, timeout: float = 5.0) -> None:
+    def begin_stopping(self) -> None:
+        """Tell every open stream and socket that the service is stopping, so that they end now
+        (and the viewers' own reconnects begin) while the rest of the shutdown goes on: the camera
+        is stopped, evidence is written. The server keeps answering until :meth:`stop`."""
         stopping = getattr(self._app.state, "stopping", None)
         if stopping is not None:
             stopping.set()
+
+    def stop(self, timeout: float = 5.0) -> None:
+        self.begin_stopping()
         self._server.should_exit = True
         self._thread.join(timeout)

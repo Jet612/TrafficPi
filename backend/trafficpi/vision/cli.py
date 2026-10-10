@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import sys
+import threading
 import time
 import traceback
 from dataclasses import asdict
@@ -558,6 +559,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         )
         notify("READY=1")
         heartbeat.start()
+        _end_streams_when_stopping(args.stop, server)
         service.run(args.stop)
     finally:
         heartbeat.stop()
@@ -566,6 +568,19 @@ def cmd_run(args: argparse.Namespace) -> int:
         detector.close()  # for the accelerator this only lets go of our reference (see its close)
     log.info("vision service stopped after %d frames", service.frames)
     return 0
+
+
+def _end_streams_when_stopping(stop: StopRequest, server: ServerThread) -> None:
+    """End the viewers' streams and sockets as soon as a stop is asked for, not when the whole
+    shutdown is done: the web server is stopped last, after the camera and the evidence, and a
+    viewer still connected then is cancelled by the server's grace period, with an ERROR in the
+    journal (seen once, 2026-10-09 17:01)."""
+
+    def wait_then_end() -> None:
+        stop.wait(10**9)
+        server.begin_stopping()
+
+    threading.Thread(target=wait_then_end, name="end-streams", daemon=True).start()
 
 
 def build_parser() -> argparse.ArgumentParser:

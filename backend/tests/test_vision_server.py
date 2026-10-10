@@ -178,6 +178,33 @@ def test_an_open_live_socket_is_closed_when_the_server_stops_and_nothing_is_logg
     assert [r.getMessage() for r in caplog.records if r.levelno >= logging.ERROR] == []
 
 
+def test_streams_and_sockets_end_when_stopping_begins_and_the_server_goes_on_answering(
+    service: VisionService,
+) -> None:
+    """The web server is stopped last, after the camera and the evidence; the viewers must not be
+    left connected through all that (the server's grace period then cancels them, and logs an
+    ERROR). ``begin_stopping`` ends them at the stop request; the server answers until ``stop``."""
+    server = ServerThread(create_app(service, live_hz=50), port=18745)
+    server.start()
+    try:
+        with connect("ws://127.0.0.1:18745/live", open_timeout=5) as socket:
+            assert json.loads(socket.recv(timeout=5))["type"] == "state"
+            with httpx.stream("GET", "http://127.0.0.1:18745/preview.mjpg", timeout=5) as stream:
+                chunks = stream.iter_raw()
+                assert next(chunks).startswith(b"--frame")
+                server.begin_stopping()
+                with pytest.raises(websockets.exceptions.ConnectionClosed) as closed:
+                    while True:
+                        socket.recv(timeout=2)
+                assert closed.value.rcvd is not None and closed.value.rcvd.code == 1001
+                started = time.monotonic()
+                list(chunks)  # the rest of the stream: it ends, within a moment, and does not go on
+                assert time.monotonic() - started < 3.0
+        assert httpx.get("http://127.0.0.1:18745/health", timeout=5).json()["status"] == "ok"
+    finally:
+        server.stop()
+
+
 def test_encode_jpeg_swaps_to_the_right_channel_order() -> None:
     rgb = np.zeros((8, 8, 3), np.uint8)
     rgb[..., 0] = 255  # pure red in RGB
