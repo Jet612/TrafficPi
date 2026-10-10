@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import { lineOf, profileOf, rectangle, stopOf, zoneOf } from "./fixtures";
 import {
   allDay,
+  busiestHour,
+  busiestHourText,
+  hourStacks,
   profileScene,
   clampSpan,
   countIn,
@@ -101,13 +104,13 @@ describe("hour spans", () => {
 });
 
 describe("hour buttons", () => {
-  it("say the time and how many trails began in it", () => {
+  it("say the time and how many were tracked in it", () => {
     const day = dayOf();
     const cars = new Set(["car"]);
-    expect(hourButtonLabel(day, 8, 123, cars)).toBe("08:00–09:00: 123 vehicles");
-    expect(hourButtonLabel(day, 9, 0, cars)).toBe("09:00–10:00: no vehicles");
-    expect(hourButtonLabel(day, 10, 1, cars)).toBe("10:00–11:00: 1 vehicle");
-    expect(hourButtonLabel(day, 11, 2, new Set(["person"]))).toBe("11:00–12:00: 2 people");
+    expect(hourButtonLabel(day, 8, 123, cars)).toBe("08:00–09:00: 123 vehicles tracked");
+    expect(hourButtonLabel(day, 9, 0, cars)).toBe("09:00–10:00: no vehicles tracked");
+    expect(hourButtonLabel(day, 10, 1, cars)).toBe("10:00–11:00: 1 vehicle tracked");
+    expect(hourButtonLabel(day, 11, 2, new Set(["person"]))).toBe("11:00–12:00: 2 people tracked");
     expect(hourButtonLabel(day, 40, 1, cars)).toBe("");
   });
 
@@ -115,9 +118,9 @@ describe("hour buttons", () => {
     const day = dayOf({}, 25, 2); // 00, 01, 01, 02, ...
     expect(day.hours.map((h) => h.hour).slice(0, 4)).toEqual([0, 1, 1, 2]);
     const cars = new Set(["car"]);
-    expect(hourButtonLabel(day, 1, 4, cars)).toBe("01:00–02:00, the first time: 4 vehicles");
-    expect(hourButtonLabel(day, 2, 1, cars)).toBe("01:00–02:00, the second time: 1 vehicle");
-    expect(hourButtonLabel(day, 3, 2, cars)).toBe("02:00–03:00: 2 vehicles");
+    expect(hourButtonLabel(day, 1, 4, cars)).toBe("01:00–02:00, the first time: 4 vehicles tracked");
+    expect(hourButtonLabel(day, 2, 1, cars)).toBe("01:00–02:00, the second time: 1 vehicle tracked");
+    expect(hourButtonLabel(day, 3, 2, cars)).toBe("02:00–03:00: 2 vehicles tracked");
   });
 });
 
@@ -157,6 +160,38 @@ describe("kinds", () => {
     expect(countIn(counts, { from: 20, to: 30 })).toBe(0);
   });
 
+  it("makes each hour's bar of the shown kinds, in the fixed order, with no segment for a kind that has none", () => {
+    const stacks = hourStacks(day, new Set(["person", "car", "truck"]));
+    expect(stacks).toHaveLength(24);
+    expect(stacks[7]).toEqual([
+      { kind: "car", count: 10 },
+      { kind: "truck", count: 2 },
+    ]);
+    expect(stacks[8]).toEqual([
+      { kind: "car", count: 30 },
+      { kind: "person", count: 3 },
+    ]);
+    expect(stacks[9]).toEqual([]); // a kind with a count of nothing is not a segment
+    expect(hourStacks(day, new Set(["truck"]))[7]).toEqual([{ kind: "truck", count: 2 }]);
+    expect(hourStacks(day, new Set()).every((stack) => stack.length === 0)).toBe(true);
+  });
+
+  it("finds the busiest hour, the first of several that are level, and none when nothing was tracked", () => {
+    expect(busiestHour([0, 4, 9, 9, 2])).toBe(2);
+    expect(busiestHour([0, 0, 0])).toBeNull();
+    expect(busiestHour([])).toBeNull();
+    const counts = hourCounts(day, new Set(["car", "truck", "person"]));
+    expect(busiestHour(counts)).toBe(8);
+  });
+
+  it("says which hour was busiest and how many were tracked in it", () => {
+    const format = (n: number) => n.toLocaleString("en-US");
+    const all = new Set(["car", "truck"]);
+    expect(busiestHourText(day, hourCounts(day, all), all, format)).toBe("Busiest hour 08:00–09:00 · 30 vehicles tracked");
+    expect(busiestHourText(day, hourCounts(day, new Set(["truck"])), new Set(["truck"]), format)).toBe("Busiest hour 07:00–08:00 · 2 vehicles tracked");
+    expect(busiestHourText(dayOf(), hourCounts(dayOf(), all), all, format)).toBeNull();
+  });
+
   it("keeps the paths of the shown kinds", () => {
     const paths = [path("car"), path("truck"), path("car"), path("person")];
     expect(pathsOfKinds(paths, new Set(["car", "person"])).map((p) => p.label)).toEqual(["car", "car", "person"]);
@@ -190,10 +225,11 @@ describe("words", () => {
 
   it("counts, and says so when only a sample is drawn", () => {
     const cars = new Set(["car"]);
-    expect(countText(1, 1, cars, format)).toBe("1 vehicle");
-    expect(countText(312, 312, cars, format)).toBe("312 vehicles");
-    expect(countText(12_043, 5_000, cars, format)).toBe("12,043 vehicles (drawing an even sample of 5,000)");
-    expect(countText(0, 0, cars, format)).toBe("0 vehicles");
+    expect(countText(1, 1, cars, format)).toBe("1 vehicle tracked");
+    expect(countText(312, 312, cars, format)).toBe("312 vehicles tracked");
+    expect(countText(12_043, 5_000, cars, format)).toBe("12,043 vehicles tracked (drawing an even sample of 5,000)");
+    expect(countText(0, 0, cars, format)).toBe("0 vehicles tracked");
+    expect(countText(3, 3, new Set(["car", "person"]), format)).toBe("3 road users tracked");
   });
 
   it("takes an even sample of a list, the first and then every n-th", () => {

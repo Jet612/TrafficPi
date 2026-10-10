@@ -11,12 +11,15 @@ import {
   counted,
   isDefaultOutcomes,
   listTotal,
+  listedPasses,
+  measuredSpeedParts,
   nextReview,
   numbersText,
   passText,
   passesOf,
   periodRange,
   reviewProgress,
+  reviewQuery,
   signLabel,
   slowestText,
   summarySentence,
@@ -142,6 +145,7 @@ describe("the numbers behind a verdict", () => {
     min_speed_ms: null,
     max_speed_ms: null,
     line_speed_ms: null,
+    calibrated: false,
     review: null,
     reviewed_at: null,
     snapshot_url: null,
@@ -163,6 +167,26 @@ describe("the numbers behind a verdict", () => {
     );
   });
 
+  it("tell the speeds a calibrated camera measured, in the units that are set, and not the estimate", () => {
+    const measured = { calibrated: true, min_speed_ms: 1.8, line_speed_ms: 3.1, max_speed_ms: 5.5 };
+    // 1.8 m/s is 4.03 mph and 3.1 m/s is 6.93 mph: whole miles an hour, with no "about" and no "≈"
+    expect(numbersText(stop(measured), "mph")).toBe("4.2 s in zone · still 0.4 s · slowest 4 mph · at the line 7 mph");
+    expect(numbersText(stop(measured), "kmh")).toBe("4.2 s in zone · still 0.4 s · slowest 6 km/h · at the line 11 km/h");
+    expect(numbersText(stop(measured), "mph", true)).toBe("4.2 s in zone · still 0.4 s · slowest 4 mph · at the line 7 mph · fastest 12 mph");
+    expect(numbersText(stop({ ...measured, min_speed_ms: 0.2 }), "mph")).toContain("slowest almost still");
+  });
+
+  it("tell only what was measured, and fall back to the estimate when nothing was or when it is of another calibration", () => {
+    expect(numbersText(stop({ calibrated: true, min_speed_ms: null, line_speed_ms: 3.1, max_speed_ms: null }), "mph")).toBe(
+      "4.2 s in zone · still 0.4 s · at the line 7 mph",
+    );
+    // not measured under the calibration saved now: the rough estimate, marked as one
+    expect(numbersText(stop({ calibrated: false, min_speed_ms: 1.8, line_speed_ms: 3.1 }), "mph")).toBe("4.2 s in zone · still 0.4 s · slowest ≈ 2 mph");
+    // calibrated, but nothing measured for this pass
+    expect(numbersText(stop({ calibrated: true, min_speed_ms: null, line_speed_ms: null }), "mph")).toBe("4.2 s in zone · still 0.4 s · slowest ≈ 2 mph");
+    expect(measuredSpeedParts(stop({ calibrated: false, min_speed_ms: 1.8 }), "mph")).toEqual([]);
+  });
+
   it("call a vehicle that all but stopped almost still, not 0 mph", () => {
     expect(slowestText(0, "mph")).toBe("slowest almost still");
     expect(slowestText(0.1, "kmh")).toBe("slowest almost still"); // 0.9 km/h
@@ -180,7 +204,7 @@ describe("how many passes a list holds", () => {
   );
 
   it("adds up the outcomes picked, by the review filter", () => {
-    expect(listTotal(all, NEEDS_REVIEW, "all", false)).toBe(38 + 4 + 25);
+    expect(listTotal(all, NEEDS_REVIEW, "all", false)).toBe(35 + 4 + 25); // the passes that still count
     expect(listTotal(all, NEEDS_REVIEW, "unreviewed", false)).toBe(33 + 4 + 24);
     expect(listTotal(all, NEEDS_REVIEW, "confirmed", false)).toBe(3);
     expect(listTotal(all, NEEDS_REVIEW, "false_positive", false)).toBe(3);
@@ -192,9 +216,17 @@ describe("how many passes a list holds", () => {
     expect(listTotal(all, NEEDS_REVIEW, "all", true)).toBeNull();
   });
 
-  it("counts the passes called false alarms, which the tiles leave out", () => {
+  it("leaves out the passes called false alarms under All, as the tiles do, and lists them under False alarms", () => {
     expect(counted(totals("rolling", 38, { false_positive: 3 }))).toBe(35);
-    expect(listTotal(all, ["rolling"], "all", false)).toBe(38);
+    expect(listTotal(all, ["rolling"], "all", false)).toBe(35);
+    expect(listTotal(all, ["rolling"], "false_positive", false)).toBe(3);
+  });
+
+  it("asks the server for the passes that still count when All is picked, and for the others by name", () => {
+    expect(reviewQuery("all")).toBe("counted");
+    expect(reviewQuery("unreviewed")).toBe("unreviewed");
+    expect(reviewQuery("confirmed")).toBe("confirmed");
+    expect(reviewQuery("false_positive")).toBe("false_positive");
   });
 });
 
@@ -243,5 +275,63 @@ describe("asking the server", () => {
     expect(stopsQuery({ fromMs: 10, toMs: 20, outcomes: ["rolling", "did_not_stop"], review: "unreviewed", sign: "stop-1", limit: 25, beforeId: 99 })).toBe(
       "from_ms=10&to_ms=20&outcome=rolling%2Cdid_not_stop&review=unreviewed&sign=stop-1&limit=25&before_id=99",
     );
+  });
+});
+
+describe("the passes listed while a review is made", () => {
+  const pass = (id: number, over: Partial<StopOut> = {}): StopOut => ({
+    id,
+    t: id * 1_000,
+    sign: "elm",
+    label: "car",
+    outcome: "rolling",
+    hold_s: 0.4,
+    min_speed: 0.31,
+    observed_s: 4.2,
+    min_speed_ms: null,
+    max_speed_ms: null,
+    line_speed_ms: null,
+    calibrated: false,
+    review: null,
+    reviewed_at: null,
+    snapshot_url: null,
+    clip_url: null,
+    ...over,
+  });
+  const one = pass(3);
+  const two = pass(2);
+  const three = pass(1);
+
+  it("lists what the server sent, with the changes made here", () => {
+    const called = pass(2, { review: "false_positive" });
+    const rows = listedPasses([one, two, three], new Map([[2, called]]), new Set(), 10);
+    expect(rows.map((row) => [row.id, row.review])).toEqual([[3, null], [2, "false_positive"], [1, null]]);
+  });
+
+  it("puts a pass that was reviewed here back where it was when the server no longer lists it", () => {
+    // called a false alarm under "All": the server leaves it out from now on, and the row (with its Undo) must not go
+    const called = pass(2, { review: "false_positive" });
+    const rows = listedPasses([one, three], new Map([[2, called]]), new Set([2]), 10);
+    expect(rows.map((row) => row.id)).toEqual([3, 2, 1]);
+    expect(rows[1]?.review).toBe("false_positive");
+  });
+
+  it("does not put back a pass that nobody reviewed here, or one the page does not reach", () => {
+    const called = pass(2, { review: "false_positive" });
+    expect(listedPasses([one, three], new Map([[2, called]]), new Set(), 10).map((row) => row.id)).toEqual([3, 1]);
+    // a full page of two ends at 3: a pass older than that is for "Show more", not for this page
+    expect(listedPasses([one, pass(2)], new Map([[1, pass(1, { review: "confirmed" })]]), new Set([1]), 2).map((row) => row.id)).toEqual([3, 2]);
+    // but one newer than the oldest of a full page is inside it
+    expect(listedPasses([one, three], new Map([[2, called]]), new Set([2]), 2).map((row) => row.id)).toEqual([3, 2, 1]);
+  });
+
+  it("keeps the only pass of a list that has just become empty", () => {
+    const called = pass(2, { review: "false_positive" });
+    expect(listedPasses([], new Map([[2, called]]), new Set([2]), 10).map((row) => row.id)).toEqual([2]);
+  });
+
+  it("does not list a pass twice when the server still lists it", () => {
+    const confirmed = pass(2, { review: "confirmed" });
+    expect(listedPasses([one, two, three], new Map([[2, confirmed]]), new Set([2]), 10).map((row) => row.id)).toEqual([3, 2, 1]);
   });
 });

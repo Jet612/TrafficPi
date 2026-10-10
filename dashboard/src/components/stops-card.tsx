@@ -21,6 +21,7 @@ import { classSingular } from "@/lib/classes";
 import { OUTCOME_COLOR } from "@/lib/data";
 import { formatCount, fullTimeText, momentText } from "@/lib/format";
 import { useNow, usePersistentState, useRequest } from "@/lib/hooks";
+import { MEASURED_CAVEAT } from "@/lib/speed";
 import {
   NEEDS_REVIEW,
   OUTCOMES,
@@ -31,12 +32,14 @@ import {
   counted,
   isDefaultOutcomes,
   listTotal,
+  listedPasses,
   nextReview,
   numbersText,
   passText,
   passesOf,
   periodRange,
   reviewProgress,
+  reviewQuery,
   signLabel,
   summarySentence,
   toggleOutcome,
@@ -48,6 +51,7 @@ import type { ReviewState, StopOut, StopOutcome } from "@/lib/types";
 
 const PAGE = 10;
 const REFRESH_MS = 15_000;
+const EMPTY: ReadonlySet<number> = new Set();
 
 export function StopsCard() {
   const [stored, setStored] = usePersistentState<{ period?: Period }>("trafficpi.stops", {});
@@ -57,6 +61,8 @@ export function StopsCard() {
   const [sign, setSign] = useState<string>("all");
   const [limit, setLimit] = useState(PAGE);
   const [answers, setAnswers] = useState<ReadonlyMap<number, StopOut>>(() => new Map());
+  /** The passes reviewed in the view named by `view`: they stay in the list until the view changes. */
+  const [kept, setKept] = useState<{ view: string; ids: ReadonlySet<number> }>({ view: "", ids: new Set() });
   const [reviewing, setReviewing] = useState<ReadonlySet<number>>(() => new Set());
   const [problem, setProblem] = useState<string | null>(null);
   const [viewing, setViewing] = useState<number | null>(null);
@@ -76,15 +82,18 @@ export function StopsCard() {
     fromMs,
     toMs,
     outcomes: selected,
-    review: review === "all" ? undefined : review,
+    review: reviewQuery(review),
     sign: sign === "all" ? undefined : sign,
     limit,
   };
   const listKey = now === 0 || selected.length === 0 ? null : `stops:${JSON.stringify(query)}`;
   const list = useRequest(listKey, (signal) => api.stops(query, signal), { refreshMs: REFRESH_MS });
+  // What is listed is chosen by these; the page of rows and the time window move on without changing the view.
+  const view = `${period}|${selected.join(",")}|${review}|${sign}`;
+  const keptHere = kept.view === view ? kept.ids : EMPTY;
   const rows = useMemo(
-    () => (listKey === null || list.data === null ? [] : list.data).map((row) => answers.get(row.id) ?? row),
-    [listKey, list.data, answers],
+    () => (listKey === null || list.data === null ? [] : listedPasses(list.data, answers, keptHere, limit)),
+    [listKey, list.data, answers, keptHere, limit],
   );
 
   async function make(row: StopOut, pressed: ReviewState) {
@@ -93,6 +102,7 @@ export function StopsCard() {
     try {
       const updated = await api.reviewStop(row.id, nextReview(row.review, pressed));
       setAnswers((current) => new Map(current).set(updated.id, updated));
+      setKept((current) => ({ view, ids: new Set(current.view === view ? current.ids : EMPTY).add(updated.id) }));
       summary.refresh();
       list.refresh();
     } catch (error) {
@@ -207,7 +217,7 @@ export function StopsCard() {
                 ) : (
                   <>
                     {total === null ? "Newest first" : `Showing ${formatCount(total)} ${total === 1 ? "pass" : "passes"} · newest first`}
-                    <InfoTip>A pass is one vehicle reaching a stop sign.</InfoTip>
+                    <InfoTip>A pass is one vehicle reaching a stop sign. All leaves out the passes called false alarms; they are under False alarms.</InfoTip>
                   </>
                 )}
                 {changed && (
@@ -312,6 +322,11 @@ export function StopsCard() {
                     </Button>
                   )}
                 </div>
+                {rows.some((row) => row.calibrated) && (
+                  <p className="mt-2 max-w-3xl text-sm text-ink-3" data-testid="stops-measured-caveat">
+                    {MEASURED_CAVEAT}
+                  </p>
+                )}
               </div>
             )}
           </div>

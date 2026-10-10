@@ -27,13 +27,6 @@ describe("api", () => {
     expect(init.headers).toMatchObject({ "Content-Type": "application/json" });
   });
 
-  it("builds the series query", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(respond(200, []));
-    vi.stubGlobal("fetch", fetchMock);
-    await api.series(1000, 2000, "hour");
-    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/stats/series?from_ms=1000&to_ms=2000&bucket=hour");
-  });
-
   it("turns failures into ApiError with the server's words", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(respond(422, { detail: 'lines[0] must be [x, y]' })));
     await expect(api.saveProfile(emptyProfile())).rejects.toMatchObject({

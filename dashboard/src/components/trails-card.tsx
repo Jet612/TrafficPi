@@ -18,6 +18,7 @@ import { dayText, formatCount, yearIn } from "@/lib/format";
 import { useNow, usePersistentState, useRequest } from "@/lib/hooks";
 import {
   allDay,
+  busiestHourText,
   clampSpan,
   countIn,
   countText,
@@ -25,6 +26,7 @@ import {
   evenSample,
   hourButtonLabel,
   hourCounts,
+  hourStacks,
   isAllDay,
   isDay,
   kindTotals,
@@ -103,6 +105,7 @@ export function TrailsCard() {
 
   const kinds = useMemo(() => (day ? shownKinds(day, hidden) : new Set<string>()), [day, hidden]);
   const counts = useMemo(() => (day ? hourCounts(day, kinds) : []), [day, kinds]);
+  const stacks = useMemo(() => (day ? hourStacks(day, kinds) : []), [day, kinds]);
   const span = useMemo(() => (day ? (picked ? clampSpan(picked, day) : allDay(day)) : null), [day, picked]);
   const range = day && span ? spanRange(day, span) : null;
   const trailsInSpan = day && span ? countIn(day.hours.map((hour) => hour.count), span) : 0;
@@ -224,6 +227,7 @@ export function TrailsCard() {
   const pathsCurrent = pathsKey !== null && pathsRequest.answeredKey === pathsKey;
   const summary = countText(spanCount, pathsCurrent ? drawn.length : spanCount, kinds, formatCount);
   const headline = day && span ? `${summary} · ${dayTitle(day.day, thisYear ?? Number(day.day.slice(0, 4)))} · ${spanLabel(day, span)}` : "";
+  const busiest = day ? busiestHourText(day, counts, kinds, formatCount) : null;
   const description = day && span ? `${prefs.view === "heat" ? "Heat map" : "Paths"} of ${summary} on ${dayTitle(day.day, thisYear ?? Number(day.day.slice(0, 4)))}, ${spanLabel(day, span).toLowerCase()}, drawn on the camera picture.` : "";
   const emptyMessage = !day
     ? null
@@ -243,7 +247,7 @@ export function TrailsCard() {
     <Card>
       <CardHeader>
         <div>
-          <CardTitle>Trails</CardTitle>
+          <CardTitle>Trails by hour</CardTitle>
           <CardSubtitle data-testid="trails-headline">{day && day.first_day !== null ? headline : "The path every vehicle took"}</CardSubtitle>
         </div>
         {day && day.first_day !== null && (
@@ -335,18 +339,26 @@ export function TrailsCard() {
 
             {span && (
               <div className="grid gap-1.5">
-                <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
                   <p className="inline-flex items-center gap-1 text-sm font-medium text-ink">
                     Hours
                     <InfoTip id="trail-hours-help">Pick an hour, drag across several, or Shift-click to extend.</InfoTip>
                   </p>
-                  <Button size="sm" variant="secondary" aria-pressed={isAllDay(day, span)} className={isAllDay(day, span) ? "border-accent bg-accent-wash" : undefined} onClick={() => choose(null)}>
-                    All day
-                  </Button>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    {busiest && (
+                      <p className="text-sm tabular-nums text-ink-2" data-testid="trails-busiest">
+                        {busiest}
+                      </p>
+                    )}
+                    <Button size="sm" variant="secondary" aria-pressed={isAllDay(day, span)} className={isAllDay(day, span) ? "border-accent bg-accent-wash" : undefined} onClick={() => choose(null)}>
+                      All day
+                    </Button>
+                  </div>
                 </div>
                 <HourStrip
                   hours={day.hours}
                   counts={counts}
+                  stacks={stacks}
                   span={span}
                   labelFor={(index) => hourButtonLabel(day, index, counts[index] ?? 0, kinds)}
                   onSelect={choose}

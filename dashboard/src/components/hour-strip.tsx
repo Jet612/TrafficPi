@@ -1,20 +1,23 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { classColor } from "@/lib/classes";
 import { cn } from "@/lib/cn";
 import { hourLabel } from "@/lib/format";
-import { spanBetween, type HourSpan } from "@/lib/trails";
+import { spanBetween, type HourSpan, type KindCount } from "@/lib/trails";
 import type { TrailHour } from "@/lib/types";
 
 /**
- * The hours of a day as a row of small bars (how many vehicles began a trail in each), which also
- * pick the hours to look at: click one, drag across several, Shift+click to extend, or Tab to the
- * row and use the arrow keys (Shift with them extends), Home and End. A press with the keyboard
- * (Enter or Space) picks the one hour.
+ * The hours of a day as the day's hourly chart: a bar for each hour (how many vehicles were tracked
+ * in it, stacked by kind in the kinds' colours), which is also how the hours to look at are picked:
+ * click one, drag across several, Shift+click to extend, or Tab to the row and use the arrow keys
+ * (Shift with them extends), Home and End. A press with the keyboard (Enter or Space) picks the one
+ * hour.
  */
 export function HourStrip({
   hours,
   counts,
+  stacks,
   span,
   labelFor,
   onSelect,
@@ -23,6 +26,8 @@ export function HourStrip({
   hours: readonly TrailHour[];
   /** Per hour, for the kinds that are shown. */
   counts: readonly number[];
+  /** Per hour, what the bar is made of: the kinds that are shown, in their usual order. */
+  stacks: readonly (readonly KindCount[])[];
   span: HourSpan;
   /** The spoken name of an hour's button. */
   labelFor: (index: number) => string;
@@ -116,15 +121,25 @@ export function HourStrip({
               onSelect(spanBetween(anchor.current, index));
             }}
             className={cn(
-              "flex h-16 min-w-0 flex-col rounded-md border px-0.5 pb-1 pt-1 text-xs leading-none tabular-nums transition-colors",
+              "flex h-24 min-w-0 flex-col rounded-md border px-0.5 pb-1 pt-1 text-xs leading-none tabular-nums transition-colors sm:h-28",
               marked ? "border-accent bg-accent-wash text-ink" : "border-edge bg-surface text-ink-2 hover:bg-sunken",
             )}
           >
+            {/* The bar: the kinds stacked, the first at the bottom, a hair of the card's colour between them. With some hours picked, the others fade. */}
             <span className="flex w-full flex-1 items-end" aria-hidden="true">
               <span
-                className={cn("block w-full rounded-[3px]", selected ? "bg-accent" : "bg-ink-3/60")}
-                style={{ height: count === 0 ? "2px" : `${Math.max(10, Math.round((100 * count) / busiest))}%` }}
-              />
+                className={cn("flex w-full flex-col-reverse overflow-hidden rounded-[3px]", !everything && !selected && "opacity-40")}
+                style={{ height: count === 0 ? "2px" : `${Math.max(8, Math.round((100 * count) / busiest))}%`, background: count === 0 ? "var(--ink-3)" : undefined }}
+              >
+                {(stacks[index] ?? []).map((part, at) => (
+                  <span
+                    key={part.kind}
+                    data-kind={part.kind}
+                    className={cn("block w-full", at > 0 && "border-b border-surface")}
+                    style={{ flex: `${part.count} 1 0`, background: classColor(part.kind), minHeight: "2px" }}
+                  />
+                ))}
+              </span>
             </span>
             <span className="mt-1 block text-center" aria-hidden="true">
               {hourLabel(hour.hour)}

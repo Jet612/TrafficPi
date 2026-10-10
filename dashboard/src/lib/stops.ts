@@ -1,7 +1,7 @@
 import { classSingular } from "./classes";
 import { formatCount, fullTimeText } from "./format";
 import { displayName, findElement } from "./profile";
-import { SIZE_METRES, inUnits, roughSpeed, unitName, type SpeedUnits } from "./speed";
+import { SIZE_METRES, inUnits, roughSpeed, speedShort, unitName, type SpeedUnits } from "./speed";
 import type { Profile, ReviewState, StopOut, StopOutcome, StopSummary, StopTotals } from "./types";
 
 /** The outcomes, in the order they are told: the good one first, then from mild to grave, then the unknown. */
@@ -53,8 +53,17 @@ export function nextReview(current: ReviewState | null, pressed: ReviewState): R
   return current === pressed ? null : pressed;
 }
 
-/** Which passes to list by what a person made of them: all, those nobody has reviewed ("needs review"), or those called one thing. */
+/**
+ * Which passes to list by what a person made of them: "all" is every pass that still counts (the ones
+ * not called a false alarm, which is what the tiles and the Data page add up), those nobody has reviewed
+ * ("needs review"), or those called one thing.
+ */
 export type ReviewFilter = "all" | "unreviewed" | ReviewState;
+
+/** What the list asks the server for: "all" is the passes that still count, so that the list agrees with the tiles. */
+export function reviewQuery(filter: ReviewFilter): "counted" | "unreviewed" | ReviewState {
+  return filter === "all" ? "counted" : filter;
+}
 
 export const REVIEW_FILTERS: readonly { value: ReviewFilter; label: string }[] = [
   { value: "all", label: "All" },
@@ -65,13 +74,14 @@ export const REVIEW_FILTERS: readonly { value: ReviewFilter; label: string }[] =
 
 /**
  * How many passes the list holds for these outcomes and this review filter, from the summary of the
- * period. It counts every pass the list shows, the ones called false alarms too (the tiles' numbers
- * leave those out, as `counted` does). Null when a stop sign is picked: the summary is not split by sign.
+ * period. "All" is the passes that still count, so its number is the tiles' (`counted`); the ones called
+ * false alarms are listed under False alarms only. Null when a stop sign is picked: the summary is not
+ * split by sign.
  */
 export function listTotal(summary: StopSummary, selected: readonly StopOutcome[], review: ReviewFilter, signPicked: boolean): number | null {
   if (signPicked) return null;
   const pick = (totals: StopTotals) =>
-    review === "all" ? totals.total : review === "unreviewed" ? totals.unreviewed : review === "confirmed" ? totals.confirmed : totals.false_positive;
+    review === "all" ? counted(totals) : review === "unreviewed" ? totals.unreviewed : review === "confirmed" ? totals.confirmed : totals.false_positive;
   return summary.outcomes.filter((totals) => selected.includes(totals.outcome)).reduce((sum, totals) => sum + pick(totals), 0);
 }
 
@@ -154,15 +164,41 @@ export function slowestText(minSpeed: number, units: SpeedUnits): string {
 }
 
 /**
- * The numbers behind a verdict, for anyone who wants to see why: how long it was watched in the zone,
- * how long it stood still, and how slowly it went at the least, which is a rough estimate (a vehicle's
- * own size stands for a car's, plan.md D41) in the units set on the Setup page: "1.9 s in zone · still
- * 0.1 s · slowest ≈ 4 mph".
+ * The speeds a calibrated camera measured for a pass, in the units that are set: "slowest 4 mph",
+ * "at the line 7 mph" (and, in `detail`, "fastest 12 mph"). Only the speeds measured under the
+ * calibration saved now (`calibrated`, plan.md D49); an empty list says there are none, and the
+ * rough estimate is told instead.
  */
-export function numbersText(stop: Pick<StopOut, "hold_s" | "min_speed" | "observed_s" | "outcome">, units: SpeedUnits): string {
+export function measuredSpeedParts(
+  stop: Pick<StopOut, "calibrated" | "min_speed_ms" | "max_speed_ms" | "line_speed_ms">,
+  units: SpeedUnits,
+  detail = false,
+): string[] {
+  if (!stop.calibrated) return [];
+  const parts: string[] = [];
+  if (stop.min_speed_ms !== null) parts.push(`slowest ${speedShort(stop.min_speed_ms, units, true)}`);
+  if (stop.line_speed_ms !== null) parts.push(`at the line ${speedShort(stop.line_speed_ms, units, true)}`);
+  if (detail && stop.max_speed_ms !== null) parts.push(`fastest ${speedShort(stop.max_speed_ms, units, true)}`);
+  return parts;
+}
+
+/**
+ * The numbers behind a verdict, for anyone who wants to see why: how long it was watched in the zone,
+ * how long it stood still, and how fast it went. With a calibrated camera that is measured ("slowest 4
+ * mph · at the line 7 mph"); without one it is how slowly it went at the least, a rough estimate (a
+ * vehicle's own size stands for a car's, plan.md D41), in the units set on the Setup page: "1.9 s in
+ * zone · still 0.1 s · slowest ≈ 4 mph".
+ */
+export function numbersText(
+  stop: Pick<StopOut, "hold_s" | "min_speed" | "observed_s" | "outcome" | "calibrated" | "min_speed_ms" | "max_speed_ms" | "line_speed_ms">,
+  units: SpeedUnits,
+  detail = false,
+): string {
   const parts = [`${stop.observed_s.toFixed(1)} s in zone`];
   if (stop.outcome !== "indeterminate" || stop.hold_s > 0) parts.push(`still ${stop.hold_s.toFixed(1)} s`);
-  if (stop.min_speed >= 0) parts.push(slowestText(stop.min_speed, units));
+  const measured = measuredSpeedParts(stop, units, detail);
+  if (measured.length > 0) parts.push(...measured);
+  else if (stop.min_speed >= 0) parts.push(slowestText(stop.min_speed, units));
   return parts.join(" · ");
 }
 
@@ -175,4 +211,33 @@ export function passText(stop: Pick<StopOut, "label" | "t">, sign: string, zone:
 export function signLabel(profile: Profile | null, id: string): string {
   if (profile === null) return "Stop sign";
   return findElement(profile, { kind: "stop", id }) ? displayName(profile, { kind: "stop", id }) : "Removed stop sign";
+}
+
+// --- passes just reviewed ------------------------------------------------------------------------
+
+/**
+ * The passes to list: what the server answered, with the changes made in this view, and the passes
+ * reviewed in this view put back where they were if the server no longer lists them. A pass called a
+ * false alarm leaves "All" (it no longer counts), and one confirmed leaves "Needs review"; if it
+ * vanished the moment it was pressed, the Undo beside it and the window it was opened in would go with
+ * it. Newest first, as the server sends them.
+ *
+ * A kept pass is put back only where the page reaches: it is not added beyond the oldest of a full page,
+ * which a "Show more" would reach.
+ */
+export function listedPasses(
+  fetched: readonly StopOut[],
+  changed: ReadonlyMap<number, StopOut>,
+  kept: ReadonlySet<number>,
+  limit: number,
+): StopOut[] {
+  const rows = fetched.map((row) => changed.get(row.id) ?? row);
+  const have = new Set(rows.map((row) => row.id));
+  const oldest = fetched.length === 0 ? Number.NEGATIVE_INFINITY : (fetched[fetched.length - 1]?.id ?? Number.NEGATIVE_INFINITY);
+  const reachable = (id: number) => fetched.length < limit || id > oldest;
+  for (const id of kept) {
+    const row = changed.get(id);
+    if (row !== undefined && !have.has(id) && reachable(id)) rows.push(row);
+  }
+  return rows.sort((a, b) => b.id - a.id);
 }

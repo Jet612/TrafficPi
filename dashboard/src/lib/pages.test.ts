@@ -5,20 +5,20 @@ describe("which page an address belongs to", () => {
   it("knows the first page by its bare address, and only that", () => {
     expect(isCurrentPage("/", "/")).toBe(true);
     expect(isCurrentPage("", "/")).toBe(true);
-    expect(isCurrentPage("/history/", "/")).toBe(false);
+    expect(isCurrentPage("/review/", "/")).toBe(false);
   });
 
   it("does not mind a trailing slash on either side", () => {
-    expect(isCurrentPage("/history/", "/history/")).toBe(true);
-    expect(isCurrentPage("/history", "/history/")).toBe(true);
-    expect(isCurrentPage("/history/", "/history")).toBe(true);
-    expect(isCurrentPage("/history//", "/history/")).toBe(true);
+    expect(isCurrentPage("/review/", "/review/")).toBe(true);
+    expect(isCurrentPage("/review", "/review/")).toBe(true);
+    expect(isCurrentPage("/review/", "/review")).toBe(true);
+    expect(isCurrentPage("/review//", "/review/")).toBe(true);
   });
 
   it("owns what is below it, but not a page whose name merely starts the same", () => {
-    expect(isCurrentPage("/history/2026-10-09/", "/history/")).toBe(true);
-    expect(isCurrentPage("/historyx/", "/history/")).toBe(false);
-    expect(isCurrentPage("/setup/", "/history/")).toBe(false);
+    expect(isCurrentPage("/review/2026-10-09/", "/review/")).toBe(true);
+    expect(isCurrentPage("/reviewx/", "/review/")).toBe(false);
+    expect(isCurrentPage("/setup/", "/review/")).toBe(false);
   });
 
   it("finds the page for each address in the navigation", () => {
@@ -27,7 +27,7 @@ describe("which page an address belongs to", () => {
   });
 
   it("lists the pages the owner asked for, in order, each with a folder-style address", () => {
-    expect(PAGES.map((page) => page.label)).toEqual(["Live", "History", "Data", "Setup", "System"]);
+    expect(PAGES.map((page) => page.label)).toEqual(["Live", "Review", "Data", "Setup", "System"]);
     expect(PAGES.every((page) => page.href.startsWith("/") && page.href.endsWith("/"))).toBe(true);
   });
 });

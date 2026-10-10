@@ -1,4 +1,4 @@
-// Sign in and photograph every page of the dashboard (Live, History, Setup with a shape selected,
+// Sign in and photograph every page of the dashboard (Live, Review, Data, Setup with a shape selected,
 // System), in light and dark, on a desktop and on a phone. For the README and for looking at the
 // layout.
 //
@@ -6,7 +6,7 @@
 //
 // Needs a running stack (see docs/dev-setup.md) with some lines and zones drawn in it (the made-up
 // street after the browser test has run is one), and a Chromium: the apt package
-// chromium-headless-shell, or any Chrome set in CHROMIUM. The History page shows the newest day
+// chromium-headless-shell, or any Chrome set in CHROMIUM. The Data page's Trails card shows the newest day
 // that has trails; E2E_TRAILS_DAY=2026-10-08 shows another (the made-up street, started with
 // --history-days 7, has earlier days with thousands of trails).
 import { mkdirSync } from "node:fs";
@@ -46,13 +46,20 @@ for (const view of views) {
     await shot("live");
 
     // The other pages, by their own addresses (as a bookmark would open them).
-    await page.goto(`${base}/history/`);
-    await page.getByRole("heading", { level: 1, name: "History" }).waitFor({ state: "attached" });
+    await page.goto(`${base}/review/`);
+    await page.getByRole("heading", { level: 1, name: "Review" }).waitFor({ state: "attached" });
+    await page.getByTestId("stops-headline").waitFor();
+    await page.waitForTimeout(1500); // the passes and their pictures
+    await shot("review");
+
+    // The Data page ends with the Trails card: a day by the hour, and its paths over the camera picture.
+    await page.goto(`${base}/data/`);
+    await page.getByRole("heading", { level: 1, name: "Data" }).waitFor({ state: "attached" });
     await page.getByTestId("trail-view").or(page.getByText("No trails have been recorded yet.")).first().waitFor();
     if (process.env.E2E_TRAILS_DAY) await page.getByLabel("Day", { exact: true }).fill(process.env.E2E_TRAILS_DAY);
     await page.waitForTimeout(1500); // the day, its paths and the picture
     await page.waitForFunction(() => document.querySelector('[data-testid="trail-view"]')?.getAttribute("aria-busy") !== "true");
-    await shot("history");
+    await shot("data");
 
     await page.goto(`${base}/setup/`);
     await page.getByRole("heading", { level: 1, name: "Setup" }).waitFor({ state: "attached" });

@@ -2662,6 +2662,10 @@
       "StopOut": {
         "description": "What one vehicle did at one stop sign (plan.md D23), and what a person made of it.",
         "properties": {
+          "calibrated": {
+            "title": "Calibrated",
+            "type": "boolean"
+          },
           "clip_url": {
             "anyOf": [
               {
@@ -2801,6 +2805,7 @@
           "min_speed_ms",
           "max_speed_ms",
           "line_speed_ms",
+          "calibrated",
           "review",
           "reviewed_at",
           "snapshot_url",
@@ -4120,6 +4125,88 @@
         "summary": "Events"
       }
     },
+    "/api/export/counts.csv": {
+      "get": {
+        "description": "The vehicles counted over the last ``days`` local days (today included; ``0`` is\neverything since the first count), one row for each, as CSV.",
+        "operationId": "export_counts_api_export_counts_csv_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 7,
+              "maximum": 366,
+              "minimum": 0,
+              "title": "Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export Counts"
+      }
+    },
+    "/api/export/passes.csv": {
+      "get": {
+        "description": "What vehicles did at the stop signs over the last ``days`` local days (today included;\n``0`` is everything since the first pass), one row for each pass, as CSV. The passes called\nfalse alarms are in it, marked.",
+        "operationId": "export_passes_api_export_passes_csv_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 7,
+              "maximum": 366,
+              "minimum": 0,
+              "title": "Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export Passes"
+      }
+    },
     "/api/health": {
       "get": {
         "operationId": "health_api_health_get",
@@ -4869,7 +4956,7 @@
     },
     "/api/stops": {
       "get": {
-        "description": "What vehicles did at stop signs in a range, newest first; ``before_id`` pages on.",
+        "description": "What vehicles did at stop signs in a range, newest first; ``before_id`` pages on.\n\n``review`` picks by what a person made of the pass: ``unreviewed``, ``confirmed`` or\n``false_positive``, or ``counted`` for every pass that is not a false alarm (the ones the\ntiles and the Data page count). Left out, it is every pass, false alarms included.",
         "operationId": "stops_api_stops_get",
         "parameters": [
           {
@@ -4918,7 +5005,8 @@
                   "enum": [
                     "unreviewed",
                     "confirmed",
-                    "false_positive"
+                    "false_positive",
+                    "counted"
                   ],
                   "type": "string"
                 },

@@ -50,8 +50,8 @@ export function spanLabel(day: Pick<TrailDay, "hours">, span: HourSpan): string 
 }
 
 /**
- * What a button for an hour is called: its time, how many trails began in it, and, for the hour
- * that happens twice when the clocks go back, which time it is.
+ * What a button for an hour is called: its time, how many were tracked in it (a trail begins when a
+ * vehicle is first seen), and, for the hour that happens twice when the clocks go back, which time it is.
  */
 export function hourButtonLabel(day: Pick<TrailDay, "hours">, index: number, count: number, kinds: ReadonlySet<string>): string {
   const hour = day.hours[index];
@@ -59,7 +59,7 @@ export function hourButtonLabel(day: Pick<TrailDay, "hours">, index: number, cou
   const same = day.hours.flatMap((other, at) => (other.hour === hour.hour ? [at] : []));
   const again = same.length < 2 ? "" : same[0] === index ? ", the first time" : ", the second time";
   const things = noun(kinds, count !== 1);
-  return `${hourRange(hour.hour)}${again}: ${count === 0 ? `no ${things}` : `${count} ${things}`}`;
+  return `${hourRange(hour.hour)}${again}: ${count === 0 ? `no ${things}` : `${count} ${things}`} tracked`;
 }
 
 /** The kinds that appear on a day, in the dashboard's fixed order. */
@@ -81,6 +81,39 @@ export function hourCounts(day: Pick<TrailDay, "hours">, kinds: ReadonlySet<stri
   return day.hours.map((hour) =>
     Object.entries(hour.by_kind).reduce((sum, [kind, n]) => (kinds.has(kind) ? sum + n : sum), 0),
   );
+}
+
+/** One kind's share of an hour's bar. */
+export interface KindCount {
+  kind: string;
+  count: number;
+}
+
+/**
+ * What each hour is made of, kind by kind in the dashboard's fixed order, for the kinds that are
+ * shown: the segments of the hour's bar. A kind with none in an hour has no segment there.
+ */
+export function hourStacks(day: Pick<TrailDay, "hours">, kinds: ReadonlySet<string>): KindCount[][] {
+  const order = orderedClasses(kinds);
+  return day.hours.map((hour) => order.flatMap((kind) => ((hour.by_kind[kind] ?? 0) > 0 ? [{ kind, count: hour.by_kind[kind] ?? 0 }] : [])));
+}
+
+/** The position of the hour with the most (the first, if several are level), or null when nothing was tracked. */
+export function busiestHour(counts: readonly number[]): number | null {
+  let best: number | null = null;
+  counts.forEach((count, index) => {
+    if (count > 0 && (best === null || count > (counts[best] ?? 0))) best = index;
+  });
+  return best;
+}
+
+/** "Busiest hour 17:00–18:00 · 312 vehicles tracked", or null when nothing was tracked. */
+export function busiestHourText(day: Pick<TrailDay, "hours">, counts: readonly number[], kinds: ReadonlySet<string>, format: (n: number) => string): string | null {
+  const index = busiestHour(counts);
+  const hour = index === null ? undefined : day.hours[index];
+  if (index === null || !hour) return null;
+  const count = counts[index] ?? 0;
+  return `Busiest hour ${hourRange(hour.hour)} · ${format(count)} ${noun(kinds, count !== 1)} tracked`;
 }
 
 /** How many trails began in each kind, over the whole day or just a span of it. */
@@ -123,9 +156,9 @@ export function noun(kinds: ReadonlySet<string>, plural: boolean): string {
   return plural ? "vehicles" : "vehicle";
 }
 
-/** "1 vehicle", "312 vehicles", and, when fewer paths are drawn than there were, how many. */
+/** "1 vehicle tracked", "312 vehicles tracked", and, when fewer paths are drawn than there were, how many. */
 export function countText(count: number, drawn: number, kinds: ReadonlySet<string>, format: (n: number) => string): string {
-  const base = `${format(count)} ${noun(kinds, count !== 1)}`;
+  const base = `${format(count)} ${noun(kinds, count !== 1)} tracked`;
   return drawn < count ? `${base} (drawing an even sample of ${format(drawn)})` : base;
 }
 

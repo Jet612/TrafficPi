@@ -3,11 +3,13 @@
 import { ChevronLeft, ChevronRight, Download } from "lucide-react";
 import { ReviewButtons } from "@/components/review-buttons";
 import { Button } from "@/components/ui/button";
+import { ClassIcon } from "@/components/ui/class-icon";
 import { Dialog } from "@/components/ui/dialog";
 import { StatusBadge } from "@/components/ui/status";
 import { classSingular } from "@/lib/classes";
 import { fullTimeText } from "@/lib/format";
 import type { SpeedUnits } from "@/lib/speed";
+import { MEASURED_CAVEAT } from "@/lib/speed";
 import { OUTCOME_LABEL, OUTCOME_LEVEL, numbersText, passText } from "@/lib/stops";
 import type { ReviewState, StopOut } from "@/lib/types";
 
@@ -45,15 +47,16 @@ export function StopViewer({
 }) {
   const what = passText(row, sign, zone);
   return (
-    <Dialog title={`${classSingular(row.label ?? "")} at ${sign}`} onClose={onClose}>
+    <Dialog title={`${classSingular(row.label ?? "")} at ${sign}`} icon={<ClassIcon name={row.label ?? ""} className="size-5" />} onClose={onClose}>
       <div className="grid gap-3">
         <p className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm">
           <time className="tabular-nums text-ink-2" dateTime={new Date(row.t).toISOString()}>
             {fullTimeText(row.t, zone)}
           </time>
           <StatusBadge level={OUTCOME_LEVEL[row.outcome]}>{OUTCOME_LABEL[row.outcome]}</StatusBadge>
-          <span className="text-ink-3">{numbersText(row, units)}</span>
+          <span className="text-ink-3">{numbersText(row, units, true)}</span>
         </p>
+        {row.calibrated && <p className="text-sm text-ink-3">{MEASURED_CAVEAT}</p>}
 
         {row.clip_url !== null ? (
           <video

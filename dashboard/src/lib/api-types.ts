@@ -106,6 +106,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/export/counts.csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export Counts
+         * @description The vehicles counted over the last ``days`` local days (today included; ``0`` is
+         *     everything since the first count), one row for each, as CSV.
+         */
+        get: operations["export_counts_api_export_counts_csv_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/export/passes.csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export Passes
+         * @description What vehicles did at the stop signs over the last ``days`` local days (today included;
+         *     ``0`` is everything since the first pass), one row for each pass, as CSV. The passes called
+         *     false alarms are in it, marked.
+         */
+        get: operations["export_passes_api_export_passes_csv_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/health": {
         parameters: {
             query?: never;
@@ -494,6 +537,10 @@ export interface paths {
         /**
          * Stops
          * @description What vehicles did at stop signs in a range, newest first; ``before_id`` pages on.
+         *
+         *     ``review`` picks by what a person made of the pass: ``unreviewed``, ``confirmed`` or
+         *     ``false_positive``, or ``counted`` for every pass that is not a false alarm (the ones the
+         *     tiles and the Data page count). Left out, it is every pass, false alarms included.
          */
         get: operations["stops_api_stops_get"];
         put?: never;
@@ -1601,6 +1648,8 @@ export interface components {
          * @description What one vehicle did at one stop sign (plan.md D23), and what a person made of it.
          */
         StopOut: {
+            /** Calibrated */
+            calibrated: boolean;
             /** Clip Url */
             clip_url: string | null;
             /** Hold S */
@@ -2180,6 +2229,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EventOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_counts_api_export_counts_csv_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_passes_api_export_passes_csv_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -2829,7 +2940,7 @@ export interface operations {
                 from_ms: number;
                 to_ms: number;
                 outcome?: string | null;
-                review?: ("unreviewed" | "confirmed" | "false_positive") | null;
+                review?: ("unreviewed" | "confirmed" | "false_positive" | "counted") | null;
                 sign?: string | null;
                 limit?: number;
                 before_id?: number | null;

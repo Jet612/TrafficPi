@@ -5,9 +5,10 @@ import { Ban, CircleAlert, FlipHorizontal2, Octagon, Pentagon, Plus, RotateCcw, 
 import { CalibrationProperties, CheckProperties, type CalibrationView } from "@/components/calibration-panel";
 import { NumberField } from "@/components/number-field";
 import { Button } from "@/components/ui/button";
+import { ClassIcon } from "@/components/ui/class-icon";
 import { Input, Label } from "@/components/ui/input";
 import { lengthText, type LengthUnit } from "@/lib/calibration";
-import { classColor, classLabel } from "@/lib/classes";
+import { classLabel } from "@/lib/classes";
 import {
   canAddCorner,
   deleteElement,
@@ -225,7 +226,7 @@ function Selected({
                       onChange={() => onChange(toggleLineClass(profile, element.value.id, name))}
                       className="size-4 accent-[var(--accent)]"
                     />
-                    <span aria-hidden="true" className="size-2.5 rounded-full" style={{ background: classColor(name) }} />
+                    <ClassIcon name={name} />
                     {classLabel(name)}
                   </label>
                 );
@@ -309,7 +310,7 @@ function StopSignProperties({
                 onChange={() => onChange(toggleStopClass(profile, sign.id, name))}
                 className="size-4 accent-[var(--accent)]"
               />
-              <span aria-hidden="true" className="size-2.5 rounded-full" style={{ background: classColor(name) }} />
+              <ClassIcon name={name} />
               {classLabel(name)}
             </label>
           ))}

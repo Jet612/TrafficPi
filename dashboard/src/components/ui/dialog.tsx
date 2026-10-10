@@ -12,11 +12,14 @@ import { cn } from "@/lib/cn";
  */
 export function Dialog({
   title,
+  icon,
   onClose,
   children,
   className,
 }: {
   title: string;
+  /** A picture that goes with the title (the kind of vehicle, say); it is decoration, the title says it in words. */
+  icon?: React.ReactNode;
   onClose: () => void;
   children: React.ReactNode;
   className?: string;
@@ -38,7 +41,8 @@ export function Dialog({
       )}
     >
       <div className="flex items-start justify-between gap-4 border-b border-edge px-4 py-3 sm:px-5">
-        <h2 id={titleId} className="min-w-0 text-base font-semibold text-ink">
+        <h2 id={titleId} className="flex min-w-0 items-center gap-2 text-base font-semibold text-ink">
+          {icon}
           {title}
         </h2>
         <button

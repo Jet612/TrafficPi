@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ArrowDown, ArrowUp, Minus } from "lucide-react";
 import { StackedChartCard } from "@/components/stacked-chart";
 import { Card, CardBody, CardHeader, CardSubtitle, CardTitle } from "@/components/ui/card";
+import { ClassIcon } from "@/components/ui/class-icon";
 import { HowItWorks } from "@/components/ui/how-it-works";
 import { OUTCOME_ICON } from "@/components/ui/outcome-icon";
 import { ShareBar } from "@/components/ui/share-bar";
@@ -47,7 +48,7 @@ const percentOf = (part: number, whole: number) => (whole === 0 ? 0 : Math.round
 /** Everything about the stop signs: how drivers did, when, who, and how. */
 export function StopStatsSection({ stats, period, profile, busy }: { stats: StopStats; period: DataPeriod; profile: Profile | null; busy: boolean }) {
   const days = stats.by_day.length;
-  const kinds = stats.by_kind.map((row) => ({ ...row, key: row.label, name: classLabel(row.label) }));
+  const kinds = stats.by_kind.map((row) => ({ ...row, key: row.label, name: classLabel(row.label), kind: row.label }));
   const signs = stats.by_sign.map((row) => ({ ...row, key: row.sign, name: signLabel(profile, row.sign) }));
   const weekdays = stats.by_weekday.map((row) => ({ ...row, key: String(row.weekday), name: weekdayName(row.weekday) }));
   const busiest = peak(stats.by_hour, totalOf);
@@ -205,6 +206,8 @@ interface Fact {
   key: string;
   label: string;
   value: string;
+  /** A kind of vehicle the value names; it gets its icon. */
+  kind?: string;
   note: string;
 }
 
@@ -255,6 +258,7 @@ function Highlights({ stats }: { stats: StopStats }) {
       key: "lowest-kind",
       label: "Least likely to stop",
       value: classLabel(byKind.lowest.item.label),
+      kind: byKind.lowest.item.label,
       note: `${byKind.lowest.percent}% of ${byKind.lowest.of} stopped`,
     });
   }
@@ -272,7 +276,10 @@ function Highlights({ stats }: { stats: StopStats }) {
               <div key={fact.key} data-testid={`fact-${fact.key}`}>
                 <dt className="text-sm text-ink-2">{fact.label}</dt>
                 <dd className="mt-0.5">
-                  <span className="block text-lg font-semibold text-ink">{fact.value}</span>
+                  <span className="flex items-center gap-2 text-lg font-semibold text-ink">
+                    {fact.kind !== undefined && <ClassIcon name={fact.kind} className="size-5" />}
+                    {fact.value}
+                  </span>
                   <span className="block text-sm text-ink-2">{fact.note}</span>
                 </dd>
               </div>
@@ -296,6 +303,8 @@ function Highlights({ stats }: { stats: StopStats }) {
 interface BreakdownRow extends OutcomeCounts {
   key: string;
   name: string;
+  /** A kind of vehicle the row is about; it gets its icon. */
+  kind?: string;
 }
 
 /** What each group of vehicles did, as percentages of its own vehicles; the vehicles are counted in the first column. */
@@ -329,7 +338,10 @@ function BreakdownTable({ title, firstHeader, rows, testId }: { title: string; f
                   return (
                     <tr key={row.key} className="border-t border-grid">
                       <th scope="row" className="py-1.5 pr-2 text-left font-normal text-ink sm:pr-3">
-                        {row.name}
+                        <span className="inline-flex items-center gap-1.5">
+                          {row.kind !== undefined && <ClassIcon name={row.kind} />}
+                          {row.name}
+                        </span>
                         <span className="block text-xs text-ink-3 sm:hidden">{plural(total, "vehicle")}</span>
                       </th>
                       <td className="hidden py-1.5 pr-3 text-right tabular-nums text-ink sm:table-cell">{formatCount(total)}</td>
@@ -426,7 +438,7 @@ function Reviews({ stats }: { stats: StopStats }) {
           {looked === 0
             ? "No reviews yet."
             : `${percentOf(false_alarms, looked)}% of the ${plural(looked, "vehicle")} you reviewed were false alarms: how often the camera got it wrong.`}{" "}
-          <Link href="/history/" className="font-medium text-accent underline underline-offset-2">
+          <Link href="/review/" className="font-medium text-accent underline underline-offset-2">
             Review passes &rarr;
           </Link>
         </p>

@@ -2,10 +2,12 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { ExportCard } from "@/components/export-card";
 import { SpeedStatsSection } from "@/components/speed-stats";
 import { StopHoursNote } from "@/components/stop-hours-note";
 import { StopStatsSection } from "@/components/stop-stats";
 import { TrafficStatsSection } from "@/components/traffic-stats";
+import { TrailsCard } from "@/components/trails-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
 import { Segmented } from "@/components/ui/segmented";
@@ -20,6 +22,8 @@ const SECTIONS = [
   { id: "data-stops", label: "Stop signs" },
   { id: "data-traffic", label: "Traffic" },
   { id: "data-speeds", label: "Speeds" },
+  { id: "data-trails", label: "Trails" },
+  { id: "data-export", label: "Export" },
 ] as const;
 
 /** The Data page: what the stop signs and the counting lines have seen, over a stretch of days chosen once for all of it. */
@@ -136,6 +140,21 @@ export function DataPage() {
         ) : (
           <Loading what="The speeds" failed={speeds.error !== null} retry={speeds.refresh} />
         )}
+      </section>
+
+      <section id="data-trails" aria-labelledby="data-trails-heading" className="grid scroll-mt-28 grid-cols-1 gap-4">
+        <h2 id="data-trails-heading" className="text-xl font-semibold text-ink">
+          Trails
+        </h2>
+        <p className="max-w-2xl text-sm text-ink-2">The path every vehicle took, one day at a time. The period above does not apply.</p>
+        <TrailsCard />
+      </section>
+
+      <section id="data-export" aria-labelledby="data-export-heading" className="grid scroll-mt-28 grid-cols-1 gap-4">
+        <h2 id="data-export-heading" className="text-xl font-semibold text-ink">
+          Export
+        </h2>
+        <ExportCard days={days} range={range} />
       </section>
     </div>
   );

@@ -7,7 +7,7 @@ export interface PageInfo {
 
 export const PAGES: readonly PageInfo[] = [
   { href: "/", label: "Live" },
-  { href: "/history/", label: "History" },
+  { href: "/review/", label: "Review" },
   { href: "/data/", label: "Data" },
   { href: "/setup/", label: "Setup" },
   { href: "/system/", label: "System" },
@@ -17,7 +17,7 @@ const withoutTrailingSlash = (path: string): string => (path.length > 1 ? path.r
 
 /**
  * Whether `href` is the page that `pathname` is on. A page owns its own address and anything
- * below it (`/history/` also covers `/history/2026-10-09/`), except the first, which is only `/`.
+ * below it (`/review/` also covers `/review/2026-10-09/`), except the first, which is only `/`.
  */
 export function isCurrentPage(pathname: string, href: string): boolean {
   const here = withoutTrailingSlash(pathname);

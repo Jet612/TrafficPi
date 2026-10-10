@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
-import { ChartColumn, CircleDashed, CircleX, Cpu, History, LogOut, SlidersHorizontal, TriangleAlert, UserRound, Video, type LucideIcon } from "lucide-react";
+import { ChartColumn, CircleDashed, CircleX, ClipboardCheck, Cpu, LogOut, SlidersHorizontal, TriangleAlert, UserRound, Video, type LucideIcon } from "lucide-react";
 import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
 import { useLiveSelector } from "@/components/live-provider";
@@ -22,7 +22,7 @@ const selectStatus = (snapshot: Parameters<typeof deriveStatus>[0]) => deriveSta
 
 const PAGE_ICON: Record<string, LucideIcon> = {
   "/": Video,
-  "/history/": History,
+  "/review/": ClipboardCheck,
   "/data/": ChartColumn,
   "/setup/": SlidersHorizontal,
   "/system/": Cpu,

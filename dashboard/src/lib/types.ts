@@ -17,7 +17,6 @@ export type HealthEpisode = Schemas["HealthEpisode"];
 export type HealthSummary = Schemas["HealthSummary"];
 export type TodaySummary = Schemas["TodaySummary"];
 export type LineTotals = Schemas["LineTotals"];
-export type SeriesPoint = Schemas["SeriesPoint"];
 export type EventOut = Schemas["EventOut"];
 export type ProfileOut = Schemas["ProfileOut"];
 export type ProfileSaved = Schemas["ProfileSaved"];

@@ -15,7 +15,6 @@ import type {
   ProfileSaved,
   ReferenceSaved,
   ReviewState,
-  SeriesPoint,
   Settings,
   SpeedStats,
   StatusResponse,
@@ -102,14 +101,12 @@ async function request<T>(
   return (await response.json()) as T;
 }
 
-export type Bucket = "minute" | "hour" | "day";
-
 export interface StopsQuery {
   fromMs: number;
   toMs: number;
   /** Only these outcomes (all when missing or when every one is named is the same thing). */
   outcomes?: readonly string[];
-  review?: "unreviewed" | "confirmed" | "false_positive";
+  review?: "unreviewed" | "confirmed" | "false_positive" | "counted";
   sign?: string;
   limit?: number;
   beforeId?: number;
@@ -137,13 +134,6 @@ export const api = {
   systemHistory: (hours: number, signal?: AbortSignal) =>
     request<SystemHistory>("GET", `/api/system/history?hours=${hours}`, undefined, signal),
   today: (signal?: AbortSignal) => request<TodaySummary>("GET", "/api/stats/today", undefined, signal),
-  series: (fromMs: number, toMs: number, bucket: Bucket, signal?: AbortSignal) =>
-    request<SeriesPoint[]>(
-      "GET",
-      `/api/stats/series?from_ms=${fromMs}&to_ms=${toMs}&bucket=${bucket}`,
-      undefined,
-      signal,
-    ),
   /** The newest counts (not the stops, which have their own list). */
   events: (limit: number, signal?: AbortSignal) =>
     request<EventOut[]>("GET", `/api/events?limit=${limit}&type=count`, undefined, signal),
