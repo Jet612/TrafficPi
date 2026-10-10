@@ -1,4 +1,5 @@
 import { useId } from "react";
+import { InfoTip } from "@/components/ui/info-tip";
 import { cn } from "@/lib/cn";
 
 /** A labelled on/off control. The label is part of the target, and both work from the keyboard. */
@@ -6,18 +7,22 @@ export function Switch({
   checked,
   onChange,
   label,
+  hint,
   className,
   disabled = false,
 }: {
   checked: boolean;
   onChange: (checked: boolean) => void;
   label: string;
+  /** What it does, in a bubble that an (i) beside the label opens, which the switch is also described by. */
+  hint?: React.ReactNode;
   className?: string;
   /** Shown as it is but cannot be changed (something else decides whether it matters). */
   disabled?: boolean;
 }) {
   const id = useId();
-  return (
+  const hintId = useId();
+  const control = (
     <label
       htmlFor={id}
       className={cn("inline-flex min-h-8 select-none items-center gap-2 text-sm text-ink-2", disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer", className)}
@@ -27,6 +32,7 @@ export function Switch({
         type="button"
         role="switch"
         aria-checked={checked}
+        aria-describedby={hint ? hintId : undefined}
         disabled={disabled}
         onClick={() => onChange(!checked)}
         className={cn(
@@ -44,5 +50,12 @@ export function Switch({
       </button>
       {label}
     </label>
+  );
+  if (!hint) return control;
+  return (
+    <span className="inline-flex items-center gap-1">
+      {control}
+      <InfoTip id={hintId}>{hint}</InfoTip>
+    </span>
   );
 }

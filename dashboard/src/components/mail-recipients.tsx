@@ -19,6 +19,7 @@ export function MailRecipients({ state, apply }: { state: MailState; apply: (nex
   const [note, setNote] = useState<Note | null>(null); // how the latest test went
   const [rowError, setRowError] = useState<string | null>(null);
   const addressId = useId();
+  const addressHelpId = useId();
   const full = state.recipients.length >= state.max_recipients;
 
   async function add() {
@@ -122,7 +123,9 @@ export function MailRecipients({ state, apply }: { state: MailState; apply: (nex
           void add();
         }}
       >
-        <Label htmlFor={addressId}>Add an address</Label>
+        <Label htmlFor={addressId} hintId={addressHelpId} hint="Each address gets its own copy, so nobody sees the others.">
+          Add an address
+        </Label>
         <div className="flex flex-wrap gap-2">
           <Input
             id={addressId}
@@ -136,6 +139,7 @@ export function MailRecipients({ state, apply }: { state: MailState; apply: (nex
             autoComplete="off"
             spellCheck={false}
             disabled={full}
+            aria-describedby={addressHelpId}
             className="max-w-xs"
           />
           <Button type="submit" busy={adding} disabled={full || adding || address.trim() === ""}>
@@ -143,7 +147,7 @@ export function MailRecipients({ state, apply }: { state: MailState; apply: (nex
           </Button>
         </div>
         <p className="mt-1.5 text-sm text-ink-2">
-          {state.recipients.length} of {state.max_recipients}. {full ? "The list is full: remove an address to add another. " : ""}Each address gets its own copy, so nobody sees the others.
+          {state.recipients.length} of {state.max_recipients}.{full ? " The list is full: remove an address to add another." : ""}
         </p>
         {addError && (
           <p role="alert" className="mt-1.5 text-sm text-critical">

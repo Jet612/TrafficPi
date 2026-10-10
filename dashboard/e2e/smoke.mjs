@@ -91,6 +91,33 @@ async function goTo(label) {
   assert.equal(await pagesNav().getByRole("link", { name: label, exact: true }).getAttribute("aria-current"), "page");
 }
 
+/**
+ * What explains an option: the (i) beside it and the bubble it opens. The words are not written under
+ * the option any more, but they are always in the page (hidden while the bubble is shut), and the
+ * option is described by them: `aria-describedby` names them, first.
+ */
+async function explanation(control) {
+  const id = ((await control.getAttribute("aria-describedby")) ?? "").split(" ")[0];
+  assert.ok(id, "the option is described by an explanation");
+  return { icon: page.locator(`button[aria-label="More information"][aria-describedby="${id}"]`), bubble: page.locator(`[id="${id}"]`) };
+}
+
+/** Point at an (i), read what its bubble says, and take the pointer away again. */
+async function explainedBy(icon) {
+  const bubble = page.locator(`[id="${await icon.getAttribute("aria-describedby")}"]`);
+  await icon.hover();
+  await bubble.waitFor({ state: "visible" });
+  const text = (await bubble.innerText()).trim();
+  await page.mouse.move(0, 0);
+  await bubble.waitFor({ state: "hidden" });
+  return text;
+}
+
+/** What the (i) beside an option says (the option is a field or a switch). */
+async function explained(control) {
+  return explainedBy((await explanation(control)).icon);
+}
+
 /** The editor is on the Setup page; wait for it to have its profile. */
 async function openEditor() {
   await goTo("Setup");
@@ -1486,9 +1513,12 @@ try {
 
       await days.fill("0");
       await page.getByText("Enter a whole number of days from 1 to 3650 to keep trails.").first().waitFor();
+      await page.getByText("A whole number of days, from 1 to 3650.").waitFor(); // what is wrong stays in sight, under the box
       assert.equal(await save.isDisabled(), true, "a number of days that makes no sense cannot be saved");
+      assert.equal(await explained(days), "Older trails are deleted by themselves.", "with no number there is nothing to say it is kept for");
       await days.fill("30");
-      await page.getByText("Kept for 30 days. Older trails are deleted by themselves.").waitFor();
+      assert.equal(await explained(days), "Kept for 30 days. Older trails are deleted by themselves.");
+      await page.getByText("A whole number of days, from 1 to 3650.").waitFor({ state: "detached" });
       await page.getByText("Settings not saved yet").waitFor();
       assert.equal(await save.isEnabled(), true);
 
@@ -1500,9 +1530,9 @@ try {
       await page.getByText("Enter a whole number of days from 1 to 3650 to keep pictures and clips.").first().waitFor();
       assert.equal(await save.isDisabled(), true);
       await evidenceDays.fill("7");
-      await page.getByText("Kept for 7 days. Older ones are deleted by themselves, also if none are being made.").waitFor();
+      assert.equal(await explained(evidenceDays), "Kept for 7 days. Older ones are deleted by themselves, also if none are being made.");
       await evidenceMb.fill("1500");
-      await page.getByText("Up to 1.5 GB on the disk. When there is more, the oldest are deleted first.").waitFor();
+      assert.equal(await explained(evidenceMb), "Up to 1.5 GB on the disk. When there is more, the oldest are deleted first.");
       assert.equal(await save.isEnabled(), true);
 
       // and for how long the clip of a roll, and of a pass that did not stop, is kept
@@ -1510,9 +1540,9 @@ try {
       await page.getByText("Enter a whole number of hours from 1 to 87600 to keep the clips of rolled-through stops.").first().waitFor();
       assert.equal(await save.isDisabled(), true, "no hours cannot be saved");
       await rollingHours.fill("6");
-      await page.getByText("Clips of rolled-through stops are deleted after 6 hours", { exact: false }).waitFor();
+      assert.match(await explained(rollingHours), /^Clips of rolled-through stops are deleted after 6 hours/);
       await didNotStopHours.fill("72");
-      await page.getByText("Clips of vehicles that did not stop are deleted after 3 days", { exact: false }).waitFor();
+      assert.match(await explained(didNotStopHours), /^Clips of vehicles that did not stop are deleted after 3 days/);
       assert.equal(await save.isEnabled(), true);
 
       // changes that are not saved are not lost without asking
@@ -1604,6 +1634,137 @@ try {
     assert.deepEqual(await readSettings(), original);
   });
 
+  await step("an info icon explains an option: on hover, on the keyboard and on a press, one at a time, always inside the window", async () => {
+    await goTo("Setup");
+    const settings = page.getByRole("form", { name: "Settings" });
+    await settings.waitFor();
+    const icons = settings.getByRole("button", { name: "More information" });
+    const zone = settings.getByLabel("Time zone");
+    const { icon, bubble } = await explanation(zone);
+    const inside = async (shown, width, height) => {
+      const box = await shown.boundingBox();
+      assert.ok(box, "the bubble is shown");
+      assert.ok(box.x >= 0 && box.y >= 0 && box.x + box.width <= width && box.y + box.height <= height, `the bubble is inside the window: ${JSON.stringify(box)}`);
+      return box;
+    };
+
+    // the words are in the page, hidden, for whoever reads it aloud; nothing is written under the option
+    assert.equal(await icon.getAttribute("aria-label"), "More information");
+    assert.equal(await bubble.getAttribute("role"), "tooltip");
+    assert.equal(await bubble.isVisible(), false, "shut to start with");
+    assert.match(await bubble.textContent(), /^The zone of the camera, like America\/New_York\./);
+    assert.equal(await settings.getByText("The zone of the camera").filter({ visible: true }).count(), 0, "not written under the field");
+
+    // the pointer opens it, under the icon, and can go onto it to rest there; going away shuts it
+    await icon.hover();
+    await bubble.waitFor({ state: "visible" });
+    const iconBox = await icon.boundingBox();
+    const box = await inside(bubble, 1280, 900);
+    assert.ok(box.y >= iconBox.y + iconBox.height, "under the icon, where there is room");
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 6 });
+    await page.waitForTimeout(400);
+    assert.equal(await bubble.isVisible(), true, "the pointer can cross onto the bubble and rest there");
+    await page.mouse.move(0, 0);
+    await bubble.waitFor({ state: "hidden" });
+
+    // Escape puts it away while the pointer stays, and it does not come back until the pointer has been away
+    await icon.hover();
+    await bubble.waitFor({ state: "visible" });
+    await page.keyboard.press("Escape");
+    await bubble.waitFor({ state: "hidden" });
+    await page.mouse.move(iconBox.x + 6, iconBox.y + 6);
+    await page.waitForTimeout(300);
+    assert.equal(await bubble.isVisible(), false, "it stays shut while the pointer stays");
+    await page.mouse.move(0, 0);
+
+    // the keyboard: coming to the icon opens it, going on shuts it, and the field is next
+    await zone.focus();
+    await page.keyboard.press("Shift+Tab");
+    assert.equal(await icon.evaluate((element) => element === document.activeElement), true, "the icon comes just before its field");
+    await bubble.waitFor({ state: "visible" });
+    await page.keyboard.press("Tab");
+    await bubble.waitFor({ state: "hidden" });
+    assert.equal(await zone.evaluate((element) => element === document.activeElement), true);
+
+    // a press opens it and keeps it open when the pointer goes; a press elsewhere, or Escape, lets go
+    await icon.click();
+    await page.mouse.move(0, 0);
+    await page.waitForTimeout(400);
+    assert.equal(await bubble.isVisible(), true, "pressed, it stays");
+    await page.getByRole("heading", { name: "Settings", exact: true }).click();
+    await bubble.waitFor({ state: "hidden" });
+    await icon.click();
+    await page.mouse.move(0, 0);
+    await page.keyboard.press("Escape");
+    await bubble.waitFor({ state: "hidden" });
+
+    // one at a time
+    const second = icons.nth(1);
+    const secondBubble = page.locator(`[id="${await second.getAttribute("aria-describedby")}"]`);
+    await icon.click();
+    await bubble.waitFor({ state: "visible" });
+    await second.hover();
+    await secondBubble.waitFor({ state: "visible" });
+    await bubble.waitFor({ state: "hidden" });
+    await page.mouse.move(0, 0);
+    await secondBubble.waitFor({ state: "hidden" });
+
+    // a switch and a title can be explained too, and are described by it
+    const people = settings.getByRole("switch", { name: "Look for people", exact: true });
+    assert.match(await explained(people), /^Vehicles are always looked for\./);
+    const trails = settings.getByRole("group", { name: "Trails", exact: true });
+    assert.match(await explainedBy(trails.getByRole("button", { name: "More information" }).first()), /^A trail is the path a vehicle took/); // the title's, before the box's
+
+    // in a narrow window the first and the last bubbles still fit inside it
+    await page.setViewportSize({ width: 360, height: 640 });
+    try {
+      for (const target of [icons.first(), icons.last()]) {
+        await target.scrollIntoViewIfNeeded();
+        await target.click();
+        const shown = page.locator(`[id="${await target.getAttribute("aria-describedby")}"]`);
+        await shown.waitFor({ state: "visible" });
+        await inside(shown, 360, 640);
+        await page.keyboard.press("Escape");
+        await shown.waitFor({ state: "hidden" });
+      }
+    } finally {
+      await page.setViewportSize({ width: 1280, height: 900 });
+    }
+    await shot("info-icons");
+
+    // a finger has no hover: a tap opens it, a second tap or a tap elsewhere shuts it
+    const touchContext = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    try {
+      const touch = await touchContext.newPage();
+      touch.setDefaultTimeout(20_000);
+      touch.on("pageerror", (error) => problems.push(`uncaught (touch): ${error.message}`));
+      touch.on("console", (message) => {
+        if (message.type() === "error") problems.push(`console (touch): ${message.text()}`);
+      });
+      await touch.goto(`${base}/setup/`);
+      await touch.getByLabel("Username").fill(user);
+      await touch.getByLabel("Password").fill(password);
+      await touch.getByRole("button", { name: "Sign in" }).click();
+      const form = touch.getByRole("form", { name: "Settings" });
+      await form.waitFor();
+      const tapped = form.getByRole("button", { name: "More information" }).first();
+      const tappedBubble = touch.locator(`[id="${await tapped.getAttribute("aria-describedby")}"]`);
+      await tapped.scrollIntoViewIfNeeded();
+      await tapped.tap();
+      await tappedBubble.waitFor({ state: "visible" });
+      await touch.waitForTimeout(400);
+      assert.equal(await tappedBubble.isVisible(), true, "a tap keeps it open");
+      await tapped.tap();
+      await tappedBubble.waitFor({ state: "hidden" });
+      await tapped.tap();
+      await tappedBubble.waitFor({ state: "visible" });
+      await touch.getByRole("heading", { name: "Settings", exact: true }).tap();
+      await tappedBubble.waitFor({ state: "hidden" });
+    } finally {
+      await touchContext.close();
+    }
+  });
+
   await step("the daily email card sets up recipients and a schedule, tests a send, and previews the mail", async () => {
     await goTo("Setup");
     const mailCard = page.locator("section").filter({ has: page.getByRole("heading", { level: 2, name: "Daily email", exact: true }) });
@@ -1658,7 +1819,11 @@ try {
       await mailCard.getByText("The link must be a web address", { exact: false }).first().waitFor();
       await mailCard.getByLabel("Link to this dashboard (optional)").fill("https://traffic.example.com");
       for (const day of ["Saturday", "Sunday"]) await mailCard.getByRole("button", { name: day, exact: true }).click();
-      await mailCard.getByText("Goes out weekdays.").waitFor();
+      assert.equal(
+        await explainedBy(mailCard.getByRole("group", { name: "On these days" }).getByRole("button", { name: "More information" })),
+        "Goes out weekdays. The first mail after a weekend covers the weekend too.",
+        "the days picked are told in words by the bubble of the (i) beside them",
+      );
       await mailCard.getByText("Not saved yet").waitFor();
       await saveSchedule.click();
       await mailCard.getByRole("status").filter({ hasText: "Saved." }).waitFor();

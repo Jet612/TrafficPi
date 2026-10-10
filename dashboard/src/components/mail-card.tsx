@@ -1,29 +1,27 @@
 "use client";
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { DayButtons } from "@/components/day-buttons";
 import { MailKey } from "@/components/mail-key";
 import { MailPreview } from "@/components/mail-preview";
 import { MailRecipients } from "@/components/mail-recipients";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input, Label } from "@/components/ui/input";
+import { OptionGroup } from "@/components/ui/option-group";
 import { StatusBadge } from "@/components/ui/status";
 import { Switch } from "@/components/ui/switch";
 import { useUnsavedWarning } from "@/components/unsaved";
 import { ApiError, api } from "@/lib/api";
-import { cn } from "@/lib/cn";
 import {
   MAX_LINK,
   MAX_NAME,
-  WEEKDAYS,
-  WEEKDAYS_SHORT,
   daysText,
   fromScheduleDraft,
   isScheduleChanged,
   sendSummary,
   statusLine,
   toScheduleDraft,
-  toggleDay,
   type ScheduleDraft,
 } from "@/lib/mail";
 import type { MailState } from "@/lib/types";
@@ -160,7 +158,13 @@ function ScheduleForm({ state, apply }: { state: MailState; apply: (next: MailSt
       <h3 className="text-sm font-medium text-ink">When it goes</h3>
       <Switch label="Send the daily email" checked={draft.enabled} onChange={(enabled) => change({ enabled })} />
       <div>
-        <Label htmlFor={timeId}>Send it at</Label>
+        <Label
+          htmlFor={timeId}
+          hintId={timeHelpId}
+          hint={<>By the clock of the camera&rsquo;s time zone, {state.timezone}. Each mail covers the time since the one before it.</>}
+        >
+          Send it at
+        </Label>
         <Input
           id={timeId}
           type="time"
@@ -170,37 +174,19 @@ function ScheduleForm({ state, apply }: { state: MailState; apply: (next: MailSt
           aria-describedby={timeHelpId}
           className="w-32"
         />
-        <p id={timeHelpId} className="mt-1.5 text-sm text-ink-2">
-          By the clock of the camera&rsquo;s time zone, {state.timezone}. Each mail covers the time since the one before it.
-        </p>
       </div>
-      <fieldset>
-        <legend className="mb-1.5 text-sm font-medium text-ink">On these days</legend>
-        <div className="flex flex-wrap gap-2">
-          {WEEKDAYS_SHORT.map((short, day) => {
-            const on = draft.days.includes(day);
-            return (
-              <button
-                key={short}
-                type="button"
-                aria-pressed={on}
-                aria-label={WEEKDAYS[day]}
-                onClick={() => change({ days: toggleDay(draft.days, day) })}
-                className={cn(
-                  "h-9 min-w-12 rounded-lg border px-3 text-sm font-medium transition-colors",
-                  on ? "border-accent bg-accent text-accent-ink" : "border-baseline bg-surface text-ink-2 hover:bg-sunken",
-                )}
-              >
-                {short}
-              </button>
-            );
-          })}
-        </div>
-        <p className="mt-1.5 text-sm text-ink-2">
-          {draft.days.length === 0 ? "Pick at least one day." : `Goes out ${daysText(draft.days)}.`}
-          {draft.days.length > 0 && !draft.days.includes(5) && !draft.days.includes(6) && " The first mail after a weekend covers the weekend too."}
-        </p>
-      </fieldset>
+      <OptionGroup
+        title="On these days"
+        className="gap-1.5"
+        hint={
+          draft.days.length === 0
+            ? "The days of the week that the email goes out on."
+            : `Goes out ${daysText(draft.days)}.${!draft.days.includes(5) && !draft.days.includes(6) ? " The first mail after a weekend covers the weekend too." : ""}`
+        }
+      >
+        <DayButtons days={draft.days} onChange={(days) => change({ days })} />
+        {draft.days.length === 0 && <p className="text-sm text-critical">Pick at least one day.</p>}
+      </OptionGroup>
       <div>
         <Label htmlFor={nameId}>Sender name</Label>
         <Input
@@ -213,7 +199,9 @@ function ScheduleForm({ state, apply }: { state: MailState; apply: (next: MailSt
         />
       </div>
       <div>
-        <Label htmlFor={addressId}>Sender address</Label>
+        <Label htmlFor={addressId} hintId={addressHelpId} hint="An address on the domain you verified with Resend. Mail from any other address is refused.">
+          Sender address
+        </Label>
         <Input
           id={addressId}
           type="email"
@@ -225,12 +213,20 @@ function ScheduleForm({ state, apply }: { state: MailState; apply: (next: MailSt
           aria-describedby={addressHelpId}
           className="max-w-sm"
         />
-        <p id={addressHelpId} className="mt-1.5 text-sm text-ink-2">
-          An address on the domain you verified with Resend. Mail from any other address is refused.
-        </p>
       </div>
       <div>
-        <Label htmlFor={linkId}>Link to this dashboard (optional)</Label>
+        <Label
+          htmlFor={linkId}
+          hintId={linkHelpId}
+          hint={
+            <>
+              If you fill this in, the mail has an &ldquo;Open the dashboard&rdquo; link to it. This Pi&rsquo;s own address only works at home; a tunnel&rsquo;s address works
+              anywhere.
+            </>
+          }
+        >
+          Link to this dashboard (optional)
+        </Label>
         <Input
           id={linkId}
           value={draft.linkUrl}
@@ -242,9 +238,6 @@ function ScheduleForm({ state, apply }: { state: MailState; apply: (next: MailSt
           aria-describedby={linkHelpId}
           className="max-w-sm"
         />
-        <p id={linkHelpId} className="mt-1.5 text-sm text-ink-2">
-          If you fill this in, the mail has an &ldquo;Open the dashboard&rdquo; link to it. This Pi&rsquo;s own address only works at home; a tunnel&rsquo;s address works anywhere.
-        </p>
       </div>
       <div className="flex flex-wrap items-center gap-3">
         <Button type="submit" variant="primary" busy={busy} disabled={!dirty || problem !== null || busy}>

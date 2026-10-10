@@ -3,7 +3,9 @@
 import { useEffect, useId, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
+import { InfoTip } from "@/components/ui/info-tip";
 import { Input, Label } from "@/components/ui/input";
+import { OptionGroup } from "@/components/ui/option-group";
 import { Segmented } from "@/components/ui/segmented";
 import { StatusBadge } from "@/components/ui/status";
 import { Switch } from "@/components/ui/switch";
@@ -48,6 +50,47 @@ function knownZones(): string[] {
   }
 }
 
+/** A box for a whole number, kept as text while it is typed: what it does is in the bubble of its (i), what is wrong with it is told under the box. */
+function WholeNumber({
+  label,
+  hint,
+  value,
+  onChange,
+  problem,
+}: {
+  label: string;
+  hint: string;
+  value: string;
+  onChange: (text: string) => void;
+  problem: string | null;
+}) {
+  const id = useId();
+  const hintId = useId();
+  const problemId = useId();
+  return (
+    <div>
+      <Label htmlFor={id} hint={hint} hintId={hintId}>
+        {label}
+      </Label>
+      <Input
+        id={id}
+        inputMode="numeric"
+        autoComplete="off"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        aria-invalid={problem !== null}
+        aria-describedby={problem === null ? hintId : `${hintId} ${problemId}`}
+        className="w-28"
+      />
+      {problem !== null && (
+        <p id={problemId} className="mt-1.5 text-sm text-critical">
+          {problem}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function SettingsCard() {
   const { remote, recheck } = useSession();
   const [saved, setSaved] = useState<Settings | null>(null);
@@ -58,16 +101,6 @@ export function SettingsCard() {
   const zoneId = useId();
   const zoneListId = useId();
   const zoneHelpId = useId();
-  const daysId = useId();
-  const daysHelpId = useId();
-  const evidenceDaysId = useId();
-  const evidenceDaysHelpId = useId();
-  const evidenceMbId = useId();
-  const evidenceMbHelpId = useId();
-  const rollingHoursId = useId();
-  const rollingHoursHelpId = useId();
-  const didNotStopHoursId = useId();
-  const didNotStopHoursHelpId = useId();
 
   useEffect(() => {
     const controller = new AbortController();
@@ -139,7 +172,13 @@ export function SettingsCard() {
           >
             <div className="grid content-start gap-5">
               <div>
-                <Label htmlFor={zoneId}>Time zone</Label>
+                <Label
+                  htmlFor={zoneId}
+                  hintId={zoneHelpId}
+                  hint={<>The zone of the camera, like America/New_York. Days, hours and &ldquo;today&rdquo; are counted by its clock.</>}
+                >
+                  Time zone
+                </Label>
                 <Input
                   id={zoneId}
                   list={zoneListId}
@@ -155,21 +194,20 @@ export function SettingsCard() {
                     <option key={name} value={name} />
                   ))}
                 </datalist>
-                <p id={zoneHelpId} className="mt-1.5 text-sm text-ink-2">
-                  The zone of the camera, like America/New_York. Days, hours and &ldquo;today&rdquo; are counted by its clock.
-                  {here !== null && here !== draft.timezone.trim() && (
-                    <>
-                      {" "}
-                      <button type="button" className="font-medium text-accent underline underline-offset-2" onClick={() => change({ timezone: here })}>
-                        Use this browser&rsquo;s zone, {here}
-                      </button>
-                    </>
-                  )}
-                </p>
+                {here !== null && here !== draft.timezone.trim() && (
+                  <p className="mt-1.5 text-sm text-ink-2">
+                    <button type="button" className="font-medium text-accent underline underline-offset-2" onClick={() => change({ timezone: here })}>
+                      Use this browser&rsquo;s zone, {here}
+                    </button>
+                  </p>
+                )}
               </div>
 
               <div>
-                <p className="mb-1.5 text-sm font-medium text-ink">Speed units</p>
+                <div className="mb-1.5 flex items-center gap-1">
+                  <p className="text-sm font-medium text-ink">Speed units</p>
+                  <InfoTip className="-my-0.5">What the estimated speeds on the Data page and in the daily email are told in.</InfoTip>
+                </div>
                 <Segmented
                   className="w-fit"
                   label="Speed units"
@@ -180,166 +218,102 @@ export function SettingsCard() {
                   ]}
                   onChange={(units) => change({ units })}
                 />
-                <p className="mt-1.5 text-sm text-ink-2">For speeds, once they are measured (a later step). Nothing shows them yet.</p>
               </div>
 
-              <fieldset className="grid content-start gap-3">
-                <legend className="mb-1 text-sm font-medium text-ink">What the camera looks for</legend>
-                <p className="text-sm text-ink-2">
-                  Vehicles are always looked for. With people switched off, nobody who walks past gets a box in the picture, a path or a count, and a counting line that counts people stays
-                  silent. The change applies at once.
-                </p>
-                <Switch label="Look for people" checked={draft.detectPeople} onChange={(detectPeople) => change({ detectPeople })} />
-              </fieldset>
+              <OptionGroup title="What the camera looks for">
+                <Switch
+                  label="Look for people"
+                  hint="Vehicles are always looked for. With people switched off, nobody who walks past gets a box in the picture, a path or a count, and a counting line that counts people stays silent. The change applies at once."
+                  checked={draft.detectPeople}
+                  onChange={(detectPeople) => change({ detectPeople })}
+                />
+              </OptionGroup>
 
-              <fieldset className="grid content-start gap-3">
-                <legend className="mb-1 text-sm font-medium text-ink">Trails</legend>
-                <p className="text-sm text-ink-2">
-                  A trail is the path a vehicle took across the picture, saved when it leaves it: no picture of the vehicle, no number plate, no face.
-                </p>
+              <OptionGroup
+                title="Trails"
+                hint="A trail is the path a vehicle took across the picture, saved when it leaves it: no picture of the vehicle, no number plate, no face."
+              >
                 <Switch label="Save the path of each vehicle" checked={draft.trailsEnabled} onChange={(trailsEnabled) => change({ trailsEnabled })} />
                 <Switch label="Include people" checked={draft.trailsPeople} disabled={!draft.detectPeople} onChange={(trailsPeople) => change({ trailsPeople })} />
                 {!draft.detectPeople && <p className="text-sm text-ink-2">People are not being looked for, so there are no paths of people to save.</p>}
-                <div>
-                  <Label htmlFor={daysId}>Keep trails for (days)</Label>
-                  <Input
-                    id={daysId}
-                    inputMode="numeric"
-                    autoComplete="off"
-                    value={draft.keepDays}
-                    onChange={(event) => change({ keepDays: event.target.value })}
-                    aria-invalid={days === null}
-                    aria-describedby={daysHelpId}
-                    className="w-28"
-                  />
-                  <p id={daysHelpId} className="mt-1.5 text-sm text-ink-2">
-                    {days === null ? `A whole number of days, from 1 to ${MAX_KEEP_DAYS}.` : `Kept for ${roughly(days)}. Older trails are deleted by themselves.`}
-                  </p>
-                </div>
-              </fieldset>
+                <WholeNumber
+                  label="Keep trails for (days)"
+                  hint={`${days === null ? "" : `Kept for ${roughly(days)}. `}Older trails are deleted by themselves.`}
+                  value={draft.keepDays}
+                  onChange={(text) => change({ keepDays: text })}
+                  problem={days === null ? `A whole number of days, from 1 to ${MAX_KEEP_DAYS}.` : null}
+                />
+              </OptionGroup>
 
-              <fieldset className="grid content-start gap-3">
-                <legend className="mb-1 text-sm font-medium text-ink">Viewers who come through Cloudflare</legend>
-                <p className="text-sm text-ink-2">
-                  If you reach this dashboard from outside through a Cloudflare Tunnel, the numbers, the charts, the pictures and the boxes work as usual, but the
-                  continuous live video is held back and a still picture, renewed every few seconds, is shown instead. Cloudflare&rsquo;s terms let it limit video on its
-                  network without a paid plan, and they do not say whether a Tunnel counts. People on your own network always get the live video.
-                </p>
+              <OptionGroup
+                title="Viewers who come through Cloudflare"
+                hint="If you reach this dashboard from outside through a Cloudflare Tunnel, the numbers, the charts, the pictures and the boxes work as usual, but the continuous live video is held back and a still picture, renewed every few seconds, is shown instead. Cloudflare's terms let it limit video on its network without a paid plan, and they do not say whether a Tunnel counts. People on your own network always get the live video. Read Cloudflare's terms first; docs/remote-access.md says where."
+              >
                 <Switch
                   label="Allow live video for viewers who come through Cloudflare"
                   checked={draft.remoteLiveVideo}
                   onChange={(remoteLiveVideo) => change({ remoteLiveVideo })}
                 />
-                <p className="text-sm text-ink-2">
-                  Read Cloudflare&rsquo;s terms first; docs/remote-access.md says where.
-                  {remote && " You are looking at this page through Cloudflare now."}
-                </p>
-              </fieldset>
+                {remote && <p className="text-sm text-ink-2">You are looking at this page through Cloudflare now.</p>}
+              </OptionGroup>
             </div>
 
-            <fieldset className="grid content-start gap-3">
-              <legend className="mb-1 text-sm font-medium text-ink">Evidence for stop signs</legend>
-              <p className="text-sm text-ink-2">
-                For each pass at a stop sign that needs a look (rolled through, did not stop, could not be told), a picture and a short clip are kept on this machine, for you to
-                see and decide. A vehicle that stopped as it should gets none. The pictures are small, 640 by 360 pixels, so far-off number plates and faces cannot be read in them (one close to the camera might be).
-              </p>
+            <OptionGroup
+              title="Evidence for stop signs"
+              hint="For each pass at a stop sign that needs a look (rolled through, did not stop, could not be told), a picture and a short clip are kept on this machine, for you to see and decide. A vehicle that stopped as it should gets none. The pictures are small, 640 by 360 pixels, so far-off number plates and faces cannot be read in them (one close to the camera might be)."
+            >
               <Switch
                 label="Keep a picture and a clip of passes that need a look"
+                hint="A pass that could not be told follows this switch alone. Rolled-through stops and vehicles that did not stop each have a switch of their own, below it."
                 checked={draft.evidenceEnabled}
                 onChange={(evidenceEnabled) => change({ evidenceEnabled })}
               />
               <div className="grid gap-3 border-l-2 border-edge pl-4">
-                <p className="text-sm text-ink-2">
-                  Each kind of pass has a switch of its own. With one off, no picture and no clip are made of that kind of pass, but it is still judged and counted, on the Stop
-                  signs card, on the Data page and in the daily email. What was kept already stays until its time is up. A pass that could not be told follows the switch above.
-                </p>
                 <Switch
                   label="Keep a picture and a clip of rolled-through stops"
+                  hint="With this off, no picture and no clip are made of a rolled-through stop. It is still judged and counted, on the Stop signs card, on the Data page and in the daily email. What was kept already stays until its time is up."
                   checked={draft.evidenceKeepRolling}
                   disabled={!draft.evidenceEnabled}
                   onChange={(evidenceKeepRolling) => change({ evidenceKeepRolling })}
                 />
                 <Switch
                   label="Keep a picture and a clip of vehicles that did not stop"
+                  hint="With this off, no picture and no clip are made of a vehicle that did not stop. It is still judged and counted, on the Stop signs card, on the Data page and in the daily email. What was kept already stays until its time is up."
                   checked={draft.evidenceKeepDidNotStop}
                   disabled={!draft.evidenceEnabled}
                   onChange={(evidenceKeepDidNotStop) => change({ evidenceKeepDidNotStop })}
                 />
                 {!draft.evidenceEnabled && <p className="text-sm text-ink-2">Nothing is kept while the switch above is off, whatever these say.</p>}
               </div>
-              <div>
-                <Label htmlFor={evidenceDaysId}>Keep pictures and clips for (days)</Label>
-                <Input
-                  id={evidenceDaysId}
-                  inputMode="numeric"
-                  autoComplete="off"
-                  value={draft.evidenceDays}
-                  onChange={(event) => change({ evidenceDays: event.target.value })}
-                  aria-invalid={evidenceDays === null}
-                  aria-describedby={evidenceDaysHelpId}
-                  className="w-28"
-                />
-                <p id={evidenceDaysHelpId} className="mt-1.5 text-sm text-ink-2">
-                  {evidenceDays === null
-                    ? `A whole number of days, from 1 to ${MAX_KEEP_DAYS}.`
-                    : `Kept for ${roughly(evidenceDays)}. Older ones are deleted by themselves, also if none are being made.`}
-                </p>
-              </div>
-              <div>
-                <Label htmlFor={rollingHoursId}>Keep the clip of a rolled-through stop for (hours)</Label>
-                <Input
-                  id={rollingHoursId}
-                  inputMode="numeric"
-                  autoComplete="off"
-                  value={draft.rollingClipHours}
-                  onChange={(event) => change({ rollingClipHours: event.target.value })}
-                  aria-invalid={rollingHours === null}
-                  aria-describedby={rollingHoursHelpId}
-                  className="w-28"
-                />
-                <p id={rollingHoursHelpId} className="mt-1.5 text-sm text-ink-2">
-                  {rollingHours === null
-                    ? `A whole number of hours, from 1 to ${MAX_CLIP_HOURS}.`
-                    : `Clips of rolled-through stops are deleted after ${hoursText(rollingHours)}, to spare the disk. The picture stays for the days above, and the count for good.`}
-                </p>
-              </div>
-              <div>
-                <Label htmlFor={didNotStopHoursId}>Keep the clip of a vehicle that did not stop for (hours)</Label>
-                <Input
-                  id={didNotStopHoursId}
-                  inputMode="numeric"
-                  autoComplete="off"
-                  value={draft.didNotStopClipHours}
-                  onChange={(event) => change({ didNotStopClipHours: event.target.value })}
-                  aria-invalid={didNotStopHours === null}
-                  aria-describedby={didNotStopHoursHelpId}
-                  className="w-28"
-                />
-                <p id={didNotStopHoursHelpId} className="mt-1.5 text-sm text-ink-2">
-                  {didNotStopHours === null
-                    ? `A whole number of hours, from 1 to ${MAX_CLIP_HOURS}.`
-                    : `Clips of vehicles that did not stop are deleted after ${hoursText(didNotStopHours)}. Neither can be kept longer than the days above.`}
-                </p>
-              </div>
-              <div>
-                <Label htmlFor={evidenceMbId}>Keep at most (megabytes)</Label>
-                <Input
-                  id={evidenceMbId}
-                  inputMode="numeric"
-                  autoComplete="off"
-                  value={draft.evidenceMb}
-                  onChange={(event) => change({ evidenceMb: event.target.value })}
-                  aria-invalid={evidenceMb === null}
-                  aria-describedby={evidenceMbHelpId}
-                  className="w-28"
-                />
-                <p id={evidenceMbHelpId} className="mt-1.5 text-sm text-ink-2">
-                  {evidenceMb === null
-                    ? `A whole number of megabytes, from ${MIN_EVIDENCE_MB} to ${MAX_EVIDENCE_MB}.`
-                    : `Up to ${sizeText(evidenceMb)} on the disk. When there is more, the oldest are deleted first.`}
-                </p>
-              </div>
-            </fieldset>
+              <WholeNumber
+                label="Keep pictures and clips for (days)"
+                hint={`${evidenceDays === null ? "" : `Kept for ${roughly(evidenceDays)}. `}Older ones are deleted by themselves, also if none are being made.`}
+                value={draft.evidenceDays}
+                onChange={(text) => change({ evidenceDays: text })}
+                problem={evidenceDays === null ? `A whole number of days, from 1 to ${MAX_KEEP_DAYS}.` : null}
+              />
+              <WholeNumber
+                label="Keep the clip of a rolled-through stop for (hours)"
+                hint={`Clips of rolled-through stops are deleted after ${rollingHours === null ? "this time" : hoursText(rollingHours)}, to spare the disk. The picture stays for the days above, and the count for good.`}
+                value={draft.rollingClipHours}
+                onChange={(text) => change({ rollingClipHours: text })}
+                problem={rollingHours === null ? `A whole number of hours, from 1 to ${MAX_CLIP_HOURS}.` : null}
+              />
+              <WholeNumber
+                label="Keep the clip of a vehicle that did not stop for (hours)"
+                hint={`Clips of vehicles that did not stop are deleted after ${didNotStopHours === null ? "this time" : hoursText(didNotStopHours)}. Neither can be kept longer than the days above.`}
+                value={draft.didNotStopClipHours}
+                onChange={(text) => change({ didNotStopClipHours: text })}
+                problem={didNotStopHours === null ? `A whole number of hours, from 1 to ${MAX_CLIP_HOURS}.` : null}
+              />
+              <WholeNumber
+                label="Keep at most (megabytes)"
+                hint={`Up to ${evidenceMb === null ? "this much" : sizeText(evidenceMb)} on the disk. When there is more, the oldest are deleted first.`}
+                value={draft.evidenceMb}
+                onChange={(text) => change({ evidenceMb: text })}
+                problem={evidenceMb === null ? `A whole number of megabytes, from ${MIN_EVIDENCE_MB} to ${MAX_EVIDENCE_MB}.` : null}
+              />
+            </OptionGroup>
 
             <div className="flex flex-wrap items-center gap-3 border-t border-edge pt-4 md:col-span-2">
               <Button type="submit" variant="primary" busy={busy} disabled={!dirty || problem !== null || busy}>

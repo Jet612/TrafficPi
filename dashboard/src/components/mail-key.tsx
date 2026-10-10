@@ -60,7 +60,18 @@ export function MailKey({ state, apply }: { state: MailState; apply: (next: Mail
           void save();
         }}
       >
-        <Label htmlFor={keyId}>{state.key_set ? "Replace the key" : "Paste the key"}</Label>
+        <Label
+          htmlFor={keyId}
+          hintId={helpId}
+          hint={
+            <>
+              Create it in Resend with &ldquo;Sending access&rdquo; for your domain. It is kept on this Pi in a file that only the TrafficPi user can read, it is never shown again,
+              and it goes nowhere but to Resend.
+            </>
+          }
+        >
+          {state.key_set ? "Replace the key" : "Paste the key"}
+        </Label>
         <div className="flex flex-wrap gap-2">
           <Input
             id={keyId}
@@ -86,10 +97,6 @@ export function MailKey({ state, apply }: { state: MailState; apply: (next: Mail
             </Button>
           )}
         </div>
-        <p id={helpId} className="mt-1.5 text-sm text-ink-2">
-          Create it in Resend with &ldquo;Sending access&rdquo; for your domain. It is kept on this Pi in a file that only the TrafficPi user can read, it is never shown again, and it
-          goes nowhere but to Resend.
-        </p>
         {error && (
           <p role="alert" className="mt-1.5 text-sm text-critical">
             {error}

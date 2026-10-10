@@ -21,6 +21,7 @@ export function NumberField({
   onCommit,
 }: {
   label: string;
+  /** What the number does, in the bubble of an (i) beside the label. What is wrong with it is always shown under the box. */
   hint?: string;
   value: number;
   /** The least and most allowed, in the same units as `value`. */
@@ -36,6 +37,7 @@ export function NumberField({
 }) {
   const id = useId();
   const hintId = useId();
+  const errorId = useId();
   const shown = String(Math.round(value * scale * 1000) / 1000);
   // What is typed, while it is being typed; otherwise the box shows the value in use, which also
   // follows a change from elsewhere (undo, a reset).
@@ -47,7 +49,9 @@ export function NumberField({
 
   return (
     <div>
-      <Label htmlFor={id}>{label}</Label>
+      <Label htmlFor={id} hint={hint} hintId={hintId}>
+        {label}
+      </Label>
       <div className="flex items-center gap-2">
         <Input
           id={id}
@@ -57,7 +61,7 @@ export function NumberField({
           value={text}
           step={step}
           aria-invalid={!allowed}
-          aria-describedby={hintId}
+          aria-describedby={[hint ? hintId : null, allowed ? null : errorId].filter(Boolean).join(" ") || undefined}
           className="w-24"
           onChange={(event) => {
             setDraft(event.target.value);
@@ -71,9 +75,11 @@ export function NumberField({
         />
         {unit && <span className="text-sm text-ink-2">{unit}</span>}
       </div>
-      <p id={hintId} className={allowed ? "mt-1 text-sm text-ink-2" : "mt-1 text-sm text-critical"}>
-        {allowed ? hint : `From ${min * scale} to ${max * scale}.`}
-      </p>
+      {!allowed && (
+        <p id={errorId} className="mt-1 text-sm text-critical">
+          From {min * scale} to {max * scale}.
+        </p>
+      )}
     </div>
   );
 }
