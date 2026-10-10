@@ -2076,7 +2076,7 @@ try {
       await plain.waitFor();
       // every outcome has its count and its share, and there is a fastest estimate
       const mailText = await plain.innerText();
-      for (const label of ["Stopped:", "Rolled through:", "Did not stop:", "Could not tell:"]) {
+      for (const label of ["Stopped:", "Rolled through:", "Did not stop:", "Unclear:"]) {
         assert.match(mailText, new RegExp(`${label}\\s+\\d+( \\(\\d+%\\))?\\n`), `${label} has a count and a share`);
       }
       assert.match(mailText, /Fastest estimate:\s+(about \d+ (mph|km\/h)|almost still|–)/);
