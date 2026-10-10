@@ -315,7 +315,14 @@ def test_the_daylight_limit_needs_a_place_and_nothing_is_saved_without_one(
         {"latitude": 40.0},  # without a longitude
         {"longitude": -74.0},  # without a latitude
         {"latitude": "40.7", "longitude": "-74.0"},
+        {
+            "latitude": "40.7",
+            "longitude": -74.0,
+        },  # each one on its own, so that neither hides the other
+        {"latitude": 40.7, "longitude": "-74.0"},
         {"latitude": True, "longitude": False},
+        {"latitude": True, "longitude": -74.0},
+        {"latitude": 40.7, "longitude": True},
         {"before_sunrise_min": 181},
         {"before_sunrise_min": -121},
         {"after_sunset_min": 181},

@@ -268,7 +268,7 @@ def daylight_day(hours: StopHours, at_ms: int, tz: tzinfo) -> DaylightDay | None
         start_ms=window[0] if window else None,
         end_ms=window[1] if window else None,
         polar=day.polar,
-        noon_offset_min=round((minutes + 720) % 1440 - 720),
+        noon_offset_min=round(minutes),
     )
 
 

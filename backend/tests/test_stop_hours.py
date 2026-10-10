@@ -222,6 +222,27 @@ def test_where_the_sun_sets_after_midnight_the_margin_runs_on_into_the_next_date
     assert judging_at(hours, at(2026, 6, 22, 4, 0, tz=UTC), UTC)  # the sun is up again
 
 
+def test_a_window_that_runs_past_solar_midnight_still_holds_the_instants_after_it() -> None:
+    # Reykjavik at midsummer: sunset 00:04 UTC (22:37 by the sun), the sun's midnight 01:27 UTC and
+    # the next sunrise 02:56 UTC. Three hours of margin carry the window to 03:04 UTC, so 02:00 UTC,
+    # which is already the next solar day's, is inside the window of the day before it.
+    late = StopHours(daylight=True, after_sunset_min=180, **REYKJAVIK)
+    usual = StopHours(daylight=True, after_sunset_min=30, **REYKJAVIK)
+    at_two = at(2026, 6, 22, 2, 0, tz=UTC)
+    assert judging_at(late, at_two, UTC)
+    assert not judging_at(usual, at_two, UTC)  # the same instant with the usual margin: a gap
+
+
+def test_a_window_that_begins_before_solar_midnight_holds_the_instants_before_it() -> None:
+    # The sun rises at 02:56 UTC (01:30 by the sun); three hours before that is 22:30 by the sun on
+    # the day before, and a sunset two hours early (20:37) leaves a gap until then.
+    hours = StopHours(daylight=True, before_sunrise_min=180, after_sunset_min=-120, **REYKJAVIK)
+    assert not judging_at(hours, at(2026, 6, 21, 22, 30, tz=UTC), UTC)  # 21:03 by the sun: the gap
+    assert judging_at(
+        hours, at(2026, 6, 22, 0, 30, tz=UTC), UTC
+    )  # 23:03 by the sun, the day before
+
+
 def test_the_midnight_sun_is_judged_round_the_clock_and_the_polar_night_never() -> None:
     hours = StopHours(daylight=True, **TROMSO)
     for hour in range(24):
@@ -439,6 +460,16 @@ def test_a_change_further_than_a_week_and_a_half_off_is_not_looked_for() -> None
 
 
 # --- today's daylight, for the page -----------------------------------------------------------
+
+
+def test_margins_that_eat_the_day_leave_the_page_with_the_sun_and_no_window() -> None:
+    tromso_in_january = StopHours(
+        latitude=69.6492, longitude=18.9553, before_sunrise_min=-120, after_sunset_min=-120
+    )
+    day = daylight_day(tromso_in_january, at(2026, 1, 21, 12, tz=UTC), UTC)
+    assert day is not None and day.polar is None
+    assert day.sunrise_ms is not None and day.sunset_ms is not None
+    assert (day.start_ms, day.end_ms) == (None, None)  # not a window that ends before it begins
 
 
 def test_the_page_is_told_when_the_sun_rises_and_sets_today_and_the_window_around_it() -> None:
