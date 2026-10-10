@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { StatusBadge } from "@/components/ui/status";
 import { ApiError, api } from "@/lib/api";
+import { useNow } from "@/lib/hooks";
 import { recipientResult } from "@/lib/mail";
 import type { MailState } from "@/lib/types";
 
@@ -20,6 +21,7 @@ export function MailRecipients({ state, apply }: { state: MailState; apply: (nex
   const [rowError, setRowError] = useState<string | null>(null);
   const addressId = useId();
   const addressHelpId = useId();
+  const now = useNow(60_000);
   const full = state.recipients.length >= state.max_recipients;
 
   async function add() {
@@ -72,7 +74,7 @@ export function MailRecipients({ state, apply }: { state: MailState; apply: (nex
       ) : (
         <ul className="grid gap-2">
           {state.recipients.map((recipient) => {
-            const result = recipientResult(recipient, state.timezone);
+            const result = recipientResult(recipient, state.timezone, now);
             const shown = note?.id === recipient.id ? note : null;
             return (
               <li key={recipient.id} className="rounded-lg border border-edge p-3">
@@ -94,11 +96,16 @@ export function MailRecipients({ state, apply }: { state: MailState; apply: (nex
                     </Button>
                   </span>
                 </div>
-                <p className="mt-2 text-sm text-ink-2">
-                  <StatusBadge level={result.level} className="mr-2 max-w-full whitespace-normal">
-                    {result.text}
-                  </StatusBadge>
-                </p>
+                {/* A mail that went is one quiet line; one that did not is a badge, which is what to look for. */}
+                {result.level === "good" || result.level === "neutral" ? (
+                  <p className="mt-2 text-sm text-ink-3">{result.text}</p>
+                ) : (
+                  <p className="mt-2 text-sm text-ink-2">
+                    <StatusBadge level={result.level} className="mr-2 max-w-full whitespace-normal">
+                      {result.text}
+                    </StatusBadge>
+                  </p>
+                )}
                 {shown && (
                   <p role={shown.ok ? "status" : "alert"} className="mt-2 text-sm text-ink">
                     {shown.ok ? "" : "The test did not get through: "}

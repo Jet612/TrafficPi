@@ -1,17 +1,21 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Download, Pause, Play } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, Download, Pause, Play } from "lucide-react";
 import { HourStrip } from "@/components/hour-strip";
 import { TrailPicture } from "@/components/trail-picture";
 import { Button } from "@/components/ui/button";
-import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardBody, CardHeader, CardSubtitle, CardTitle } from "@/components/ui/card";
+import { CheckChip } from "@/components/ui/check-chip";
+import { ClassIcon } from "@/components/ui/class-icon";
+import { InfoTip } from "@/components/ui/info-tip";
 import { Segmented } from "@/components/ui/segmented";
-import { Switch } from "@/components/ui/switch";
+import { ToggleChip } from "@/components/ui/toggle-chip";
+import { useStats } from "@/components/stats-provider";
 import { ApiError, api, referencePictureUrl, snapshotUrl } from "@/lib/api";
-import { classColor, classLabel } from "@/lib/classes";
-import { formatCount } from "@/lib/format";
-import { usePersistentState, useRequest } from "@/lib/hooks";
+import { classLabel } from "@/lib/classes";
+import { dayText, formatCount, yearIn } from "@/lib/format";
+import { useNow, usePersistentState, useRequest } from "@/lib/hooks";
 import {
   allDay,
   clampSpan,
@@ -73,6 +77,10 @@ export function TrailsCard() {
   const [pictureFailures, setPictureFailures] = useState(0);
   const [nonce] = useState(() => Date.now());
   const resume = useRef<HourSpan | null>(null);
+  const zone = useStats().today?.timezone ?? "UTC";
+  const now = useNow(3_600_000);
+  /** The year it is, which a day in another year is told with; until the clock is known, the day's own. */
+  const thisYear = now === 0 ? null : yearIn(now, zone);
 
   // --- what there is to show ------------------------------------------------------------------
 
@@ -200,7 +208,7 @@ export function TrailsCard() {
     setSaving(true);
     setSaveError(null);
     try {
-      const blob = await renderPicturePng({ pictureUrl, scene, caption: `${dayTitle(day.day)} · ${spanLabel(day, span)} · ${summary}` });
+      const blob = await renderPicturePng({ pictureUrl, scene, caption: `${dayTitle(day.day, thisYear ?? Number(day.day.slice(0, 4)))} · ${spanLabel(day, span)} · ${summary}` });
       download(blob, pictureFileName(day, span, prefs.view));
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : "Could not save the picture.");
@@ -215,8 +223,8 @@ export function TrailsCard() {
   // still be the last hours' while these are fetched, and must not give this headline their count.
   const pathsCurrent = pathsKey !== null && pathsRequest.answeredKey === pathsKey;
   const summary = countText(spanCount, pathsCurrent ? drawn.length : spanCount, kinds, formatCount);
-  const headline = day && span ? `${summary} · ${dayTitle(day.day)} · ${spanLabel(day, span)}` : "";
-  const description = day && span ? `${prefs.view === "heat" ? "Heat map" : "Paths"} of ${summary} on ${dayTitle(day.day)}, ${spanLabel(day, span).toLowerCase()}, drawn on the camera picture.` : "";
+  const headline = day && span ? `${summary} · ${dayTitle(day.day, thisYear ?? Number(day.day.slice(0, 4)))} · ${spanLabel(day, span)}` : "";
+  const description = day && span ? `${prefs.view === "heat" ? "Heat map" : "Paths"} of ${summary} on ${dayTitle(day.day, thisYear ?? Number(day.day.slice(0, 4)))}, ${spanLabel(day, span).toLowerCase()}, drawn on the camera picture.` : "";
   const emptyMessage = !day
     ? null
     : day.total === 0
@@ -236,9 +244,7 @@ export function TrailsCard() {
       <CardHeader>
         <div>
           <CardTitle>Trails</CardTitle>
-          <p className="mt-0.5 text-sm text-ink-2" data-testid="trails-headline">
-            {day && day.first_day !== null ? headline : "The path every vehicle took"}
-          </p>
+          <CardSubtitle data-testid="trails-headline">{day && day.first_day !== null ? headline : "The path every vehicle took"}</CardSubtitle>
         </div>
         {day && day.first_day !== null && (
           <div className="flex flex-wrap items-center gap-2">
@@ -279,52 +285,62 @@ export function TrailsCard() {
           </p>
         ) : (
           <div className="grid gap-3">
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-              <div className="flex items-center gap-1.5">
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  aria-label="Previous day"
-                  disabled={shownDay === null || shownDay <= day.first_day || shiftDay(shownDay, -1) === null}
-                  onClick={() => shownDay !== null && goToDay(shiftDay(shownDay, -1))}
-                >
-                  <ChevronLeft className="size-4" aria-hidden="true" />
-                </Button>
-                <input
-                  type="date"
-                  aria-label="Day"
-                  value={shownDay ?? day.day}
-                  min={day.first_day}
-                  max={day.last_day ?? undefined}
-                  onChange={(event) => {
-                    if (isDay(event.target.value)) goToDay(event.target.value);
-                  }}
-                  className="h-8 rounded-lg border border-baseline bg-surface px-2 text-sm text-ink"
-                />
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  aria-label="Next day"
-                  disabled={shownDay === null || day.last_day === null || shownDay >= day.last_day || shiftDay(shownDay, 1) === null}
-                  onClick={() => shownDay !== null && goToDay(shiftDay(shownDay, 1))}
-                >
-                  <ChevronRight className="size-4" aria-hidden="true" />
-                </Button>
-                {chosenDay !== null && (
-                  <Button size="sm" variant="ghost" onClick={() => goToDay(null)}>
-                    Latest day
+            {/* One toolbar: which day, which kinds, what is drawn over the picture, and the play button. */}
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    aria-label="Previous day"
+                    disabled={shownDay === null || shownDay <= day.first_day || shiftDay(shownDay, -1) === null}
+                    onClick={() => shownDay !== null && goToDay(shiftDay(shownDay, -1))}
+                  >
+                    <ChevronLeft className="size-4" aria-hidden="true" />
                   </Button>
-                )}
+                  <DayPicker
+                    value={shownDay ?? day.day}
+                    min={day.first_day}
+                    max={day.last_day ?? undefined}
+                    thisYear={thisYear}
+                    onChange={(value) => goToDay(value)}
+                  />
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    aria-label="Next day"
+                    disabled={shownDay === null || day.last_day === null || shownDay >= day.last_day || shiftDay(shownDay, 1) === null}
+                    onClick={() => shownDay !== null && goToDay(shiftDay(shownDay, 1))}
+                  >
+                    <ChevronRight className="size-4" aria-hidden="true" />
+                  </Button>
+                  {chosenDay !== null && (
+                    <Button size="sm" variant="ghost" onClick={() => goToDay(null)}>
+                      Latest day
+                    </Button>
+                  )}
+                </div>
+                <KindFilter day={day} span={span ?? allDay(day)} hidden={hidden} onToggle={toggleKind} />
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <ToggleChip checked={prefs.lines} onChange={(lines) => setPrefs({ ...prefs, lines })}>
+                  Lines and zones
+                </ToggleChip>
+                <Button size="sm" variant="secondary" disabled={playlist(counts).length === 0} onClick={togglePlay} aria-pressed={playing}>
+                  {playing ? <Pause className="size-4" aria-hidden="true" /> : <Play className="size-4" aria-hidden="true" />}
+                  {playing ? "Pause" : "Play the day"}
+                </Button>
               </div>
             </div>
 
             {span && (
               <div className="grid gap-1.5">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm text-ink-2" id="trail-hours-help">
-                    Pick an hour, drag across several, or Shift-click to extend.
+                  <p className="inline-flex items-center gap-1 text-sm font-medium text-ink">
+                    Hours
+                    <InfoTip id="trail-hours-help">Pick an hour, drag across several, or Shift-click to extend.</InfoTip>
                   </p>
-                  <Button size="sm" variant="secondary" aria-pressed={isAllDay(day, span)} className={isAllDay(day, span) ? "bg-sunken" : undefined} onClick={() => choose(null)}>
+                  <Button size="sm" variant="secondary" aria-pressed={isAllDay(day, span)} className={isAllDay(day, span) ? "border-accent bg-accent-wash" : undefined} onClick={() => choose(null)}>
                     All day
                   </Button>
                 </div>
@@ -338,17 +354,6 @@ export function TrailsCard() {
                 />
               </div>
             )}
-
-            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-              <KindFilter day={day} span={span ?? allDay(day)} hidden={hidden} onToggle={toggleKind} />
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                <Switch label="Lines and zones" checked={prefs.lines} onChange={(lines) => setPrefs({ ...prefs, lines })} />
-                <Button size="sm" variant="secondary" disabled={playlist(counts).length === 0} onClick={togglePlay} aria-pressed={playing}>
-                  {playing ? <Pause className="size-4" aria-hidden="true" /> : <Play className="size-4" aria-hidden="true" />}
-                  {playing ? "Pause" : "Play the day"}
-                </Button>
-              </div>
-            </div>
 
             <div aria-busy={dayLoading || pathsLoading} data-testid="trail-view">
               <TrailPicture
@@ -396,19 +401,50 @@ function KindFilter({
 }) {
   const totals = kindTotals(day, span);
   const kinds = kindsIn(day);
-  if (kinds.length === 0) return <div />;
+  if (kinds.length === 0) return null;
   return (
-    <fieldset className="flex flex-wrap items-center gap-x-4 gap-y-1">
+    <fieldset className="flex flex-wrap items-center gap-2">
       <legend className="sr-only">Kinds to show</legend>
       {kinds.map((kind) => (
-        <label key={kind} className="inline-flex min-h-8 cursor-pointer items-center gap-2 text-sm text-ink-2">
-          <input type="checkbox" checked={!hidden.has(kind)} onChange={() => onToggle(kind)} className="size-4 accent-(--accent)" />
-          <span className="size-2.5 rounded-[3px]" style={{ background: classColor(kind) }} aria-hidden="true" />
+        <CheckChip key={kind} checked={!hidden.has(kind)} onChange={() => onToggle(kind)}>
+          <ClassIcon name={kind} />
           {classLabel(kind)}
           <span className="tabular-nums text-ink-3">{formatCount(totals.get(kind) ?? 0)}</span>
-        </label>
+        </CheckChip>
       ))}
     </fieldset>
+  );
+}
+
+/**
+ * The day, said the way every other day on the page is ("Fri, Oct 9"). The browser's own date box is
+ * laid invisibly over it and opens its calendar, because that box writes the date in the browser's
+ * language ("10/09/2026"); it is still the control for a screen reader and the keyboard.
+ */
+function DayPicker({ value, min, max, thisYear, onChange }: { value: string; min: string; max?: string; thisYear: number | null; onChange: (day: string) => void }) {
+  return (
+    <label className="relative inline-flex h-8 items-center gap-2 rounded-lg border border-baseline bg-surface px-3 text-sm text-ink pointer-coarse:h-10 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent">
+      <CalendarDays className="size-4 text-ink-3" aria-hidden="true" />
+      <span className="tabular-nums">{dayText(value, thisYear ?? Number(value.slice(0, 4)))}</span>
+      <input
+        type="date"
+        aria-label="Day"
+        value={value}
+        min={min}
+        max={max}
+        onChange={(event) => {
+          if (isDay(event.target.value)) onChange(event.target.value);
+        }}
+        onClick={(event) => {
+          try {
+            event.currentTarget.showPicker();
+          } catch {
+            // not every browser can open it from a click: the box is still there to type in
+          }
+        }}
+        className="absolute inset-0 size-full cursor-pointer opacity-0"
+      />
+    </label>
   );
 }
 

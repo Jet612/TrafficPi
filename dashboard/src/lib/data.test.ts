@@ -266,7 +266,7 @@ describe("rows for the charts", () => {
       ["stopped", "Stopped"],
       ["rolling", "Rolled through"],
       ["did_not_stop", "Did not stop"],
-      ["indeterminate", "Could not tell"],
+      ["indeterminate", "Unclear"],
     ]);
     expect(OUTCOME_SERIES.map((s) => s.color)).toEqual([OUTCOME_COLOR.stopped, OUTCOME_COLOR.rolling, OUTCOME_COLOR.did_not_stop, OUTCOME_COLOR.indeterminate]);
     expect(OUTCOME_COLOR.stopped).toBe("var(--good)");

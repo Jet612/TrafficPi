@@ -1,4 +1,4 @@
-import { formatCount, formatDateTime } from "./format";
+import { dayText, formatCount, formatDateTime, shortDayText, yearIn } from "./format";
 import { temperatureSeverity } from "./severity";
 import type { HealthEpisode, HealthSummary, SystemHistory } from "./types";
 
@@ -52,27 +52,29 @@ export interface HealthRow {
 
 const DAY_S = 86_400;
 
-/** "14:05" for a span of a day or less, "10-09 14:05" for longer, where the time alone would repeat. */
+/** "14:05" for a span of a day or less, "Oct 9 14:05" for longer, where the time alone would repeat. */
 function axisLabel(startMs: number, spanSeconds: number, timeZone: string): string {
   const text = formatDateTime(startMs, timeZone);
-  return spanSeconds <= DAY_S ? text.slice(11) : text.slice(5);
+  return spanSeconds <= DAY_S ? text.slice(11) : `${shortDayText(text.slice(0, 10))} ${text.slice(11)}`;
 }
 
-/** "2026-10-09 14:00", or "2026-10-09 14:00–14:10" for a stretch of more than a minute (with the date again if it ends on another day). */
-function rangeTitle(startSeconds: number, bucketSeconds: number, timeZone: string): string {
+/** "Fri, Oct 9, 14:00", or "Fri, Oct 9, 14:00–14:10" for a stretch of more than a minute (with the day again if it ends on another day). */
+function rangeTitle(startSeconds: number, bucketSeconds: number, timeZone: string, thisYear: number): string {
   const start = formatDateTime(startSeconds * 1000, timeZone);
-  if (bucketSeconds <= 60) return start;
+  const startText = `${dayText(start.slice(0, 10), thisYear)}, ${start.slice(11)}`;
+  if (bucketSeconds <= 60) return startText;
   const end = formatDateTime((startSeconds + bucketSeconds) * 1000, timeZone);
-  return `${start}–${end.slice(0, 10) === start.slice(0, 10) ? end.slice(11) : end}`;
+  return `${startText}–${end.slice(0, 10) === start.slice(0, 10) ? end.slice(11) : `${dayText(end.slice(0, 10), thisYear)}, ${end.slice(11)}`}`;
 }
 
 export function healthRows(history: SystemHistory): HealthRow[] {
   const span = history.to_s - history.from_s;
+  const thisYear = yearIn(history.to_s * 1000, history.timezone);
   return history.points.map((point) => ({
     id: String(point.t),
     t: point.t,
     label: axisLabel(point.t * 1000, span, history.timezone),
-    title: rangeTitle(point.t, history.bucket_s, history.timezone),
+    title: rangeTitle(point.t, history.bucket_s, history.timezone, thisYear),
     minutes: point.minutes,
     temp: point.temp_c ?? null,
     cpu: point.cpu_percent ?? null,
@@ -81,6 +83,16 @@ export function healthRows(history: SystemHistory): HealthRow[] {
     up: point.camera_up_percent ?? null,
     flags: point.throttled,
   }));
+}
+
+/**
+ * The rows from the first one that has anything recorded: a record that began this afternoon does not
+ * have a chart that is empty until then. The rows before it are the time the Pi was not being watched
+ * yet, which `recordStart` says in words. Everything is kept when the first row has a record.
+ */
+export function trimLeadingGap(rows: readonly HealthRow[]): HealthRow[] {
+  const first = rows.findIndex((row) => row.minutes > 0);
+  return first <= 0 ? [...rows] : rows.slice(first);
 }
 
 /** The temperature axis: from 30 degrees to above both the hottest reading and the 85 degrees at which the Pi throttles hard, in tens. */
@@ -141,90 +153,130 @@ export function minutesText(totalSeconds: number): string {
 
 export type EpisodeLevel = "warning" | "critical" | "neutral";
 
-export interface EpisodeText {
+/** What an episode is, in the words the whole page uses for it: one word for the Pi slowing itself down. */
+export const EPISODE_TITLE: Record<HealthEpisode["kind"], string> = {
+  slowed: "Throttled",
+  "under-voltage": "Weak power",
+  "camera-offline": "Camera not working",
+  "no-data": "Nothing recorded",
+};
+
+/** What each kind means, said once under the list instead of in every row. */
+export const EPISODE_MEANING: Record<HealthEpisode["kind"], string> = {
+  slowed: "The processor ran slower, to cool down or because the supply was weak.",
+  "under-voltage": "The supply could not deliver enough. The board wants a 27 W one (5 V, 5 A).",
+  "camera-offline": "No picture reached the program, so nothing was counted.",
+  "no-data": "The vision service was not running: the Pi was off or restarting, or the service had stopped.",
+};
+
+/** From this reading the Pi throttles hard, and a slowdown that got here is serious. */
+export const HARD_LIMIT_C = 85;
+
+export interface EpisodeRow {
   key: string;
+  kind: HealthEpisode["kind"];
   level: EpisodeLevel;
   title: string;
-  /** When, and for how long. */
-  when: string;
-  detail: string;
+  /** The day it began, "Fri, Oct 9": the list says it once above the episodes of that day. */
+  date: string;
+  /** The clock time it began, "14:00". */
+  start: string;
+  /** When it ended, "14:07", with the day if that is another one; null while it goes on. */
+  end: string | null;
+  /** "7 min", or "7 min so far" while it goes on. */
+  duration: string;
+  /** The hottest it got, "84.2 °C", for a slowdown that has a reading. */
+  peak: string | null;
+  ongoing: boolean;
 }
 
-/** An episode in words: what happened, when, and what it means. */
-export function describeEpisode(episode: HealthEpisode, timeZone: string): EpisodeText {
+/** An episode as one row of the table: what happened, when and for how long. */
+export function describeEpisode(episode: HealthEpisode, timeZone: string): EpisodeRow {
   const start = formatDateTime(episode.from_s * 1000, timeZone);
   const end = formatDateTime(episode.to_s * 1000, timeZone);
+  const thisYear = yearIn(episode.to_s * 1000, timeZone);
   const duration = minutesText(episode.to_s - episode.from_s);
-  const when = episode.ongoing
-    ? `${start} until now (${duration} so far)`
-    : `${start} to ${end.slice(0, 10) === start.slice(0, 10) ? end.slice(11) : end} (${duration})`;
-  const key = `${episode.kind}:${episode.from_s}`;
-  switch (episode.kind) {
-    case "slowed":
-      return {
-        key,
-        level: "warning",
-        title: "Slowed itself down",
-        when,
-        detail: `${episode.peak_temp_c == null ? "" : `Up to ${episode.peak_temp_c.toFixed(1)} °C. `}The processor ran slower, to cool down or because the supply was weak.`,
-      };
-    case "under-voltage":
-      return { key, level: "warning", title: "Power supply too weak", when, detail: "The supply could not deliver enough. The board wants a 27 W one (5 V, 5 A)." };
-    case "camera-offline":
-      return { key, level: "critical", title: "Camera not working", when, detail: "No picture reached the program, so nothing was counted." };
-    case "no-data":
-      return {
-        key,
-        level: "neutral",
-        title: "Nothing recorded",
-        when,
-        detail: "The vision service was not running: the Pi was off or restarting, or the service had stopped.",
-      };
+  const peak = episode.kind === "slowed" && episode.peak_temp_c != null ? episode.peak_temp_c : null;
+  const level: EpisodeLevel =
+    episode.kind === "camera-offline" || (peak !== null && peak >= HARD_LIMIT_C) ? "critical" : episode.kind === "no-data" ? "neutral" : "warning";
+  return {
+    key: `${episode.kind}:${episode.from_s}`,
+    kind: episode.kind,
+    level,
+    title: EPISODE_TITLE[episode.kind],
+    date: dayText(start.slice(0, 10), thisYear),
+    start: start.slice(11),
+    end: episode.ongoing ? null : end.slice(0, 10) === start.slice(0, 10) ? end.slice(11) : `${dayText(end.slice(0, 10), thisYear)}, ${end.slice(11)}`,
+    duration: episode.ongoing ? `${duration} so far` : duration,
+    peak: peak === null ? null : `${peak.toFixed(1)} °C`,
+    ongoing: episode.ongoing,
+  };
+}
+
+/**
+ * The episodes of a period in one line, before the list: how many, how long, how hot.
+ * "Throttled 15 times, 1 h 40 min in all, up to 85.9 °C · Camera not working once, 8 min". Empty when there are none.
+ */
+export function episodeSummary(episodes: readonly HealthEpisode[]): string {
+  const parts: string[] = [];
+  for (const kind of ["slowed", "under-voltage", "camera-offline", "no-data"] as const) {
+    const of = episodes.filter((episode) => episode.kind === kind);
+    if (of.length === 0) continue;
+    const seconds = of.reduce((sum, episode) => sum + (episode.to_s - episode.from_s), 0);
+    const peaks = of.flatMap((episode) => (episode.peak_temp_c == null ? [] : [episode.peak_temp_c]));
+    const hottest = kind === "slowed" && peaks.length > 0 ? `, up to ${Math.max(...peaks).toFixed(1)} °C` : "";
+    const lead = EPISODE_TITLE[kind];
+    parts.push(`${lead} ${of.length === 1 ? "once" : `${formatCount(of.length)} times`}, ${minutesText(seconds)}${of.length > 1 ? " in all" : ""}${hottest}`);
   }
+  return parts.join(" · ");
 }
 
 export interface Tile {
   label: string;
   value: string;
-  note: string;
+  note?: string;
   /** A word of warning to put by the number, when it calls for one (always with words: colour alone is not enough). */
-  flag?: { level: "warning" | "critical"; text: string };
+  flag?: { level: "warning" | "critical"; text: string; href?: string };
 }
 
 const percentText = (value: number) => `${value.toFixed(1)}%`;
 
-/** The few numbers over the charts. */
-export function summaryTiles(summary: HealthSummary, history: Pick<SystemHistory, "from_s" | "to_s">): Tile[] {
+/** The few numbers over the charts: how hot, how long throttled, how often the camera worked, and how much of the period was watched. */
+export function summaryTiles(summary: HealthSummary, history: Pick<SystemHistory, "from_s" | "to_s" | "episodes">): Tile[] {
   const periodMinutes = Math.max(1, Math.round((history.to_s - history.from_s) / 60));
   const recorded = Math.min(100, (100 * summary.minutes) / periodMinutes);
   const heat = summary.temp_c_max == null ? "ok" : temperatureSeverity(summary.temp_c_max);
+  const events = history.episodes.filter((episode) => episode.kind === "slowed" || episode.kind === "under-voltage").length;
   return [
     {
       label: "Hottest",
       value: summary.temp_c_max == null ? "–" : `${summary.temp_c_max.toFixed(1)} °C`,
-      note: "the processor's hottest minute",
+      note: "hottest minute",
       flag:
         heat === "critical"
-          ? { level: "critical", text: "past 85 °C, where the Pi throttles hard" }
+          ? { level: "critical", text: `past ${HARD_LIMIT_C} °C: throttles hard` }
           : heat === "warning"
-            ? { level: "warning", text: "past 80 °C, where the Pi slows itself down" }
+            ? { level: "warning", text: "past 80 °C: throttles" }
             : undefined,
     },
     {
-      label: "Slowed down",
+      label: "Throttled",
       value: summary.slowed_minutes === 0 ? "never" : minutesText(summary.slowed_minutes * 60),
-      note: summary.under_voltage_minutes === 0 ? "the Pi holding itself back" : `and ${minutesText(summary.under_voltage_minutes * 60)} of weak power supply`,
-      flag: summary.slowed_minutes > 0 || summary.under_voltage_minutes > 0 ? { level: "warning", text: "listed below" } : undefined,
+      note: summary.under_voltage_minutes === 0 ? undefined : `and ${minutesText(summary.under_voltage_minutes * 60)} of weak power`,
+      flag:
+        summary.slowed_minutes > 0 || summary.under_voltage_minutes > 0
+          ? { level: "warning", text: events > 0 ? `See ${events} ${events === 1 ? "event" : "events"}` : "See below", href: "#health-episodes" }
+          : undefined,
     },
     {
-      label: "Camera working",
+      label: "Camera uptime",
       value: summary.camera_up_percent == null ? "–" : percentText(summary.camera_up_percent),
-      note: "of the time the service was recording",
+      note: "of the monitored time",
     },
     {
-      label: "Recorded",
-      value: `${formatCount(summary.minutes)} min`,
-      note: `a reading each minute, ${Math.round(recorded)}% of the period`,
+      label: "Monitored",
+      value: summary.minutes === 0 ? "0 min" : minutesText(summary.minutes * 60),
+      note: `${Math.round(recorded)}% of the period`,
     },
   ];
 }

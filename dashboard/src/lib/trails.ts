@@ -1,5 +1,5 @@
 import { orderedClasses } from "./classes";
-import { hourLabel, hourRange } from "./format";
+import { dayText, hourLabel, hourRange } from "./format";
 import type { LiveLine, LiveStopSign, LiveZone, Profile, TrailDay, TrailPath } from "./types";
 
 /** A run of hours in a day, as positions in `day.hours` with both ends included. */
@@ -174,13 +174,9 @@ export function shiftDay(day: string, by: number): string | null {
   return start === null ? null : new Date(start + by * DAY_MS).toISOString().slice(0, 10);
 }
 
-/** "Friday 9 October 2026": a date is the same calendar day wherever the browser is. */
-export function dayTitle(day: string): string {
-  const start = dayStart(day);
-  if (start === null) return day;
-  return new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" })
-    .format(new Date(start))
-    .replace(",", "");
+/** "Fri, Oct 9", and "Fri, Oct 9, 2025" when the day is not in `thisYear`: a date is the same calendar day wherever the browser is. */
+export function dayTitle(day: string, thisYear: number): string {
+  return dayStart(day) === null ? day : dayText(day, thisYear);
 }
 
 /** The name of a saved picture: what it shows, which day, and which hours unless it is all of them. */

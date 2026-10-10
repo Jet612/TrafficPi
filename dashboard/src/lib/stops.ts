@@ -1,6 +1,7 @@
 import { classSingular } from "./classes";
-import { formatCount, formatDateTimeSeconds } from "./format";
+import { formatCount, fullTimeText } from "./format";
 import { displayName, findElement } from "./profile";
+import { SIZE_METRES, inUnits, roughSpeed, unitName, type SpeedUnits } from "./speed";
 import type { Profile, ReviewState, StopOut, StopOutcome, StopSummary, StopTotals } from "./types";
 
 /** The outcomes, in the order they are told: the good one first, then from mild to grave, then the unknown. */
@@ -11,7 +12,7 @@ export const OUTCOME_LABEL: Record<StopOutcome, string> = {
   stopped: "Stopped",
   rolling: "Rolled through",
   did_not_stop: "Did not stop",
-  indeterminate: "Could not tell",
+  indeterminate: "Unclear",
 };
 
 /** How an outcome reads in a sentence ("3 rolled through"). */
@@ -19,7 +20,7 @@ const OUTCOME_VERB: Record<StopOutcome, string> = {
   stopped: "stopped",
   rolling: "rolled through",
   did_not_stop: "did not stop",
-  indeterminate: "could not be judged",
+  indeterminate: "unclear",
 };
 
 /** The status each outcome is shown with: always an icon and words as well as a colour. */
@@ -30,25 +31,15 @@ export const OUTCOME_LEVEL: Record<StopOutcome, "good" | "warning" | "critical" 
   indeterminate: "neutral",
 };
 
-/** The outcomes worth looking at: everything but a clean stop. */
-export const NEEDS_A_LOOK: readonly StopOutcome[] = ["rolling", "did_not_stop", "indeterminate"];
+/** The outcomes that are queued for a review: everything but a clean stop. */
+export const NEEDS_REVIEW: readonly StopOutcome[] = ["rolling", "did_not_stop", "indeterminate"];
 
+/** What a person made of a pass. A pass nobody has reviewed yet "needs review". */
 export const REVIEW_LABEL: Record<ReviewState, string> = { confirmed: "Confirmed", false_positive: "False alarm" };
 
-/** The quick choices of what to list, for those who do not want to press the tiles one by one. */
-export type OutcomeFocus = "needs_a_look" | "rolling" | "did_not_stop" | "both";
-
-export const OUTCOME_FOCUS: readonly { value: OutcomeFocus; label: string; outcomes: readonly StopOutcome[] }[] = [
-  { value: "needs_a_look", label: "All that need a look", outcomes: NEEDS_A_LOOK },
-  { value: "rolling", label: "Rolled through", outcomes: ["rolling"] },
-  { value: "did_not_stop", label: "Did not stop", outcomes: ["did_not_stop"] },
-  { value: "both", label: "Both of those", outcomes: ["rolling", "did_not_stop"] },
-];
-
-/** Which quick choice the pressed tiles amount to; null when they are some other mix (a tile was pressed by hand). */
-export function focusOf(selected: readonly StopOutcome[]): OutcomeFocus | null {
-  const same = (a: readonly StopOutcome[], b: readonly StopOutcome[]) => a.length === b.length && a.every((name) => b.includes(name));
-  return OUTCOME_FOCUS.find((choice) => same(choice.outcomes, selected))?.value ?? null;
+/** Whether a set of outcomes is the default view: the three that need review, in any order. */
+export function isDefaultOutcomes(selected: readonly StopOutcome[]): boolean {
+  return selected.length === NEEDS_REVIEW.length && NEEDS_REVIEW.every((name) => selected.includes(name));
 }
 
 /** Add or take away one outcome from those shown, keeping them in their usual order. */
@@ -60,6 +51,59 @@ export function toggleOutcome(selected: readonly StopOutcome[], outcome: StopOut
 /** What pressing a review button does: it sets that state, or, if it is the state already, takes it back. */
 export function nextReview(current: ReviewState | null, pressed: ReviewState): ReviewState | null {
   return current === pressed ? null : pressed;
+}
+
+/** Which passes to list by what a person made of them: all, those nobody has reviewed ("needs review"), or those called one thing. */
+export type ReviewFilter = "all" | "unreviewed" | ReviewState;
+
+export const REVIEW_FILTERS: readonly { value: ReviewFilter; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "unreviewed", label: "Needs review" },
+  { value: "confirmed", label: "Confirmed" },
+  { value: "false_positive", label: "False alarms" },
+];
+
+/**
+ * How many passes the list holds for these outcomes and this review filter, from the summary of the
+ * period. It counts every pass the list shows, the ones called false alarms too (the tiles' numbers
+ * leave those out, as `counted` does). Null when a stop sign is picked: the summary is not split by sign.
+ */
+export function listTotal(summary: StopSummary, selected: readonly StopOutcome[], review: ReviewFilter, signPicked: boolean): number | null {
+  if (signPicked) return null;
+  const pick = (totals: StopTotals) =>
+    review === "all" ? totals.total : review === "unreviewed" ? totals.unreviewed : review === "confirmed" ? totals.confirmed : totals.false_positive;
+  return summary.outcomes.filter((totals) => selected.includes(totals.outcome)).reduce((sum, totals) => sum + pick(totals), 0);
+}
+
+/** How a review is going for one outcome: how many are done, and how many are not. A clean stop is not in the queue. */
+export function reviewProgress(totals: StopTotals): { reviewed: number; waiting: number; fraction: number } {
+  const reviewed = totals.confirmed + totals.false_positive;
+  return { reviewed, waiting: totals.unreviewed, fraction: totals.total === 0 ? 0 : reviewed / totals.total };
+}
+
+/** The outcomes that get no picture and no clip with the evidence settings as they are (a clean stop never gets any, and is not asked about). */
+export function unkeptEvidence(
+  settings: { evidence_enabled: boolean; evidence_keep_rolling: boolean; evidence_keep_did_not_stop: boolean },
+  outcomes: readonly StopOutcome[],
+): StopOutcome[] {
+  return outcomes.filter((outcome) => {
+    if (outcome === "stopped") return false;
+    if (!settings.evidence_enabled) return true;
+    return outcome === "rolling" ? !settings.evidence_keep_rolling : outcome === "did_not_stop" ? !settings.evidence_keep_did_not_stop : false;
+  });
+}
+
+const OUTCOME_PASSES: Record<StopOutcome, string> = {
+  stopped: "passes that stopped",
+  rolling: "rolled-through passes",
+  did_not_stop: "passes that did not stop",
+  indeterminate: "unclear passes",
+};
+
+/** "rolled-through passes", "rolled-through passes and passes that did not stop". */
+export function passesOf(outcomes: readonly StopOutcome[]): string {
+  const names = outcomes.map((outcome) => OUTCOME_PASSES[outcome]);
+  return names.length <= 1 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
 }
 
 // --- periods -------------------------------------------------------------------------------------
@@ -90,26 +134,41 @@ export function periodRange(period: Period, nowMs: number): { fromMs: number; to
 /** How many passes a total stands for: those that a person has not called false alarms. */
 export const counted = (totals: StopTotals): number => totals.total - totals.false_positive;
 
-/** "12 vehicles were judged: 8 stopped, 3 rolled through, 1 did not stop"; nothing is said of what did not happen. */
+/**
+ * "12 vehicles reached a stop sign: 8 stopped, 3 rolled through, 1 did not stop." Every vehicle in the
+ * count is one that reached the sign (a vehicle that could not be told is "unclear", still one of the
+ * twelve); nothing is said of what did not happen.
+ */
 export function summarySentence(summary: StopSummary): string {
   const by = new Map(summary.outcomes.map((totals) => [totals.outcome, counted(totals)]));
   const all = OUTCOMES.reduce((sum, outcome) => sum + (by.get(outcome) ?? 0), 0);
-  if (all === 0) return "No vehicle has been judged at a stop sign in this time.";
+  if (all === 0) return "No vehicle has reached a stop sign in this time.";
   const parts = OUTCOMES.flatMap((outcome) => ((by.get(outcome) ?? 0) > 0 ? [`${formatCount(by.get(outcome) ?? 0)} ${OUTCOME_VERB[outcome]}`] : []));
-  return `${formatCount(all)} ${all === 1 ? "vehicle was" : "vehicles were"} judged: ${parts.join(", ")}.`;
+  return `${formatCount(all)} ${all === 1 ? "vehicle" : "vehicles"} reached a stop sign: ${parts.join(", ")}.`;
 }
 
-/** The numbers behind a verdict, for anyone who wants to see why: how long it stood still, how slowly it went, how long it was watched. */
-export function numbersText(stop: Pick<StopOut, "hold_s" | "min_speed" | "observed_s" | "outcome">): string {
-  const parts = [`watched ${stop.observed_s.toFixed(1)} s`];
-  if (stop.outcome !== "indeterminate" || stop.hold_s > 0) parts.unshift(`still for ${stop.hold_s.toFixed(1)} s`);
-  if (stop.min_speed >= 0) parts.splice(parts.length - 1, 0, `slowest ${stop.min_speed.toFixed(1)} sizes a second`);
+/** The slowest a vehicle went in the zone, as a rough speed in the units that are set: "slowest ≈ 4 mph", or "slowest almost still". */
+export function slowestText(minSpeed: number, units: SpeedUnits): string {
+  const speed = inUnits(minSpeed * SIZE_METRES, units);
+  return speed < 1 ? "slowest almost still" : `slowest ≈ ${roughSpeed(speed)} ${unitName(units)}`;
+}
+
+/**
+ * The numbers behind a verdict, for anyone who wants to see why: how long it was watched in the zone,
+ * how long it stood still, and how slowly it went at the least, which is a rough estimate (a vehicle's
+ * own size stands for a car's, plan.md D41) in the units set on the Setup page: "1.9 s in zone · still
+ * 0.1 s · slowest ≈ 4 mph".
+ */
+export function numbersText(stop: Pick<StopOut, "hold_s" | "min_speed" | "observed_s" | "outcome">, units: SpeedUnits): string {
+  const parts = [`${stop.observed_s.toFixed(1)} s in zone`];
+  if (stop.outcome !== "indeterminate" || stop.hold_s > 0) parts.push(`still ${stop.hold_s.toFixed(1)} s`);
+  if (stop.min_speed >= 0) parts.push(slowestText(stop.min_speed, units));
   return parts.join(" · ");
 }
 
-/** Which pass this is, in a few words, to say what a button or a picture belongs to: "car at Elm Street, 2026-10-09 14:05:09". */
+/** Which pass this is, in a few words, to say what a button or a picture belongs to: "car at Elm Street, Fri, Oct 9, 2026, 14:05:09". */
 export function passText(stop: Pick<StopOut, "label" | "t">, sign: string, zone: string): string {
-  return `${classSingular(stop.label ?? "").toLowerCase()} at ${sign}, ${formatDateTimeSeconds(stop.t, zone)}`;
+  return `${classSingular(stop.label ?? "").toLowerCase()} at ${sign}, ${fullTimeText(stop.t, zone)}`;
 }
 
 /** The name of a stop sign: its own, or its place in the list; a sign that was deleted since is said to be. */

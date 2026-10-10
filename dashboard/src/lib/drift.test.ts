@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   describeChecks,
   describeMove,
+  describeReason,
   describeSize,
   describeTurn,
   driftLabel,
@@ -104,6 +105,7 @@ describe("the words for a state", () => {
       "No reference picture",
     ]);
     expect(driftLabel(null)).toBe("Not checked");
+    expect(driftLabel(reading({ state: "unknown", unsure_because: "too dark" }))).toBe("Can't tell"); // with a reason, which the card says beside it
   });
 });
 
@@ -137,19 +139,32 @@ describe("how far it moved", () => {
 describe("describeChecks", () => {
   const now = ok.checked_at + 3 * 60_000;
 
-  it("says when it last looked", () => {
-    expect(describeChecks(reading(), now)).toBe("Last looked 3 min ago.");
+  it("says when it last checked", () => {
+    expect(describeChecks(reading(), now)).toBe("Last checked 3 min ago.");
   });
 
-  it("says that the last look could not tell, and when one last could", () => {
-    expect(describeChecks(reading({ sure_at: null }), now)).toBe("Last looked 3 min ago; it could not tell.");
+  it("says when a check last could tell, if the latest could not", () => {
+    expect(describeChecks(reading({ sure_at: null }), now)).toBe("Last checked 3 min ago."); // why it could not is the reason's to say
     expect(describeChecks(reading({ sure_at: ok.checked_at - 2 * 3600_000 }), now)).toBe(
-      "Last looked 3 min ago; the last look that could tell was 2 h ago.",
+      "Last checked 3 min ago; the last check that could tell was 2 h ago.",
     );
   });
 
-  it("copes with a service that has not looked, and with none at all", () => {
+  it("copes with a service that has not checked, and with none at all", () => {
     expect(describeChecks(reading({ checked_at: null, sure_at: null }), now)).toBe("Not checked yet.");
     expect(describeChecks(null, now)).toContain("not checking");
+  });
+});
+
+describe("describeReason", () => {
+  it("says why the latest look could not tell, as a sentence", () => {
+    expect(describeReason(reading({ state: "unknown", unsure_because: "too few features to compare: the view is too dark, plain or blurred" }))).toBe(
+      "Too few features to compare: the view is too dark, plain or blurred.",
+    );
+  });
+
+  it("is empty when it could tell, and for no reading at all", () => {
+    expect(describeReason(reading())).toBe("");
+    expect(describeReason(null)).toBe("");
   });
 });

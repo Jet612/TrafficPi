@@ -94,6 +94,14 @@ export function yearIn(nowMs: number, timeZone: string): number {
   return Number(localDate(nowMs, timeZone).slice(0, 4));
 }
 
+const SHORT_DAY_FORMAT = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", month: "short", day: "numeric" });
+
+/** "Oct 9": a day short enough for the axis of a chart. */
+export function shortDayText(date: string): string {
+  const noon = noonOf(date);
+  return noon === null ? date : SHORT_DAY_FORMAT.format(noon);
+}
+
 /** "22:07": a clock time, 24-hour, no seconds. */
 export function timeText(ms: number, timeZone: string): string {
   return formatClock(ms, timeZone).slice(0, 5);
@@ -119,6 +127,32 @@ export function momentText(ms: number, timeZone: string, nowMs: number): string 
   if (date === today) return clock;
   if (date === shiftDate(today, -1)) return `Yesterday, ${clock}`;
   return `${dayText(date, yearIn(nowMs, timeZone))}, ${clock}`;
+}
+
+/**
+ * A moment in a sentence, after a verb: "just now", "2 min ago", "at 19:26", "yesterday at 19:26", "on Fri, Oct 9 at 19:26"
+ * ("the test mail was sent at 19:26").
+ */
+export function atText(ms: number, timeZone: string, nowMs: number): string {
+  const age = nowMs - ms;
+  if (age < 60_000) return "just now";
+  if (age < 3_600_000) return `${Math.round(age / 60_000)} min ago`;
+  const date = localDate(ms, timeZone);
+  const today = localDate(nowMs, timeZone);
+  const clock = timeText(ms, timeZone);
+  if (date === today) return `at ${clock}`;
+  if (date === shiftDate(today, -1)) return `yesterday at ${clock}`;
+  return `on ${dayText(date, yearIn(nowMs, timeZone))} at ${clock}`;
+}
+
+/** A moment still to come, in a sentence: "today at 18:55", "tomorrow at 06:32", "Mon, Oct 12 at 07:00", by the clock of the zone. */
+export function whenText(ms: number, nowMs: number, timeZone: string): string {
+  const date = localDate(ms, timeZone);
+  const today = localDate(nowMs, timeZone);
+  const clock = timeText(ms, timeZone);
+  if (date === today) return `today at ${clock}`;
+  if (date === shiftDate(today, 1)) return `tomorrow at ${clock}`;
+  return `${dayText(date, yearIn(nowMs, timeZone))} at ${clock}`;
 }
 
 /**

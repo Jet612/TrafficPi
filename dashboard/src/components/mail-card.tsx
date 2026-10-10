@@ -6,11 +6,14 @@ import { MailKey } from "@/components/mail-key";
 import { MailPreview } from "@/components/mail-preview";
 import { MailRecipients } from "@/components/mail-recipients";
 import { Button } from "@/components/ui/button";
-import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardBody, CardHeader, CardSubtitle, CardTitle } from "@/components/ui/card";
+import { Disclosure } from "@/components/ui/disclosure";
+import { HowItWorks } from "@/components/ui/how-it-works";
 import { Input, Label } from "@/components/ui/input";
 import { OptionGroup } from "@/components/ui/option-group";
 import { StatusBadge } from "@/components/ui/status";
 import { Switch } from "@/components/ui/switch";
+import { TimeField } from "@/components/ui/time-field";
 import { useUnsavedWarning } from "@/components/unsaved";
 import { ApiError, api } from "@/lib/api";
 import {
@@ -18,12 +21,14 @@ import {
   MAX_NAME,
   daysText,
   fromScheduleDraft,
+  nextText,
   isScheduleChanged,
   sendSummary,
   statusLine,
   toScheduleDraft,
   type ScheduleDraft,
 } from "@/lib/mail";
+import { useNow } from "@/lib/hooks";
 import type { MailState } from "@/lib/types";
 
 const REFRESH_MS = 20_000;
@@ -64,11 +69,15 @@ export function MailCard() {
     };
   }, []);
 
-  const status = state ? statusLine(state) : null;
+  const now = useNow(60_000);
+  const status = state ? statusLine(state, now) : null;
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Daily email</CardTitle>
+        <div>
+          <CardTitle>Daily email</CardTitle>
+          <CardSubtitle>A short report of the numbers, by email, at the time you choose.</CardSubtitle>
+        </div>
         {status && <StatusBadge level={status.level}>{status.short}</StatusBadge>}
       </CardHeader>
       <CardBody>
@@ -76,29 +85,32 @@ export function MailCard() {
           <p className="text-sm text-ink-2">{loadFailed ? "The daily email's settings could not be loaded." : "Loading…"}</p>
         ) : (
           <div className="grid gap-6">
-            <div className="max-w-3xl text-sm text-ink-2">
+            <HowItWorks>
               <p>
-                At the time you choose, TrafficPi emails a short report of the time since the last one: how many vehicles did not stop, rolled through and stopped at your stop signs, the
-                stop rate, the busiest hour and the vehicles counted. It holds numbers only: no pictures and no clips leave this machine, and the addresses and the numbers are the only
-                things sent, to the mail provider (Resend), which delivers them.
+                At the time you choose, TrafficPi emails a short report of the time since the last one: how many vehicles did not stop, rolled through and stopped at your stop signs,
+                the stop rate, the busiest hour and the vehicles counted. It holds numbers only: no pictures and no clips leave this machine, and the addresses and the numbers are the
+                only things sent, to the mail provider (Resend), which delivers them.
               </p>
-              {status && <p className="mt-2 text-ink">{status.text}</p>}
               {state.transport === "file" && (
-                <p className="mt-2">
-                  <strong className="font-medium text-ink">Demo mode:</strong> this copy writes each mail to a folder (<code>outbox</code>, in the data directory) instead of sending it,
-                  and needs no key. An address that starts with <code>fail@</code> is refused, to show what a failure looks like.
+                <p>
+                  <strong className="font-medium text-ink">Demo mode:</strong> this copy writes each mail to a folder (<code>outbox</code>, in the data directory) instead of sending
+                  it, and needs no key. An address that starts with <code>fail@</code> is refused, to show what a failure looks like.
                 </p>
               )}
-            </div>
+            </HowItWorks>
             <div className="grid gap-x-10 gap-y-6 md:grid-cols-2">
               <ScheduleForm state={state} apply={apply} />
               <div className="grid content-start gap-6">
                 <MailRecipients state={state} apply={apply} />
-                {state.transport === "resend" && <MailKey state={state} apply={apply} />}
+                {state.transport === "resend" && (
+                  <Disclosure title="Resend API key" status={<StatusBadge level={state.key_set ? "good" : "warning"}>{state.key_set ? "Saved" : "No key yet"}</StatusBadge>} defaultOpen={!state.key_set}>
+                    <MailKey state={state} apply={apply} />
+                  </Disclosure>
+                )}
               </div>
             </div>
             <MailPreview />
-            <RecentMails state={state} />
+            <RecentMails state={state} now={now} />
           </div>
         )}
       </CardBody>
@@ -110,6 +122,8 @@ function ScheduleForm({ state, apply }: { state: MailState; apply: (next: MailSt
   const [edits, setEdits] = useState<Partial<ScheduleDraft>>({});
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<Outcome>(null);
+  const now = useNow(60_000);
+  const next = nextText(state, now);
   const timeId = useId();
   const timeHelpId = useId();
   const nameId = useId();
@@ -165,15 +179,8 @@ function ScheduleForm({ state, apply }: { state: MailState; apply: (next: MailSt
         >
           Send it at
         </Label>
-        <Input
-          id={timeId}
-          type="time"
-          step={60}
-          value={draft.time}
-          onChange={(event) => change({ time: event.target.value })}
-          aria-describedby={timeHelpId}
-          className="w-32"
-        />
+        <TimeField id={timeId} value={draft.time} onChange={(time) => change({ time })} aria-describedby={timeHelpId} />
+        {draft.enabled && next !== "" && <p className="mt-1.5 text-sm text-ink-2">{next}</p>}
       </div>
       <OptionGroup
         title="On these days"
@@ -187,6 +194,7 @@ function ScheduleForm({ state, apply }: { state: MailState; apply: (next: MailSt
         <DayButtons days={draft.days} onChange={(days) => change({ days })} />
         {draft.days.length === 0 && <p className="text-sm text-critical">Pick at least one day.</p>}
       </OptionGroup>
+      <Disclosure title="Sender and link" status={<span className="text-sm font-normal text-ink-2">{draft.senderAddress || "not set"}</span>} defaultOpen={state.schedule.sender_address === ""}>
       <div>
         <Label htmlFor={nameId}>Sender name</Label>
         <Input
@@ -239,14 +247,15 @@ function ScheduleForm({ state, apply }: { state: MailState; apply: (next: MailSt
           className="max-w-sm"
         />
       </div>
+      </Disclosure>
       <div className="flex flex-wrap items-center gap-3">
         <Button type="submit" variant="primary" busy={busy} disabled={!dirty || problem !== null || busy}>
-          Save the schedule
+          Save changes
         </Button>
         {problem !== null ? (
           <StatusBadge level="critical">{problem}</StatusBadge>
         ) : (
-          dirty && <StatusBadge level="warning">Not saved yet</StatusBadge>
+          dirty && <StatusBadge level="warning">Unsaved changes</StatusBadge>
         )}
         {outcome && (
           <p role={outcome.kind === "error" ? "alert" : "status"} className="text-sm text-ink">
@@ -260,14 +269,14 @@ function ScheduleForm({ state, apply }: { state: MailState; apply: (next: MailSt
   );
 }
 
-function RecentMails({ state }: { state: MailState }) {
+function RecentMails({ state, now }: { state: MailState; now: number }) {
   if (state.recent.length === 0) return null;
   return (
     <section aria-label="Recent daily emails">
       <h3 className="mb-2 text-sm font-medium text-ink">The latest ones</h3>
       <ul className="grid gap-1.5">
         {state.recent.map((send) => {
-          const line = sendSummary(send, state.timezone);
+          const line = sendSummary(send, state.timezone, now);
           return (
             <li key={send.id}>
               <StatusBadge level={line.level}>{line.text}</StatusBadge>

@@ -14,7 +14,8 @@ import {
   YAxis,
   type TooltipContentProps,
 } from "recharts";
-import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardBody, CardHeader, CardSubtitle, CardTitle } from "@/components/ui/card";
+import { ClassIcon } from "@/components/ui/class-icon";
 import { Segmented } from "@/components/ui/segmented";
 import { useStats } from "@/components/stats-provider";
 import { useNow } from "@/lib/hooks";
@@ -51,12 +52,10 @@ export function HourlyChart() {
     <Card>
       <CardHeader>
         <div>
-          <CardTitle>Counted per hour</CardTitle>
-          {model?.peak && (
-            <p className="mt-0.5 text-sm text-ink-2">
-              Busiest hour {hourRange(model.peak.hour)} with {formatCount(model.peak.total)}
-            </p>
-          )}
+          <CardTitle>Vehicles counted by hour</CardTitle>
+          <CardSubtitle>
+            Today{model?.peak && <> &middot; Busiest hour {hourRange(model.peak.hour)} &middot; {formatCount(model.peak.total)} {model.peak.total === 1 ? "vehicle" : "vehicles"}</>}
+          </CardSubtitle>
         </div>
         <Segmented
           label="Show as"
@@ -87,7 +86,17 @@ export function HourlyChart() {
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={model.data} margin={{ top: 22, right: 4, bottom: 0, left: 0 }} barCategoryGap="22%">
                   <CartesianGrid vertical={false} stroke="var(--grid)" strokeWidth={1} />
-                  {model.current && <ReferenceArea x1={model.current.label} x2={model.current.label} fill="var(--ink)" fillOpacity={0.06} stroke="none" />}
+                  {/* The hour that is not over, shaded and named where it is, instead of in a footnote. */}
+                  {model.current && (
+                    <ReferenceArea
+                      x1={model.current.label}
+                      x2={model.current.label}
+                      fill="var(--ink)"
+                      fillOpacity={0.06}
+                      stroke="none"
+                      label={{ value: "Now", position: "insideTop", fill: "var(--ink-2)", fontSize: 12 }}
+                    />
+                  )}
                   <XAxis dataKey="label" interval={2} tickLine={false} tick={TICK} stroke="var(--baseline)" tickMargin={6} />
                   <YAxis
                     width={axisWidth(model.max)}
@@ -106,7 +115,7 @@ export function HourlyChart() {
                   />
                   <BarStack radius={[4, 4, 0, 0]}>
                     {model.keys.map((key) => (
-                      <Bar key={key} dataKey={field(key)} fill={classColor(key)} stroke="var(--surface)" strokeWidth={2} maxBarSize={20} isAnimationActive={false} />
+                      <Bar key={key} dataKey={field(key)} fill={classColor(key)} stroke="var(--surface)" strokeWidth={2} maxBarSize={44} isAnimationActive={false} />
                     ))}
                   </BarStack>
                   {model.peak && (
@@ -121,7 +130,6 @@ export function HourlyChart() {
                 </BarChart>
               </ResponsiveContainer>
             </div>
-            {model.current && <p className="mt-2 text-sm text-ink-2">The shaded hour is still in progress.</p>}
           </>
         )}
       </CardBody>
@@ -134,7 +142,7 @@ function Legend({ keys }: { keys: string[] }) {
     <ul className="mb-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-ink-2" aria-label="Kinds of vehicle">
       {keys.map((key) => (
         <li key={key} className="inline-flex items-center gap-1.5">
-          <span className="size-2.5 rounded-[3px]" style={{ background: classColor(key) }} aria-hidden="true" />
+          <ClassIcon name={key} />
           {classLabel(key)}
         </li>
       ))}
@@ -158,7 +166,7 @@ function HourTooltip({ active, payload, keys }: TooltipContentProps & { keys: st
         <ul className="mt-1.5 flex flex-col gap-1">
           {present.map((key) => (
             <li key={key} className="flex items-center gap-2">
-              <span className="h-[3px] w-3 shrink-0 rounded-full" style={{ background: classColor(key) }} aria-hidden="true" />
+              <ClassIcon name={key} />
               <span className="text-ink-2">{classLabel(key)}</span>
               <span className="ml-auto pl-3 font-medium tabular-nums text-ink">{formatCount(row[field(key)] ?? 0)}</span>
             </li>

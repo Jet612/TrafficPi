@@ -4,16 +4,22 @@ import {
   MAX_RANGES,
   MIN_MARGIN,
   addRange,
+  chipText,
+  clockText,
   dayText,
   fromDraft,
+  intersectSegments,
   isChanged,
+  mergeSegments,
+  minutesOfDay,
   noonWarning,
-  noteText,
   parseCoordinate,
   parseMargin,
   removeRange,
   savedText,
+  segmentsText,
   statusText,
+  timeline,
   toDraft,
   whenText,
   type StopHoursDraft,
@@ -179,7 +185,7 @@ describe("saying when", () => {
   it("says today, tomorrow, or the day, by the clock of the camera", () => {
     expect(whenText(at("2026-10-10T22:55:00Z"), NIGHT, ZONE)).toBe("tomorrow at 18:55"); // the 10th, 18:55 EDT
     expect(whenText(at("2026-10-10T03:30:00Z"), NIGHT, ZONE)).toBe("today at 23:30");
-    expect(whenText(at("2026-10-12T11:00:00Z"), NIGHT, ZONE)).toBe("Mon 12 Oct at 07:00");
+    expect(whenText(at("2026-10-12T11:00:00Z"), NIGHT, ZONE)).toBe("Mon, Oct 12 at 07:00");
   });
 
   it("goes by the camera's date, not Greenwich's", () => {
@@ -198,7 +204,7 @@ describe("saying when", () => {
 
 describe("telling the day's sun", () => {
   it("gives sunrise, sunset and the window, by the camera's clock", () => {
-    expect(dayText(day(), ZONE)).toBe("Today (Fri 9 Oct) the sun rises at 07:01 and sets at 18:25, so the daylight window is 06:31 to 18:55.");
+    expect(dayText(day(), ZONE)).toBe("Today (Fri, Oct 9) the sun rises at 07:01 and sets at 18:25, so the daylight window is 06:31 to 18:55.");
   });
 
   it("tells the midnight sun and the polar night", () => {
@@ -248,18 +254,30 @@ describe("the status", () => {
   });
 });
 
-describe("the note on other pages", () => {
+describe("the chip on other pages", () => {
   it("is empty when nothing is limited", () => {
-    expect(noteText(status({ limited: false }))).toBeNull();
+    expect(chipText(status({ limited: false }))).toBeNull();
   });
 
-  it("says what is judged, and where it stands now", () => {
-    expect(noteText(status())).toBe(
-      "Stop signs are judged only from 30 minutes before sunrise to 30 minutes after sunset. They are paused now and resume tomorrow at 06:32.",
-    );
-    expect(noteText(status({ judging: true, next_change: at("2026-10-10T22:55:00Z") }))).toBe(
-      "Stop signs are judged only from 30 minutes before sunrise to 30 minutes after sunset. Judging pauses tomorrow at 18:55.",
-    );
+  it("says whether stop signs are judged now, and until when", () => {
+    const paused = chipText(status());
+    expect(paused).toMatchObject({ text: "Judging paused until tomorrow 06:32", judging: false });
+    // The hours themselves are in the tooltip, in a sentence.
+    expect(paused?.title).toBe("Stop signs are judged only from 30 minutes before sunrise to 30 minutes after sunset.");
+    expect(chipText(status({ judging: true, next_change: at("2026-10-10T22:55:00Z") }))).toMatchObject({
+      text: "Judging until tomorrow 18:55",
+      judging: true,
+    });
+  });
+
+  it("drops 'today' and 'at' so that it reads as one short phrase", () => {
+    expect(chipText(status({ next_change: at("2026-10-10T03:30:00Z") }))?.text).toBe("Judging paused until 23:30");
+    expect(chipText(status({ next_change: at("2026-10-12T11:00:00Z") }))?.text).toBe("Judging paused until Mon, Oct 12 07:00");
+  });
+
+  it("is short when no change is in sight", () => {
+    expect(chipText(status({ next_change: null }))?.text).toBe("Judging paused");
+    expect(chipText(status({ judging: true, next_change: null }))?.text).toBe("Judging now");
   });
 });
 
@@ -268,5 +286,87 @@ describe("what a save says", () => {
     expect(savedText(true)).toBe("Saved. The vision service uses it at once.");
     expect(savedText(false)).toMatch(/could not be reached.*when it starts/);
     expect(savedText(false)).toMatch(/^Saved\./);
+  });
+});
+
+describe("the day as a strip", () => {
+  it("finds the minute of the day on the camera's clock", () => {
+    expect(minutesOfDay(at("2026-10-09T11:01:00Z"), ZONE)).toBe(7 * 60 + 1);
+    expect(minutesOfDay(at("2026-10-09T04:00:00Z"), ZONE)).toBe(0); // midnight, not 24:00
+    expect(minutesOfDay(at("2026-10-09T03:59:00Z"), ZONE)).toBe(23 * 60 + 59);
+  });
+
+  it("joins stretches that overlap or touch, and drops those with no length", () => {
+    expect(mergeSegments([{ from: 600, to: 700 }, { from: 100, to: 200 }, { from: 150, to: 300 }, { from: 300, to: 400 }, { from: 800, to: 800 }])).toEqual([
+      { from: 100, to: 400 },
+      { from: 600, to: 700 },
+    ]);
+    expect(mergeSegments([])).toEqual([]);
+  });
+
+  it("finds where two sets of stretches are both", () => {
+    expect(intersectSegments([{ from: 391, to: 1135 }], [{ from: 420, to: 1140 }])).toEqual([{ from: 420, to: 1135 }]);
+    expect(intersectSegments([{ from: 0, to: 100 }], [{ from: 100, to: 200 }])).toEqual([]); // touching is not overlapping
+    expect(intersectSegments([{ from: 0, to: 500 }, { from: 600, to: 900 }], [{ from: 400, to: 700 }])).toEqual([
+      { from: 400, to: 500 },
+      { from: 600, to: 700 },
+    ]);
+  });
+
+  it("is the whole day, judged, when no limit is on", () => {
+    const t = timeline(status({ limited: false }), none);
+    expect(t.daylight).toBeNull();
+    expect(t.setTimes).toBeNull();
+    expect(t.judged).toEqual([{ from: 0, to: 1440 }]);
+    expect(t.now).toBe(20 * 60 + 41);
+  });
+
+  it("draws the daylight window of the day and the sun's two moments", () => {
+    const t = timeline(status({ day: day() }), sunny);
+    expect(t.daylight).toEqual([{ from: 6 * 60 + 31, to: 18 * 60 + 55 }]);
+    expect(t.sunrise).toBe(7 * 60 + 1);
+    expect(t.sunset).toBe(18 * 60 + 25);
+    expect(t.setTimes).toBeNull();
+    expect(t.judged).toEqual(t.daylight);
+  });
+
+  it("is all daylight in the midnight sun and none in the polar night", () => {
+    expect(timeline(status({ day: day({ polar: "day", start: null, end: null, sunrise: null, sunset: null }) }), sunny).judged).toEqual([{ from: 0, to: 1440 }]);
+    expect(timeline(status({ day: day({ polar: "night", start: null, end: null, sunrise: null, sunset: null }) }), sunny).judged).toEqual([]);
+  });
+
+  it("has only today's part of a window that began yesterday evening or ends after midnight", () => {
+    const early = day({ start: at("2026-10-09T02:30:00Z"), end: at("2026-10-09T14:00:00Z") }); // 22:30 on the 8th to 10:00
+    expect(timeline(status({ day: early }), sunny).daylight).toEqual([{ from: 0, to: 10 * 60 }]);
+    const late = day({ start: at("2026-10-09T20:00:00Z"), end: at("2026-10-10T05:00:00Z") }); // 16:00 to 01:00 on the 10th
+    expect(timeline(status({ day: late }), sunny).daylight).toEqual([{ from: 16 * 60, to: 1440 }]);
+  });
+
+  it("draws set times on the days they are for, and none on the others", () => {
+    const timed: StopHoursConfig = { ...none, clock: true, ranges: [{ start: "07:00", end: "09:00" }, { start: "16:00", end: "18:30" }], days: [0, 1, 2, 3, 4] }; // weekdays
+    expect(timeline(status({ day: day() }), timed).setTimes).toEqual([{ from: 420, to: 540 }, { from: 960, to: 1110 }]); // Friday the 9th
+    expect(timeline(status({ day: day({ date: "2026-10-10" }) }), timed).setTimes).toEqual([]); // Saturday
+  });
+
+  it("splits a range through midnight between the day it starts and the one after", () => {
+    const night: StopHoursConfig = { ...none, clock: true, ranges: [{ start: "22:00", end: "06:00" }], days: [4] }; // Fridays
+    expect(timeline(status({ day: day() }), night).setTimes).toEqual([{ from: 22 * 60, to: 1440 }]); // Friday: its evening
+    expect(timeline(status({ day: day({ date: "2026-10-10" }) }), night).setTimes).toEqual([{ from: 0, to: 6 * 60 }]); // Saturday: the end of Friday's
+    expect(timeline(status({ day: day({ date: "2026-10-08" }) }), night).setTimes).toEqual([]); // Thursday: none
+  });
+
+  it("judges inside both limits when both are on", () => {
+    const both: StopHoursConfig = { ...sunny, clock: true, ranges: [{ start: "07:00", end: "19:00" }] };
+    const t = timeline(status({ day: day() }), both);
+    expect(t.judged).toEqual([{ from: 7 * 60, to: 18 * 60 + 55 }]);
+  });
+
+  it("says the stretches in words", () => {
+    expect(clockText(405)).toBe("06:45");
+    expect(clockText(1440)).toBe("00:00");
+    expect(segmentsText([{ from: 405, to: 1150 }])).toBe("06:45 to 19:10");
+    expect(segmentsText([{ from: 0, to: 360 }, { from: 1320, to: 1440 }])).toBe("00:00 to 06:00, 22:00 to 00:00");
+    expect(segmentsText([{ from: 0, to: 1440 }])).toBe("all day");
+    expect(segmentsText([])).toBe("none today");
   });
 });

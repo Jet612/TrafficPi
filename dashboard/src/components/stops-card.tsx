@@ -2,55 +2,57 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Play } from "lucide-react";
+import { Check, ChevronRight, ImageOff, Play } from "lucide-react";
 import { ReviewButtons } from "@/components/review-buttons";
 import { StopHoursNote } from "@/components/stop-hours-note";
 import { StopViewer } from "@/components/stop-viewer";
 import { Button } from "@/components/ui/button";
-import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardBody, CardHeader, CardSubtitle, CardTitle } from "@/components/ui/card";
+import { ClassIcon } from "@/components/ui/class-icon";
+import { InfoTip } from "@/components/ui/info-tip";
+import { OUTCOME_ICON } from "@/components/ui/outcome-icon";
+import { METRIC_SIZE } from "@/components/ui/stat";
 import { Segmented } from "@/components/ui/segmented";
 import { StatusBadge } from "@/components/ui/status";
 import { useStats } from "@/components/stats-provider";
 import { ApiError, api } from "@/lib/api";
 import { cn } from "@/lib/cn";
-import { classColor, classSingular } from "@/lib/classes";
-import { formatCount, formatDateTimeSeconds } from "@/lib/format";
+import { classSingular } from "@/lib/classes";
+import { OUTCOME_COLOR } from "@/lib/data";
+import { formatCount, fullTimeText, momentText } from "@/lib/format";
 import { useNow, usePersistentState, useRequest } from "@/lib/hooks";
 import {
-  NEEDS_A_LOOK,
-  OUTCOME_FOCUS,
+  NEEDS_REVIEW,
   OUTCOMES,
   OUTCOME_LABEL,
   OUTCOME_LEVEL,
   PERIOD_OPTIONS,
+  REVIEW_FILTERS,
   counted,
-  focusOf,
+  isDefaultOutcomes,
+  listTotal,
   nextReview,
   numbersText,
   passText,
+  passesOf,
   periodRange,
+  reviewProgress,
   signLabel,
   summarySentence,
   toggleOutcome,
+  unkeptEvidence,
   type Period,
+  type ReviewFilter,
 } from "@/lib/stops";
 import type { ReviewState, StopOut, StopOutcome } from "@/lib/types";
 
 const PAGE = 10;
 const REFRESH_MS = 15_000;
 
-type ReviewFilter = "all" | "unreviewed" | ReviewState;
-const REVIEW_FILTERS: readonly { value: ReviewFilter; label: string }[] = [
-  { value: "all", label: "All" },
-  { value: "unreviewed", label: "Not looked at" },
-  { value: "confirmed", label: "Confirmed" },
-  { value: "false_positive", label: "False alarms" },
-];
-
 export function StopsCard() {
   const [stored, setStored] = usePersistentState<{ period?: Period }>("trafficpi.stops", {});
   const period: Period = stored.period ?? "day";
-  const [selected, setSelected] = useState<readonly StopOutcome[]>(NEEDS_A_LOOK);
+  const [selected, setSelected] = useState<readonly StopOutcome[]>(NEEDS_REVIEW);
   const [review, setReview] = useState<ReviewFilter>("all");
   const [sign, setSign] = useState<string>("all");
   const [limit, setLimit] = useState(PAGE);
@@ -64,6 +66,8 @@ export function StopsCard() {
 
   const profile = useRequest("profile", (signal) => api.profile(signal));
   const signs = profile.data?.profile.stop_signs ?? [];
+  const settings = useRequest("settings", (signal) => api.settings(signal));
+  const units = settings.data?.units ?? "mph";
 
   const summary = useRequest(now === 0 ? null : `stops-summary:${fromMs}:${toMs}`, (signal) => api.stopSummary(fromMs, toMs, signal), {
     refreshMs: REFRESH_MS,
@@ -107,15 +111,26 @@ export function StopsCard() {
   const everything = summary.data?.outcomes ?? [];
   const noSigns = profile.data !== null && signs.length === 0;
   const nothingEver = noSigns && everything.every((totals) => totals.total === 0);
+  const total = summary.data ? listTotal(summary.data, selected, review, sign !== "all") : null;
+  const changed = !isDefaultOutcomes(selected) || review !== "all" || sign !== "all";
+  const unkept = settings.data ? unkeptEvidence(settings.data, selected) : [];
+  const anyPicture = rows.some((row) => row.snapshot_url !== null || row.clip_url !== null);
+
+  function reset() {
+    setSelected(NEEDS_REVIEW);
+    setReview("all");
+    setSign("all");
+    setLimit(PAGE);
+  }
 
   return (
     <Card>
       <CardHeader>
         <div>
           <CardTitle>Stop signs</CardTitle>
-          <p className="mt-0.5 text-sm text-ink-2" data-testid="stops-headline">
+          <CardSubtitle data-testid="stops-headline">
             {summary.data ? summarySentence(summary.data) : summary.error !== null ? "The numbers could not be loaded." : "Loading…"}
-          </p>
+          </CardSubtitle>
         </div>
         <Segmented
           label="Period"
@@ -139,10 +154,13 @@ export function StopsCard() {
         ) : (
           <div className="grid gap-4">
             <StopHoursNote />
+            {/* The tiles are the one control for which outcomes to list: each can be pressed on or off. */}
             <ul aria-label="Outcomes" className="grid grid-cols-2 gap-2 md:grid-cols-4">
               {OUTCOMES.map((outcome) => {
                 const totals = everything.find((candidate) => candidate.outcome === outcome);
                 const pressed = selected.includes(outcome);
+                const progress = totals && outcome !== "stopped" ? reviewProgress(totals) : null;
+                const Icon = OUTCOME_ICON[outcome];
                 return (
                   <li key={outcome}>
                     <button
@@ -153,15 +171,29 @@ export function StopsCard() {
                         setLimit(PAGE);
                       }}
                       className={cn(
-                        "flex h-full w-full flex-col rounded-lg border px-3 py-2 text-left transition-colors",
+                        "flex h-full w-full flex-col rounded-lg border px-3 py-2.5 text-left transition-colors",
                         pressed ? "border-accent bg-accent-wash text-ink" : "border-edge bg-surface text-ink-2 hover:bg-sunken",
                       )}
                     >
-                      <span className="text-sm">{OUTCOME_LABEL[outcome]}</span>
-                      <span className="text-2xl font-semibold leading-tight tabular-nums text-ink" data-testid={`outcome-${outcome}`}>
+                      <span className="flex items-center gap-1.5 text-sm">
+                        <Icon className="size-4 shrink-0" style={{ color: OUTCOME_COLOR[outcome] }} aria-hidden="true" />
+                        {OUTCOME_LABEL[outcome]}
+                        <span className="ml-auto grid size-4 place-items-center" aria-hidden="true">
+                          {pressed && <Check className="size-4 text-accent" />}
+                        </span>
+                      </span>
+                      <span className={cn(METRIC_SIZE.tile, "mt-1 tabular-nums")} data-testid={`outcome-${outcome}`}>
                         {totals ? formatCount(counted(totals)) : "–"}
                       </span>
-                      <span className="text-xs text-ink-3">{totals && totals.unreviewed > 0 ? `${formatCount(totals.unreviewed)} not looked at` : " "}</span>
+                      {/* Said only once a review has begun: before that it would repeat the number above it on every tile. */}
+                      {progress !== null && progress.reviewed > 0 && (
+                        <span className="mt-2 block">
+                          <span className="block h-1 w-full overflow-hidden rounded-full bg-sunken" aria-hidden="true">
+                            <span className="block h-full rounded-full bg-accent" style={{ width: `${Math.round(progress.fraction * 100)}%` }} />
+                          </span>
+                          <span className="mt-1 block text-xs text-ink-3">{progress.waiting === 0 ? "All reviewed" : `${formatCount(progress.waiting)} need review`}</span>
+                        </span>
+                      )}
                     </button>
                   </li>
                 );
@@ -169,22 +201,34 @@ export function StopsCard() {
             </ul>
 
             <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-              <p className="text-sm text-ink-2">
-                {selected.length === 0
-                  ? "Pick at least one of the outcomes above to see the passes."
-                  : "Showing the outcomes that are pressed, newest first. The tiles can be pressed one by one."}
+              <p className="flex flex-wrap items-center gap-x-1.5 text-sm text-ink-2" data-testid="stops-showing">
+                {selected.length === 0 ? (
+                  "Pick at least one of the outcomes above to see the passes."
+                ) : (
+                  <>
+                    {total === null ? "Newest first" : `Showing ${formatCount(total)} ${total === 1 ? "pass" : "passes"} · newest first`}
+                    <InfoTip>A pass is one vehicle reaching a stop sign.</InfoTip>
+                  </>
+                )}
+                {changed && (
+                  <>
+                    <span aria-hidden="true">·</span>
+                    <button type="button" onClick={reset} className="font-medium text-accent underline underline-offset-2">
+                      Reset
+                    </button>
+                  </>
+                )}
               </p>
               <div className="flex flex-wrap items-center gap-3">
                 <Segmented
-                  label="Outcome"
-                  value={focusOf(selected) ?? "custom"}
-                  options={OUTCOME_FOCUS}
+                  label="Review status"
+                  value={review}
+                  options={REVIEW_FILTERS}
                   onChange={(value) => {
-                    setSelected(OUTCOME_FOCUS.find((choice) => choice.value === value)?.outcomes ?? NEEDS_A_LOOK);
+                    setReview(value);
                     setLimit(PAGE);
                   }}
                 />
-                <Segmented label="Show" value={review} options={REVIEW_FILTERS} onChange={(value) => { setReview(value); setLimit(PAGE); }} />
                 {signs.length > 1 && (
                   <select
                     aria-label="Stop sign"
@@ -193,7 +237,7 @@ export function StopsCard() {
                       setSign(event.target.value);
                       setLimit(PAGE);
                     }}
-                    className="h-8 rounded-lg border border-baseline bg-surface px-2 text-sm text-ink"
+                    className="h-8 rounded-lg border border-baseline bg-surface px-2 text-sm text-ink pointer-coarse:h-10"
                   >
                     <option value="all">All stop signs</option>
                     {signs.map((one) => (
@@ -212,6 +256,18 @@ export function StopsCard() {
               </p>
             )}
 
+            {rows.length > 0 && unkept.length > 0 && (
+              <p className="flex items-start gap-2 text-sm text-ink-3" data-testid="stops-no-clips">
+                <ImageOff className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                <span>
+                  No picture or clip is kept of {passesOf(unkept)} (switched off in Setup).{" "}
+                  <Link href="/setup/" className="font-medium text-accent underline underline-offset-2">
+                    Change in Setup
+                  </Link>
+                </span>
+              </p>
+            )}
+
             {listKey === null ? null : list.error !== null && list.data === null ? (
               <p className="text-sm text-ink-2">
                 The passes could not be loaded.{" "}
@@ -225,8 +281,8 @@ export function StopsCard() {
               <p className="py-4 text-sm text-ink-2" data-testid="stops-empty">
                 {review !== "all" || sign !== "all"
                   ? "Nothing matches that."
-                  : selected.length === OUTCOMES.length || NEEDS_A_LOOK.every((outcome) => selected.includes(outcome))
-                    ? "Nothing needed a look in this time."
+                  : selected.length === OUTCOMES.length || isDefaultOutcomes(selected)
+                    ? "Nothing needs review in this time."
                     : "None of those in this time."}
               </p>
             ) : (
@@ -237,20 +293,25 @@ export function StopsCard() {
                       key={row.id}
                       row={row}
                       zone={zone}
+                      now={now}
+                      units={units}
                       sign={signLabel(profile.data?.profile ?? null, row.sign)}
+                      showSign={signs.length > 1}
+                      pictureSlot={anyPicture}
                       busy={reviewing.has(row.id)}
                       onReview={(pressed) => void make(row, pressed)}
                       onOpen={() => setViewing(row.id)}
                     />
                   ))}
                 </ol>
-                {rows.length >= limit && (
-                  <div className="mt-3">
+                <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-ink-2">
+                  <span>{total === null ? `Showing ${rows.length}` : `Showing ${rows.length} of ${formatCount(total)}`}</span>
+                  {rows.length >= limit && (
                     <Button size="sm" onClick={() => setLimit((current) => current + PAGE)}>
                       Show more
                     </Button>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -261,6 +322,7 @@ export function StopsCard() {
           row={viewedRow}
           sign={signLabel(profile.data?.profile ?? null, viewedRow.sign)}
           zone={zone}
+          units={units}
           busy={reviewing.has(viewedRow.id)}
           newer={rows[viewed - 1] ?? null}
           older={rows[viewed + 1] ?? null}
@@ -273,76 +335,77 @@ export function StopsCard() {
   );
 }
 
+/**
+ * One pass, on a line: when, what kind, what became of it, the numbers behind that, and the two buttons
+ * of a review. The line opens the pass (its picture and clip, if there are any, and the same buttons at
+ * full size). Only a pass with a picture has a picture in its row.
+ */
 function StopRow({
   row,
   zone,
+  now,
+  units,
   sign,
+  showSign,
+  pictureSlot,
   busy,
   onReview,
   onOpen,
 }: {
   row: StopOut;
   zone: string;
+  now: number;
+  units: "mph" | "kmh";
   sign: string;
+  showSign: boolean;
+  pictureSlot: boolean;
   busy: boolean;
   onReview: (pressed: ReviewState) => void;
   onOpen: () => void;
 }) {
   const kind = row.label ?? "";
-  const when = formatDateTimeSeconds(row.t, zone);
   const what = passText(row, sign, zone);
+  const hasPicture = row.snapshot_url !== null || row.clip_url !== null;
   return (
     <li
-      className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-2 border-t border-grid py-3 text-sm first:border-t-0 first:pt-0 md:grid-cols-[auto_minmax(0,1fr)_auto]"
+      className="flex items-center gap-2 border-t border-grid py-1.5 text-sm first:border-t-0 first:pt-0"
       data-outcome={row.outcome}
       data-review={row.review ?? "none"}
     >
-      <Thumbnail row={row} what={what} onOpen={onOpen} />
-      <div className="min-w-0">
-        <p className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <time className="tabular-nums text-ink-2" dateTime={new Date(row.t).toISOString()}>
-            {when}
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-label={`${row.clip_url !== null ? "Watch the clip of" : hasPicture ? "Look at the picture of" : "Open"} the ${what}`}
+        className="group -ml-2 flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-1 text-left transition-colors hover:bg-sunken"
+      >
+        {pictureSlot && (
+          <span className="relative block h-9 w-16 shrink-0 overflow-hidden rounded-md bg-sunken">
+            {row.snapshot_url !== null && (
+              // eslint-disable-next-line @next/next/no-img-element -- a picture from the API, kept as it is
+              <img src={row.snapshot_url} alt="" loading="lazy" decoding="async" className="size-full object-cover" />
+            )}
+            {row.clip_url !== null && (
+              <span className="absolute inset-0 grid place-items-center bg-black/25 text-white">
+                <Play className="size-4 fill-current" aria-hidden="true" />
+              </span>
+            )}
+          </span>
+        )}
+        <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
+          <time className="tabular-nums text-ink" dateTime={new Date(row.t).toISOString()} title={fullTimeText(row.t, zone)}>
+            {momentText(row.t, zone, now)}
           </time>
           <span className="inline-flex items-center gap-1.5 text-ink">
-            <span className="h-[3px] w-3 shrink-0 rounded-full" style={{ background: classColor(kind) }} aria-hidden="true" />
+            <ClassIcon name={kind} />
             {classSingular(kind)}
           </span>
-          <span className="truncate text-ink-2">{sign}</span>
           <StatusBadge level={OUTCOME_LEVEL[row.outcome]}>{OUTCOME_LABEL[row.outcome]}</StatusBadge>
-        </p>
-        <p className="mt-1 text-ink-3">{numbersText(row)}</p>
-      </div>
-      <ReviewButtons review={row.review} busy={busy} what={what} onReview={onReview} className="col-span-2 md:col-span-1" />
-    </li>
-  );
-}
-
-/** The picture kept of a pass, to open and watch its clip; a box that says so where nothing is kept. */
-function Thumbnail({ row, what, onOpen }: { row: StopOut; what: string; onOpen: () => void }) {
-  const size = "h-[54px] w-24 sm:h-[63px] sm:w-28"; // 16 by 9, like the picture
-  if (row.snapshot_url === null && row.clip_url === null) {
-    return (
-      <div className={cn(size, "grid place-items-center rounded-md border border-dashed border-edge px-1 text-center text-xs leading-tight text-ink-3")}>
-        {row.outcome === "stopped" ? "None needed" : "No picture"}
-      </div>
-    );
-  }
-  return (
-    <button
-      type="button"
-      onClick={onOpen}
-      aria-label={`${row.clip_url !== null ? "Watch the clip of" : "Look at the picture of"} the ${what}`}
-      className={cn(size, "group relative block overflow-hidden rounded-md border border-edge bg-sunken")}
-    >
-      {row.snapshot_url !== null && (
-        // eslint-disable-next-line @next/next/no-img-element -- a picture from the API, kept as it is
-        <img src={row.snapshot_url} alt="" loading="lazy" decoding="async" className="size-full object-cover" />
-      )}
-      {row.clip_url !== null && (
-        <span className="absolute inset-0 grid place-items-center bg-black/25 text-white transition-colors group-hover:bg-black/40">
-          <Play className="size-5 fill-current" aria-hidden="true" />
+          {showSign && <span className="truncate text-ink-2">{sign}</span>}
+          <span className="text-ink-3">{numbersText(row, units)}</span>
         </span>
-      )}
-    </button>
+        <ChevronRight className="size-4 shrink-0 text-ink-3 transition-colors group-hover:text-ink" aria-hidden="true" />
+      </button>
+      <ReviewButtons compact review={row.review} busy={busy} what={what} onReview={onReview} className="shrink-0" />
+    </li>
   );
 }

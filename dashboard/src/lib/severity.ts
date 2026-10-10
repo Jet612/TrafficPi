@@ -1,6 +1,6 @@
 export type Severity = "ok" | "warning" | "critical";
 
-/** The Pi starts slowing down at 80 degrees and throttles hard at 85. */
+/** The Pi throttles (slows itself down) from 80 degrees and hard from 85. */
 export function temperatureSeverity(celsius: number): Severity {
   if (celsius >= 85) return "critical";
   if (celsius >= 80) return "warning";
@@ -23,15 +23,23 @@ export function cpuSeverity(percent: number): Severity {
 const THROTTLE_MEANINGS: Record<string, string> = {
   "under-voltage": "the power supply is too weak",
   "ARM frequency capped": "the CPU speed is capped",
-  throttled: "the CPU is being slowed down",
+  throttled: "the CPU is throttled",
   "soft temperature limit": "it is running hot",
   "under-voltage occurred": "the power supply dipped",
   "ARM frequency cap occurred": "the CPU speed was capped",
-  "throttling occurred": "the CPU was slowed down",
+  "throttling occurred": "the CPU was throttled",
   "soft temperature limit occurred": "it ran hot",
 };
 
 /** What a throttle flag from the Pi means, in words. Unknown flags are shown as they are. */
 export function describeThrottle(flag: string): string {
   return THROTTLE_MEANINGS[flag] ?? flag;
+}
+
+/** The word that goes with a processor temperature, so that the number is not left to be read against the limits. */
+export function temperatureWord(celsius: number): string {
+  if (celsius >= 85) return "Throttling hard";
+  if (celsius >= 80) return "Throttling";
+  if (celsius >= 70) return "Warm";
+  return "Normal";
 }

@@ -3,12 +3,15 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { DayButtons } from "@/components/day-buttons";
+import { HoursTimeline } from "@/components/hours-timeline";
 import { Button } from "@/components/ui/button";
-import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardBody, CardHeader, CardSubtitle, CardTitle } from "@/components/ui/card";
+import { HowItWorks } from "@/components/ui/how-it-works";
 import { Input, Label } from "@/components/ui/input";
 import { OptionGroup } from "@/components/ui/option-group";
 import { StatusBadge } from "@/components/ui/status";
 import { Switch } from "@/components/ui/switch";
+import { TimeField } from "@/components/ui/time-field";
 import { useUnsavedWarning } from "@/components/unsaved";
 import { ApiError, api } from "@/lib/api";
 import { cn } from "@/lib/cn";
@@ -28,6 +31,7 @@ import {
   removeRange,
   savedText,
   statusText,
+  timeline,
   toDraft,
   type RangeDraft,
   type StopHoursDraft,
@@ -79,13 +83,13 @@ export function StopHoursCard() {
     };
   }, []);
 
-  const line = state ? statusText(state.status) : null;
-  const badge = state === null ? null : !state.status.limited ? "Every hour" : state.status.judging ? "Judging now" : "Paused now";
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Stop-sign hours</CardTitle>
-        {line && badge && <StatusBadge level={line.level}>{badge}</StatusBadge>}
+        <div>
+          <CardTitle>Stop-sign hours</CardTitle>
+          <CardSubtitle>Choose the hours in which stop signs are judged; outside them a pass is not judged or stored.</CardSubtitle>
+        </div>
       </CardHeader>
       <CardBody>
         {state === null ? (
@@ -159,7 +163,8 @@ function HoursForm({ state, apply }: { state: StopHoursState; apply: (next: Stop
   const longitudeBad = draft.longitude.trim() !== "" && parseCoordinate(draft.longitude, 180) === null;
   const beforeBad = parseMargin(draft.before) === null;
   const afterBad = parseMargin(draft.after) === null;
-  const heading = dirty && checked.ok ? "If you save these hours" : "Right now";
+  const heading = dirty && checked.ok ? "Today, if you save these hours" : "Today";
+  const strip = timeline(shown, checked.ok ? checked.config : state.config);
 
   return (
     <form
@@ -171,11 +176,24 @@ function HoursForm({ state, apply }: { state: StopHoursState; apply: (next: Stop
         void save();
       }}
     >
-      <p className="max-w-3xl text-sm text-ink-2">
-        You can choose the hours in which stop signs are judged. Outside them a pass is not judged at all: no row in the history, no picture, no clip, nothing on the Data page or in
-        the daily email. Vehicles are still counted at the counting lines and their trails still saved. Switch on one limit or both (a pass must then be inside both); with both off,
-        every pass is judged at every hour.
-      </p>
+      <HowItWorks>
+        <p>
+          Outside the hours a pass is not judged at all: no row in the history, no picture, no clip, nothing on the Data page or in the daily email. Vehicles are still counted at the
+          counting lines and their trails still saved.
+        </p>
+        <p>Switch on one limit or both (a pass must then be inside both); with both off, every pass is judged at every hour.</p>
+      </HowItWorks>
+
+      <section aria-label="What these hours mean" aria-busy={stale} className={cn("grid gap-3", stale && "opacity-60")}>
+        <p className="text-sm font-medium text-ink">{heading}</p>
+        <HoursTimeline line={strip} />
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <StatusBadge level={line.level}>{line.text}</StatusBadge>
+          {warning && <StatusBadge level="warning">{warning}</StatusBadge>}
+        </div>
+        {shown.limited && <p className="text-sm text-ink-2">Stop signs are judged only {shown.description}.</p>}
+        {shown.day && <p className="text-sm text-ink-3">{dayText(shown.day, shown.timezone)}</p>}
+      </section>
 
       <div className="grid gap-x-10 gap-y-6 md:grid-cols-2">
         <OptionGroup
@@ -183,7 +201,8 @@ function HoursForm({ state, apply }: { state: StopHoursState; apply: (next: Stop
           hint="From some minutes before sunrise to some minutes after sunset, where the camera is. It follows the seasons by itself, so the hours are longer in summer and shorter in winter."
         >
           <Switch label="Judge stop signs only in daylight" checked={draft.daylight} onChange={(daylight) => change({ daylight })} />
-          <div className="grid gap-3 border-l-2 border-edge pl-4">
+          <fieldset disabled={!draft.daylight} className={cn("grid gap-3 border-l-2 border-edge pl-4 transition-opacity", !draft.daylight && "opacity-50")}>
+            {!draft.daylight && <p className="text-sm text-ink-2">Off: these apply when the switch above is on.</p>}
             <div className="flex flex-wrap gap-4">
               <div>
                 <Label
@@ -268,7 +287,7 @@ function HoursForm({ state, apply }: { state: StopHoursState; apply: (next: Stop
                 />
               </div>
             </div>
-          </div>
+          </fieldset>
         </OptionGroup>
 
         <OptionGroup
@@ -281,31 +300,18 @@ function HoursForm({ state, apply }: { state: StopHoursState; apply: (next: Stop
           }
         >
           <Switch label="Judge stop signs only at set times" checked={draft.clock} onChange={(clock) => change({ clock })} />
-          <div className="grid gap-3 border-l-2 border-edge pl-4">
+          <fieldset disabled={!draft.clock} className={cn("grid gap-3 border-l-2 border-edge pl-4 transition-opacity", !draft.clock && "opacity-50")}>
+            {!draft.clock && <p className="text-sm text-ink-2">Off: these apply when the switch above is on.</p>}
             <ul aria-label="Ranges of hours" className="grid gap-2">
               {draft.ranges.map((range, index) => (
                 <li key={index} className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
                   <span className="flex items-center gap-2">
                     <span className="text-sm text-ink-2">From</span>
-                    <Input
-                      type="time"
-                      step={60}
-                      aria-label={`Range ${index + 1} from`}
-                      value={range.start}
-                      onChange={(event) => changeRange(index, { start: event.target.value })}
-                      className="w-32"
-                    />
+                    <TimeField aria-label={`Range ${index + 1} from`} value={range.start} onChange={(start) => changeRange(index, { start })} />
                   </span>
                   <span className="flex items-center gap-2">
                     <span className="text-sm text-ink-2">to</span>
-                    <Input
-                      type="time"
-                      step={60}
-                      aria-label={`Range ${index + 1} to`}
-                      value={range.end}
-                      onChange={(event) => changeRange(index, { end: event.target.value })}
-                      className="w-32"
-                    />
+                    <TimeField aria-label={`Range ${index + 1} to`} value={range.end} onChange={(end) => changeRange(index, { end })} />
                     <Button
                       type="button"
                       variant="ghost"
@@ -334,27 +340,13 @@ function HoursForm({ state, apply }: { state: StopHoursState; apply: (next: Stop
               <DayButtons days={draft.days} onChange={(days) => change({ days })} />
               {draft.days.length === 0 && <p className="text-sm text-critical">Pick at least one day.</p>}
             </OptionGroup>
-          </div>
+          </fieldset>
         </OptionGroup>
       </div>
 
-      <section aria-label="What these hours mean" aria-busy={stale} className={cn("grid gap-2 rounded-lg border border-edge bg-sunken p-4", stale && "opacity-60")}>
-        <h3 className="text-sm font-medium text-ink">{heading}</h3>
-        <div>
-          <StatusBadge level={line.level}>{line.text}</StatusBadge>
-        </div>
-        {shown.limited && <p className="text-sm text-ink-2">Stop signs are judged only {shown.description}.</p>}
-        {shown.day && <p className="text-sm text-ink-2">{dayText(shown.day, shown.timezone)}</p>}
-        {warning && (
-          <div>
-            <StatusBadge level="warning">{warning}</StatusBadge>
-          </div>
-        )}
-      </section>
-
       <div className="flex flex-wrap items-center gap-3">
         <Button type="submit" variant="primary" busy={busy} disabled={!dirty || problem !== null || busy}>
-          Save the hours
+          Save changes
         </Button>
         {problem !== null ? <StatusBadge level="critical">{problem}</StatusBadge> : dirty && <StatusBadge level="warning">Not saved yet</StatusBadge>}
         {outcome && (

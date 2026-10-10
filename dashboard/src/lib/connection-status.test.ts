@@ -35,7 +35,7 @@ describe("deriveStatus", () => {
       level: "warning",
       label: "Throttled",
       extra: "30 fps",
-      detail: "The CPU is being slowed down; it is running hot.",
+      detail: "The CPU is throttled; it is running hot.",
     });
   });
 

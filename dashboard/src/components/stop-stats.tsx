@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowDown, ArrowUp, CircleCheck, CircleDashed, CircleX, Minus, TriangleAlert, type LucideIcon } from "lucide-react";
+import { ArrowDown, ArrowUp, Minus } from "lucide-react";
 import { StackedChartCard } from "@/components/stacked-chart";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
+import { OUTCOME_ICON } from "@/components/ui/outcome-icon";
 import { ShareBar } from "@/components/ui/share-bar";
 import { cn } from "@/lib/cn";
 import { classLabel } from "@/lib/classes";
@@ -38,13 +39,6 @@ import { formatCount, hourRange } from "@/lib/format";
 import { OUTCOMES, OUTCOME_LABEL, signLabel } from "@/lib/stops";
 import type { Profile, StopOutcome, StopStats } from "@/lib/types";
 
-/** The outcomes' keys: the colours are reserved for them and are never alone. */
-export const OUTCOME_ICON: Record<StopOutcome, LucideIcon> = {
-  stopped: CircleCheck,
-  rolling: TriangleAlert,
-  did_not_stop: CircleX,
-  indeterminate: CircleDashed,
-};
 
 const plural = (n: number, one: string, many = `${one}s`) => `${formatCount(n)} ${n === 1 ? one : many}`;
 const percentOf = (part: number, whole: number) => (whole === 0 ? 0 : Math.round((part / whole) * 100));

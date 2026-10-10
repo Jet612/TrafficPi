@@ -149,79 +149,90 @@ describe("the schedule form", () => {
   });
 });
 
+// 20:30 on the evening of the 9th in New York, half an hour after FRIDAY_8PM
+const NOW = FRIDAY_8PM + 30 * 60_000;
+
 describe("what became of a recipient's last mail", () => {
   it("is nothing before anything was sent", () => {
-    expect(recipientResult(recipient(), ZONE)).toEqual({ level: "neutral", text: "Nothing has been sent to this address yet." });
+    expect(recipientResult(recipient(), ZONE, NOW)).toEqual({ level: "neutral", text: "Nothing has been sent to this address yet." });
   });
 
   it("says that a test or a daily mail was sent, and when, in the camera's zone", () => {
-    expect(recipientResult(recipient({ last_at: FRIDAY_8PM, last_kind: "test", last_status: "sent" }), ZONE)).toEqual({
+    expect(recipientResult(recipient({ last_at: FRIDAY_8PM, last_kind: "test", last_status: "sent" }), ZONE, NOW + 3 * 3_600_000)).toEqual({
       level: "good",
-      text: "The test mail was sent at 2026-10-09 20:00.",
+      text: "Test mail sent at 20:00.",
     });
-    expect(recipientResult(recipient({ last_at: FRIDAY_8PM, last_kind: "daily", last_status: "sent" }), "UTC").text).toBe("The daily mail was sent at 2026-10-10 00:00.");
+    expect(recipientResult(recipient({ last_at: FRIDAY_8PM, last_kind: "daily", last_status: "sent" }), "UTC", NOW).text).toBe("Daily mail sent 30 min ago.");
+    expect(recipientResult(recipient({ last_at: FRIDAY_8PM, last_kind: "daily", last_status: "sent" }), ZONE, NOW + 24 * 3_600_000).text).toBe("Daily mail sent yesterday at 20:00.");
   });
 
   it("gives the reason when it did not get through", () => {
-    const failed = recipientResult(recipient({ last_at: FRIDAY_8PM, last_kind: "test", last_status: "failed", last_detail: "Resend refused it (403): domain is not verified" }), ZONE);
+    const failed = recipientResult(recipient({ last_at: FRIDAY_8PM, last_kind: "test", last_status: "failed", last_detail: "Resend refused it (403): domain is not verified" }), ZONE, NOW + 3 * 3_600_000);
     expect(failed.level).toBe("critical");
-    expect(failed.text).toBe("The test mail did not get through at 2026-10-09 20:00. Resend refused it (403): domain is not verified");
+    expect(failed.text).toBe("Test mail did not get through at 20:00. Resend refused it (403): domain is not verified");
   });
 
   it("says that it will be tried again", () => {
-    const retrying = recipientResult(recipient({ last_at: FRIDAY_8PM, last_kind: "daily", last_status: "retrying", last_detail: "Could not reach Resend" }), ZONE);
+    const retrying = recipientResult(recipient({ last_at: FRIDAY_8PM, last_kind: "daily", last_status: "retrying", last_detail: "Could not reach Resend" }), ZONE, NOW);
     expect(retrying.level).toBe("warning");
     expect(retrying.text).toContain("tried again");
     expect(retrying.text).toContain("Could not reach Resend");
   });
 
   it("does not make up a reason", () => {
-    expect(recipientResult(recipient({ last_at: FRIDAY_8PM, last_kind: "daily", last_status: "failed" }), ZONE).text).toBe("The daily mail did not get through at 2026-10-09 20:00.");
+    expect(recipientResult(recipient({ last_at: FRIDAY_8PM, last_kind: "daily", last_status: "failed" }), ZONE, NOW + 3 * 3_600_000).text).toBe("Daily mail did not get through at 20:00.");
   });
 });
 
 describe("how a scheduled mail went", () => {
+  const later = FRIDAY_8PM + 3 * 3_600_000; // the same evening: the mail's time is told as a clock time
   it.each([
-    [{}, "good", "2026-10-09 20:00: sent to 3 of 3."],
-    [{ sent: 2, failed: 1 }, "critical", "2026-10-09 20:00: sent to 2 of 3, 1 failed."],
-    [{ sent: 1, pending: 2 }, "warning", "2026-10-09 20:00: being sent, 1 of 3 so far."],
-    [{ sent: 1, cancelled: 2 }, "neutral", "2026-10-09 20:00: sent to 1 of 3, the rest were stopped (the email was switched off)."],
-    [{ sent: 0, failed: 0, pending: 0, cancelled: 0 }, "neutral", "2026-10-09 20:00: there was nobody to send it to."],
+    [{}, "good", "20:00: sent to 3 of 3."],
+    [{ sent: 2, failed: 1 }, "critical", "20:00: sent to 2 of 3, 1 failed."],
+    [{ sent: 1, pending: 2 }, "warning", "20:00: being sent, 1 of 3 so far."],
+    [{ sent: 1, cancelled: 2 }, "neutral", "20:00: sent to 1 of 3, the rest were stopped (the email was switched off)."],
+    [{ sent: 0, failed: 0, pending: 0, cancelled: 0 }, "neutral", "20:00: there was nobody to send it to."],
   ] as const)("%j is %s", (over, level, text) => {
-    expect(sendSummary(send(over), ZONE)).toEqual({ level, text });
+    expect(sendSummary(send(over), ZONE, later)).toEqual({ level, text });
+  });
+
+  it("names the day when it was another one", () => {
+    expect(sendSummary(send(), ZONE, FRIDAY_8PM + 3 * 86_400_000).text).toBe("Fri, Oct 9, 20:00: sent to 3 of 3.");
   });
 
   it("says why a skipped one was skipped", () => {
-    expect(sendSummary(send({ status: "skipped", note: "Not sent: the Pi was not running.", sent: 0 }), ZONE)).toEqual({
+    expect(sendSummary(send({ status: "skipped", note: "Not sent: the Pi was not running.", sent: 0 }), ZONE, later)).toEqual({
       level: "warning",
-      text: "2026-10-09 20:00: not sent. Not sent: the Pi was not running.",
+      text: "20:00: not sent. Not sent: the Pi was not running.",
     });
   });
 });
 
 describe("the status of the email", () => {
   it("is off, and says what is missing before it could send", () => {
-    const off = statusLine(state({ schedule: { ...saved, enabled: false }, problems: ["No recipient has been added."], ready: false, next_at: null }));
+    const off = statusLine(state({ schedule: { ...saved, enabled: false }, problems: ["No recipient has been added."], ready: false, next_at: null }), NOW);
     expect(off).toEqual({ level: "neutral", short: "Off", text: "The daily email is off. Before it can send: No recipient has been added." });
-    expect(statusLine(state({ schedule: { ...saved, enabled: false }, next_at: null })).text).toBe("The daily email is off.");
+    expect(statusLine(state({ schedule: { ...saved, enabled: false }, next_at: null }), NOW).text).toBe("The daily email is off.");
   });
 
   it("is on but stuck, and says why", () => {
-    const stuck = statusLine(state({ problems: ["No API key is set."], ready: false }));
+    const stuck = statusLine(state({ problems: ["No API key is set."], ready: false }), NOW);
     expect(stuck).toEqual({ level: "warning", short: "Cannot send yet", text: "It is on, but it cannot send yet. No API key is set." });
   });
 
   it("is on, and says when the next one goes", () => {
-    expect(statusLine(state())).toEqual({
+    expect(statusLine(state({ next_at: FRIDAY_8PM + 4 * 3_600_000 }), NOW)).toEqual({
       level: "good",
       short: "On",
-      text: "On. The next one goes out 2026-10-09 20:00 (America/New_York).",
+      text: "On. The next one goes out tomorrow at 00:00.",
     });
-    expect(nextText(state({ next_at: null }))).toBe("");
+    expect(nextText(state({ next_at: FRIDAY_8PM + 2 * 3_600_000 }), NOW)).toBe("The next one goes out today at 22:00.");
+    expect(nextText(state({ next_at: FRIDAY_8PM + 3 * 86_400_000 }), NOW)).toBe("The next one goes out Mon, Oct 12 at 20:00.");
+    expect(nextText(state({ next_at: null }), NOW)).toBe("");
   });
 
   it("tells the System page the newest mail, or that none has been due", () => {
-    expect(lastMailLine(state()).text).toBe("No daily email has been due yet.");
-    expect(lastMailLine(state({ recent: [send({ failed: 1, sent: 2 }), send({ id: 0 })] })).level).toBe("critical");
+    expect(lastMailLine(state(), NOW).text).toBe("No daily email has been due yet.");
+    expect(lastMailLine(state({ recent: [send({ failed: 1, sent: 2 }), send({ id: 0 })] }), NOW).level).toBe("critical");
   });
 });

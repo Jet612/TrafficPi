@@ -84,7 +84,7 @@ export function driftLabel(drift: DriftStatus | null): string {
     case "drifted":
       return "Has moved";
     case "unknown":
-      return "Not sure yet";
+      return drift.unsure_because ? "Can't tell" : "Not sure yet";
     case "no_reference":
       return "No reference picture";
     default:
@@ -117,12 +117,20 @@ export function describeSize(drift: DriftStatus): string {
   return `${trimmed(Math.abs(scale - 1) * 100, 1)}% ${scale > 1 ? "bigger" : "smaller"}`;
 }
 
-/** When the check last looked, and when it last could tell, for the card's small print. */
+/**
+ * When the check last ran, and when it last could tell, for the card's one line of detail. Why it
+ * cannot tell is said once, by the line that goes with it (`describeReason`), not here too.
+ */
 export function describeChecks(drift: DriftStatus | null, nowMs: number): string {
   if (drift === null) return "The vision service is not checking the camera's view.";
   if (drift.checked_at === null) return "Not checked yet.";
-  const looked = `Last looked ${formatAgo(drift.checked_at, nowMs)}`;
-  if (drift.sure_at === null) return `${looked}; it could not tell.`;
-  if (drift.sure_at === drift.checked_at) return `${looked}.`;
-  return `${looked}; the last look that could tell was ${formatAgo(drift.sure_at, nowMs)}.`;
+  const checked = `Last checked ${formatAgo(drift.checked_at, nowMs)}`;
+  if (drift.sure_at === null || drift.sure_at === drift.checked_at) return `${checked}.`;
+  return `${checked}; the last check that could tell was ${formatAgo(drift.sure_at, nowMs)}.`;
+}
+
+/** Why the latest look could not tell, as a sentence of its own ("Too few features to compare: ..."); empty when it could. */
+export function describeReason(drift: DriftStatus | null): string {
+  const reason = drift?.unsure_because;
+  return reason ? `${reason.charAt(0).toUpperCase()}${reason.slice(1)}.` : "";
 }

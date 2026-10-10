@@ -17,8 +17,9 @@ export function DayButtons({ days, onChange }: { days: readonly number[]; onChan
             aria-label={WEEKDAYS[day]}
             onClick={() => onChange(toggleDay(days, day))}
             className={cn(
-              "h-9 min-w-12 rounded-lg border px-3 text-sm font-medium transition-colors",
-              on ? "border-accent bg-accent text-accent-ink" : "border-baseline bg-surface text-ink-2 hover:bg-sunken",
+              "h-9 min-w-12 rounded-lg border px-3 text-sm font-medium transition-colors pointer-coarse:h-10",
+              // The wash and edge that every selected thing has: solid blue is for the one primary action of a form.
+              on ? "border-accent bg-accent-wash text-ink" : "border-edge bg-surface text-ink-2 hover:bg-sunken",
             )}
           >
             {short}

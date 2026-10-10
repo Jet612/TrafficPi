@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { StatusBadge } from "@/components/ui/status";
 import { classSingular } from "@/lib/classes";
-import { formatDateTimeSeconds } from "@/lib/format";
+import { fullTimeText } from "@/lib/format";
+import type { SpeedUnits } from "@/lib/speed";
 import { OUTCOME_LABEL, OUTCOME_LEVEL, numbersText, passText } from "@/lib/stops";
 import type { ReviewState, StopOut } from "@/lib/types";
 
@@ -23,6 +24,7 @@ export function StopViewer({
   row,
   sign,
   zone,
+  units,
   busy,
   newer,
   older,
@@ -33,6 +35,7 @@ export function StopViewer({
   row: StopOut;
   sign: string;
   zone: string;
+  units: SpeedUnits;
   busy: boolean;
   newer: StopOut | null;
   older: StopOut | null;
@@ -46,10 +49,10 @@ export function StopViewer({
       <div className="grid gap-3">
         <p className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm">
           <time className="tabular-nums text-ink-2" dateTime={new Date(row.t).toISOString()}>
-            {formatDateTimeSeconds(row.t, zone)}
+            {fullTimeText(row.t, zone)}
           </time>
           <StatusBadge level={OUTCOME_LEVEL[row.outcome]}>{OUTCOME_LABEL[row.outcome]}</StatusBadge>
-          <span className="text-ink-3">{numbersText(row)}</span>
+          <span className="text-ink-3">{numbersText(row, units)}</span>
         </p>
 
         {row.clip_url !== null ? (
@@ -71,7 +74,7 @@ export function StopViewer({
           <img key={row.id} src={row.snapshot_url} alt={`Picture of the ${what}`} className="aspect-video w-full rounded-lg bg-black object-contain" />
         ) : (
           <p className="grid aspect-video w-full place-items-center rounded-lg border border-dashed border-edge px-6 text-center text-sm text-ink-2">
-            No picture or clip is kept of this pass. Evidence is kept only for the passes that need a look, only while it is switched on in the settings, and only for so long.
+            No picture or clip is kept of this pass. A picture and a clip are kept only of passes that need review, only while that is switched on in Setup, and only for so long.
           </p>
         )}
 

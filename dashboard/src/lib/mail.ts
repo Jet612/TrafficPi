@@ -1,4 +1,4 @@
-import { formatDateTime } from "./format";
+import { atText, momentText, whenText } from "./format";
 import type { MailRecipient, MailSchedule, MailSend, MailState } from "./types";
 
 /** How a state is told: an icon and words (see ui/status.tsx), never a colour alone. */
@@ -90,21 +90,21 @@ export function toggleDay(days: readonly number[], day: number): number[] {
 }
 
 /** What became of the last try with an address, in words. */
-export function recipientResult(recipient: MailRecipient, timeZone: string): { level: Level; text: string } {
+export function recipientResult(recipient: MailRecipient, timeZone: string, nowMs: number): { level: Level; text: string } {
   if (recipient.last_status === null || recipient.last_at === null) {
     return { level: "neutral", text: "Nothing has been sent to this address yet." };
   }
-  const what = recipient.last_kind === "test" ? "test mail" : "daily mail";
-  const when = formatDateTime(recipient.last_at, timeZone);
+  const what = recipient.last_kind === "test" ? "Test mail" : "Daily mail";
+  const when = atText(recipient.last_at, timeZone, nowMs);
   const why = recipient.last_detail ? ` ${recipient.last_detail}` : "";
-  if (recipient.last_status === "sent") return { level: "good", text: `The ${what} was sent at ${when}.` };
-  if (recipient.last_status === "retrying") return { level: "warning", text: `The ${what} did not get through at ${when}; it will be tried again.${why}` };
-  return { level: "critical", text: `The ${what} did not get through at ${when}.${why}` };
+  if (recipient.last_status === "sent") return { level: "good", text: `${what} sent ${when}.` };
+  if (recipient.last_status === "retrying") return { level: "warning", text: `${what} did not get through ${when}; it will be tried again.${why}` };
+  return { level: "critical", text: `${what} did not get through ${when}.${why}` };
 }
 
 /** How one scheduled mail went, in a line: when it was for, and who got it. */
-export function sendSummary(send: MailSend, timeZone: string): { level: Level; text: string } {
-  const when = formatDateTime(send.scheduled_at, timeZone);
+export function sendSummary(send: MailSend, timeZone: string, nowMs: number): { level: Level; text: string } {
+  const when = momentText(send.scheduled_at, timeZone, nowMs);
   if (send.status === "skipped") return { level: "warning", text: `${when}: not sent. ${send.note ?? ""}`.trim() };
   const total = send.sent + send.failed + send.pending + send.cancelled;
   if (total === 0) return { level: "neutral", text: `${when}: there was nobody to send it to.` };
@@ -114,24 +114,24 @@ export function sendSummary(send: MailSend, timeZone: string): { level: Level; t
   return { level: "good", text: `${when}: sent to ${send.sent} of ${total}.` };
 }
 
-/** When the next one goes, or an empty text if none is due. */
-export function nextText(state: MailState): string {
-  return state.next_at === null ? "" : `The next one goes out ${formatDateTime(state.next_at, state.timezone)} (${state.timezone}).`;
+/** When the next one goes ("The next one goes out tomorrow at 00:01."), or an empty text if none is due. */
+export function nextText(state: MailState, nowMs: number): string {
+  return state.next_at === null ? "" : `The next one goes out ${whenText(state.next_at, nowMs, state.timezone)}.`;
 }
 
 /** Whether the email is on, off or stuck, in a word and in a sentence. */
-export function statusLine(state: MailState): { level: Level; short: string; text: string } {
+export function statusLine(state: MailState, nowMs: number): { level: Level; short: string; text: string } {
   const missing = state.problems.join(" ");
   if (!state.schedule.enabled) {
     return { level: "neutral", short: "Off", text: missing ? `The daily email is off. Before it can send: ${missing}` : "The daily email is off." };
   }
   if (state.problems.length > 0) return { level: "warning", short: "Cannot send yet", text: `It is on, but it cannot send yet. ${missing}` };
-  const next = nextText(state);
+  const next = nextText(state, nowMs);
   return { level: "good", short: "On", text: next ? `On. ${next}` : "On." };
 }
 
 /** The newest scheduled mail as a line, for the System page; none yet is said as that. */
-export function lastMailLine(state: MailState): { level: Level; text: string } {
+export function lastMailLine(state: MailState, nowMs: number): { level: Level; text: string } {
   const newest = state.recent[0];
-  return newest === undefined ? { level: "neutral", text: "No daily email has been due yet." } : sendSummary(newest, state.timezone);
+  return newest === undefined ? { level: "neutral", text: "No daily email has been due yet." } : sendSummary(newest, state.timezone, nowMs);
 }

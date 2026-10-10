@@ -6,12 +6,14 @@ import {
   describeEpisode,
   flagNames,
   frameRateDomain,
+  episodeSummary,
   hasRecord,
   healthRows,
   minutesText,
   periodHours,
   summaryTiles,
   temperatureDomain,
+  trimLeadingGap,
   valueTicks,
 } from "./health";
 import type { HealthEpisode, HealthPoint, SystemHistory } from "./types";
@@ -57,17 +59,20 @@ describe("the rows of the chart", () => {
   it("label a short period by the clock and a long one by the date as well, in the camera's zone", () => {
     expect(healthRows(history())[0]?.label).toBe("14:00");
     const week = history({ from_s: T0, to_s: T0 + 7 * 86_400, bucket_s: 3600, points: [point(T0)] });
-    expect(healthRows(week)[0]?.label).toBe("10-09 14:00");
+    expect(healthRows(week)[0]?.label).toBe("Oct 9 14:00");
     expect(healthRows(history({ timezone: "UTC", points: [point(T0)] }))[0]?.label).toBe("18:00");
   });
 
   it("title a minute by its time and a longer stretch by its range, with the date again when it crosses midnight", () => {
-    expect(healthRows(history())[0]?.title).toBe("2026-10-09 14:00");
+    expect(healthRows(history())[0]?.title).toBe("Fri, Oct 9, 14:00");
     const coarse = history({ bucket_s: 600, points: [point(T0)] });
-    expect(healthRows(coarse)[0]?.title).toBe("2026-10-09 14:00–14:10");
+    expect(healthRows(coarse)[0]?.title).toBe("Fri, Oct 9, 14:00–14:10");
     const midnight = Date.UTC(2026, 9, 10, 3, 55) / 1000; // 23:55 in New York
     const across = history({ bucket_s: 600, points: [point(midnight)] });
-    expect(healthRows(across)[0]?.title).toBe("2026-10-09 23:55–2026-10-10 00:05");
+    expect(healthRows(across)[0]?.title).toBe("Fri, Oct 9, 23:55–Sat, Oct 10, 00:05");
+    // The year is said only when the record is not from this year.
+    const old = history({ to_s: Date.UTC(2027, 0, 5) / 1000, points: [point(T0)] });
+    expect(healthRows(old)[0]?.title).toBe("Fri, Oct 9, 2026, 14:00");
   });
 
   it("keep a stretch with nothing recorded as nothing, not as zero", () => {
@@ -139,13 +144,13 @@ describe("the time axis", () => {
 
   it("is marked at the start of each day for a week, with the date, thinned for a month", () => {
     const week = stretches(T0 - 14 * 3600 + 3600, 168, 3600, "America/New_York"); // 01:00 on the 9th, a week of hours
-    expect(axisTicks(week, "America/New_York")).toEqual(["10-10 00:00", "10-11 00:00", "10-12 00:00", "10-13 00:00", "10-14 00:00", "10-15 00:00", "10-16 00:00"]);
+    expect(axisTicks(week, "America/New_York")).toEqual(["Oct 10 00:00", "Oct 11 00:00", "Oct 12 00:00", "Oct 13 00:00", "Oct 14 00:00", "Oct 15 00:00", "Oct 16 00:00"]);
     const month = stretches(T0 - 14 * 3600 + 3600, 180, 4 * 3600, "America/New_York"); // 30 days in four-hour stretches
     const ticks = axisTicks(month, "America/New_York");
     expect(ticks.length).toBeLessThanOrEqual(8);
     expect(ticks.length).toBeGreaterThanOrEqual(4);
-    expect(ticks.every((tick) => Number(tick.slice(6, 8)) < 4)).toBe(true); // each is the first four-hour stretch of its day
-    expect(new Set(ticks.map((tick) => tick.slice(0, 5))).size).toBe(ticks.length); // on different days
+    expect(ticks.every((tick) => Number(tick.split(" ")[2]?.slice(0, 2)) < 4)).toBe(true); // each is the first four-hour stretch of its day
+    expect(new Set(ticks.map((tick) => tick.slice(0, 6))).size).toBe(ticks.length); // on different days
   });
 
   it("follows the camera's clock: the same instants give other labels in another zone", () => {
@@ -193,70 +198,114 @@ describe("how long", () => {
 describe("the episodes", () => {
   const base: HealthEpisode = { kind: "slowed", from_s: T0, to_s: T0 + 7 * 60, ongoing: false, peak_temp_c: 84.24 };
 
-  it("tell a slowdown with the temperature it reached", () => {
-    const text = describeEpisode(base, "America/New_York");
-    expect(text).toMatchObject({ level: "warning", title: "Slowed itself down", when: "2026-10-09 14:00 to 14:07 (7 min)" });
-    expect(text.detail).toContain("Up to 84.2 °C");
+  it("tell a slowdown as a row: when, how long and how hot", () => {
+    const row = describeEpisode(base, "America/New_York");
+    expect(row).toMatchObject({ level: "warning", title: "Throttled", date: "Fri, Oct 9", start: "14:00", end: "14:07", duration: "7 min", peak: "84.2 °C", ongoing: false });
   });
 
-  it("leave out the temperature when there is none", () => {
-    expect(describeEpisode({ ...base, peak_temp_c: null }, "UTC").detail).not.toContain("°C");
+  it("make a slowdown that reached the hard limit serious", () => {
+    expect(describeEpisode({ ...base, peak_temp_c: 85.9 }, "UTC").level).toBe("critical");
+    expect(describeEpisode({ ...base, peak_temp_c: 84.9 }, "UTC").level).toBe("warning");
   });
 
-  it("say 'until now' while it is still going on", () => {
-    expect(describeEpisode({ ...base, ongoing: true }, "America/New_York").when).toBe("2026-10-09 14:00 until now (7 min so far)");
+  it("leave out the temperature when there is none, and for what is not a slowdown", () => {
+    expect(describeEpisode({ ...base, peak_temp_c: null }, "UTC").peak).toBeNull();
+    expect(describeEpisode({ ...base, kind: "no-data", peak_temp_c: 70 }, "UTC").peak).toBeNull();
   });
 
-  it("give the date again when it ends on another day", () => {
+  it("say 'so far' and have no end while it is still going on", () => {
+    expect(describeEpisode({ ...base, ongoing: true }, "America/New_York")).toMatchObject({ end: null, duration: "7 min so far", ongoing: true });
+  });
+
+  it("give the day again when it ends on another day", () => {
     const night = Date.UTC(2026, 9, 10, 3, 50) / 1000; // 23:50 in New York
-    const text = describeEpisode({ ...base, from_s: night, to_s: night + 20 * 60 }, "America/New_York");
-    expect(text.when).toBe("2026-10-09 23:50 to 2026-10-10 00:10 (20 min)");
+    const row = describeEpisode({ ...base, from_s: night, to_s: night + 20 * 60 }, "America/New_York");
+    expect(row).toMatchObject({ date: "Fri, Oct 9", start: "23:50", end: "Sat, Oct 10, 00:10", duration: "20 min" });
   });
 
   it("tell each kind with its own level: a weak supply and a slowdown warn, a camera that is away is serious, a hole is only told", () => {
     const kinds = (["slowed", "under-voltage", "camera-offline", "no-data"] as const).map((kind) => describeEpisode({ ...base, kind }, "UTC"));
-    expect(kinds.map((text) => text.level)).toEqual(["warning", "warning", "critical", "neutral"]);
-    expect(new Set(kinds.map((text) => text.title)).size).toBe(4);
-    expect(kinds[3]?.detail).toContain("not running");
+    expect(kinds.map((row) => row.level)).toEqual(["warning", "warning", "critical", "neutral"]);
+    expect(kinds.map((row) => row.title)).toEqual(["Throttled", "Weak power", "Camera not working", "Nothing recorded"]);
   });
 
   it("have a key of their own each", () => {
     expect(describeEpisode(base, "UTC").key).not.toBe(describeEpisode({ ...base, kind: "under-voltage" }, "UTC").key);
     expect(describeEpisode(base, "UTC").key).not.toBe(describeEpisode({ ...base, from_s: T0 + 600 }, "UTC").key);
   });
+
+  it("are summed up in one line, by kind: how many, how long, how hot", () => {
+    const slow = (from: number, minutes: number, peak: number): HealthEpisode => ({ kind: "slowed", from_s: from, to_s: from + minutes * 60, ongoing: false, peak_temp_c: peak });
+    expect(episodeSummary([])).toBe("");
+    expect(episodeSummary([slow(T0, 7, 84.2)])).toBe("Throttled once, 7 min, up to 84.2 °C");
+    expect(episodeSummary([slow(T0, 40, 83.1), slow(T0 + 3600, 60, 85.9), { ...base, kind: "camera-offline", from_s: T0 + 7200, to_s: T0 + 7200 + 480 }])).toBe(
+      "Throttled 2 times, 1 h 40 min in all, up to 85.9 °C · Camera not working once, 8 min",
+    );
+  });
+});
+
+describe("the empty start of a record", () => {
+  it("is cut off, so that a record that began this afternoon does not have a chart that is empty until then", () => {
+    const rows = healthRows(
+      history({ points: [point(T0, { minutes: 0, temp_c: null, cpu_percent: null, fps: null, fps_min: null, camera_up_percent: null }), point(T0 + 60), point(T0 + 120)] }),
+    );
+    expect(trimLeadingGap(rows).map((row) => row.t)).toEqual([T0 + 60, T0 + 120]);
+  });
+
+  it("keeps everything when the record begins at once, and a gap in the middle", () => {
+    const rows = healthRows(history());
+    expect(trimLeadingGap(rows)).toHaveLength(3);
+  });
+
+  it("is empty when nothing was recorded", () => {
+    const rows = healthRows(history({ points: [point(T0, { minutes: 0, temp_c: null })] }));
+    expect(trimLeadingGap(rows)).toHaveLength(1); // kept whole: with nothing recorded there is nothing to cut to
+  });
 });
 
 describe("the numbers over the charts", () => {
-  it("tell the hottest minute, how long it slowed down, the camera and how much was recorded", () => {
-    const tiles = summaryTiles({ minutes: 1380, temp_c_max: 83.46, camera_up_percent: 99.74, slowed_minutes: 12, under_voltage_minutes: 1 }, { from_s: T0, to_s: T0 + 86_400 });
+  const sums = (over: Partial<SystemHistory["summary"]> = {}) => ({ minutes: 10, temp_c_max: 60, camera_up_percent: 100, slowed_minutes: 0, under_voltage_minutes: 0, ...over });
+  const span = { from_s: T0, to_s: T0 + 600, episodes: [] as HealthEpisode[] };
+  const slowed = (n: number): HealthEpisode[] => Array.from({ length: n }, (_, i) => ({ kind: "slowed", from_s: T0 + i * 600, to_s: T0 + i * 600 + 300, ongoing: false, peak_temp_c: 82 }));
+
+  it("tell the hottest minute, how long it was throttled, the camera's uptime and how much was monitored", () => {
+    const tiles = summaryTiles(
+      { minutes: 1380, temp_c_max: 83.46, camera_up_percent: 99.74, slowed_minutes: 12, under_voltage_minutes: 1 },
+      { from_s: T0, to_s: T0 + 86_400, episodes: slowed(3) },
+    );
     expect(tiles.map((tile) => [tile.label, tile.value])).toEqual([
       ["Hottest", "83.5 °C"],
-      ["Slowed down", "12 min"],
-      ["Camera working", "99.7%"],
-      ["Recorded", "1,380 min"],
+      ["Throttled", "12 min"],
+      ["Camera uptime", "99.7%"],
+      ["Monitored", "23 h 00 min"],
     ]);
-    expect(tiles[0]?.flag).toEqual({ level: "warning", text: "past 80 °C, where the Pi slows itself down" }); // 83.5 is past the soft limit
-    expect(tiles[1]).toMatchObject({ flag: { level: "warning", text: "listed below" }, note: "and 1 min of weak power supply" });
-    expect(tiles[3]?.note).toBe("a reading each minute, 96% of the period");
+    expect(tiles[0]?.flag).toEqual({ level: "warning", text: "past 80 °C: throttles" }); // 83.5 is past the soft limit
+    expect(tiles[1]).toMatchObject({ note: "and 1 min of weak power" });
+    expect(tiles[1]?.flag).toEqual({ level: "warning", text: "See 3 events", href: "#health-episodes" });
+    expect(tiles[3]?.note).toBe("96% of the period");
+  });
+
+  it("point to the one event in the singular", () => {
+    const tiles = summaryTiles(sums({ slowed_minutes: 5 }), { ...span, episodes: slowed(1) });
+    expect(tiles[1]?.flag?.text).toBe("See 1 event");
   });
 
   it("call a reading of 80 degrees a warning and one of 85 serious, as the System page does", () => {
-    const at = (temp_c_max: number) =>
-      summaryTiles({ minutes: 10, temp_c_max, camera_up_percent: 100, slowed_minutes: 0, under_voltage_minutes: 0 }, { from_s: T0, to_s: T0 + 600 });
+    const at = (temp_c_max: number) => summaryTiles(sums({ temp_c_max }), span);
     expect(at(79.9)[0]?.flag).toBeUndefined();
     expect(at(81)[0]?.flag).toMatchObject({ level: "warning" });
-    expect(at(85)[0]?.flag).toMatchObject({ level: "critical" });
+    expect(at(85)[0]?.flag).toEqual({ level: "critical", text: "past 85 °C: throttles hard" });
     expect(at(81)[1]).toMatchObject({ value: "never", flag: undefined });
   });
 
   it("say nothing where nothing was recorded", () => {
-    const tiles = summaryTiles({ minutes: 0, temp_c_max: null, camera_up_percent: null, slowed_minutes: 0, under_voltage_minutes: 0 }, { from_s: T0, to_s: T0 + 600 });
+    const tiles = summaryTiles(sums({ minutes: 0, temp_c_max: null, camera_up_percent: null }), span);
     expect(tiles.map((tile) => tile.value)).toEqual(["–", "never", "–", "0 min"]);
   });
 
-  it("never claim more than the whole period was recorded", () => {
-    const tiles = summaryTiles({ minutes: 9_999, temp_c_max: 60, camera_up_percent: 100, slowed_minutes: 0, under_voltage_minutes: 0 }, { from_s: T0, to_s: T0 + 600 });
-    expect(tiles[3]?.note).toContain("100% of the period");
+  it("never claim more than the whole period was monitored", () => {
+    const tiles = summaryTiles(sums({ minutes: 9_999 }), span);
+    expect(tiles[3]?.note).toBe("100% of the period");
   });
 
   it("know whether there is a record at all", () => {

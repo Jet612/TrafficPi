@@ -1,5 +1,5 @@
 import { classColor, classLabel, orderedClasses } from "./classes";
-import { hourLabel, hourRange } from "./format";
+import { dayText, hourLabel, hourRange, shortDayText } from "./format";
 import { SIZE_METRES, inUnits } from "./speed";
 import { OUTCOMES, OUTCOME_LABEL } from "./stops";
 import type { StopOutcome, StopStats, TrafficStats } from "./types";
@@ -157,27 +157,14 @@ export function speedText(sizesPerSecond: number, units: "mph" | "kmh"): string 
 
 // --- days ----------------------------------------------------------------------------------------
 
-const DATE_PARTS = /^(\d{4})-(\d{2})-(\d{2})$/;
-
-/** A local date like "2026-10-09" as an instant at noon UTC, so that no zone can move it to another day. */
-function dateOf(date: string): Date | null {
-  const match = DATE_PARTS.exec(date);
-  return match ? new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12)) : null;
-}
-
-const SHORT_DAY = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", month: "short", day: "numeric" });
-const LONG_DAY = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "short", month: "short", day: "numeric", year: "numeric" });
-
 /** "Oct 9": the label of a column of the daily chart. */
 export function dayLabel(date: string): string {
-  const moment = dateOf(date);
-  return moment ? SHORT_DAY.format(moment) : date;
+  return shortDayText(date);
 }
 
-/** "Fri, Oct 9, 2026": a day in full. */
+/** "Fri, Oct 9, 2026": a day in full (a day of a chart or a table says its year, which the chart's own range does not). */
 export function dayTitle(date: string): string {
-  const moment = dateOf(date);
-  return moment ? LONG_DAY.format(moment) : date;
+  return dayText(date, -1);
 }
 
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] as const;

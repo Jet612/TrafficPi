@@ -1,4 +1,4 @@
-import { formatDateTime } from "./format";
+import { dayText as dateText, formatDateTime, localDate, whenText } from "./format";
 import type { StatusLevel } from "@/components/ui/status";
 import type { StopHoursConfig, StopHoursDay, StopHoursStatus } from "./types";
 
@@ -145,32 +145,11 @@ export function removeRange(ranges: readonly RangeDraft[], index: number): Range
 
 // --- in words ---------------------------------------------------------------------------------
 
-/** "2026-10-09" for the date of an instant by a zone's clock. */
-function dateKey(ms: number, timeZone: string): string {
-  return formatDateTime(ms, timeZone).slice(0, 10);
-}
+export { whenText };
 
-function nextDateKey(key: string): string {
-  const [year, month, day] = key.split("-").map(Number);
-  return new Date(Date.UTC(year ?? 1970, (month ?? 1) - 1, (day ?? 1) + 1)).toISOString().slice(0, 10);
-}
-
-/** "Fri 9 Oct": a date, written as the year-month-day it is, with no zone in it. */
-function dateWords(date: string): string {
-  const [year, month, day] = date.split("-").map(Number);
-  const at = new Date(Date.UTC(year ?? 1970, (month ?? 1) - 1, day ?? 1));
-  const part = (options: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", ...options }).format(at);
-  return `${part({ weekday: "short" })} ${part({ day: "numeric" })} ${part({ month: "short" })}`;
-}
-
-/** An instant as "today at 18:55", "tomorrow at 06:32" or "Mon 12 Oct at 07:00", by the camera's clock. */
-export function whenText(ms: number, nowMs: number, timeZone: string): string {
-  const key = dateKey(ms, timeZone);
-  const today = dateKey(nowMs, timeZone);
-  const clock = formatDateTime(ms, timeZone).slice(11);
-  if (key === today) return `today at ${clock}`;
-  if (key === nextDateKey(today)) return `tomorrow at ${clock}`;
-  return `${dateWords(key)} at ${clock}`;
+/** The same instant for a chip that says until when: "06:45" later today, "tomorrow 06:45", "Mon, Oct 12 07:00". */
+function untilText(ms: number, nowMs: number, timeZone: string): string {
+  return whenText(ms, nowMs, timeZone).replace(/^today at /, "").replace(" at ", " ");
 }
 
 function clockOf(ms: number, timeZone: string): string {
@@ -179,7 +158,7 @@ function clockOf(ms: number, timeZone: string): string {
 
 /** What the sun does today at the place, in a sentence, and the window around it. */
 export function dayText(day: StopHoursDay, timeZone: string): string {
-  const today = `Today (${dateWords(day.date)})`;
+  const today = `Today (${dateText(day.date, Number(day.date.slice(0, 4)))})`; // today is always in this year
   if (day.polar === "day") return `${today} the sun does not set at this place, so all of it is daylight.`;
   if (day.polar === "night") return `${today} the sun does not rise at this place, so there is no daylight.`;
   if (day.sunrise === null || day.sunset === null) return "";
@@ -217,11 +196,141 @@ export function statusText(status: StopHoursStatus): { level: StatusLevel; text:
   };
 }
 
-/** A line for the pages that show the passes: which hours they are judged in, and where that stands now. Null when every hour counts. */
-export function noteText(status: StopHoursStatus): string | null {
+/**
+ * The few words for the pages that show the passes: whether stop signs are being judged now and until
+ * when ("Judging paused until 06:45"). Null when every hour counts. Which hours they are is on the
+ * Setup page, a link away, and `description` (the whole sentence of it) is the chip's tooltip.
+ */
+export function chipText(status: StopHoursStatus): { text: string; judging: boolean; title: string } | null {
   if (!status.limited) return null;
-  const when = status.next_change === null ? null : whenText(status.next_change, status.now, status.timezone);
-  const only = `Stop signs are judged only ${status.description}.`;
-  if (status.judging) return when === null ? only : `${only} Judging pauses ${when}.`;
-  return when === null ? `${only} They are paused now.` : `${only} They are paused now and resume ${when}.`;
+  const until = status.next_change === null ? null : untilText(status.next_change, status.now, status.timezone);
+  const title = `Stop signs are judged only ${status.description}.`;
+  if (status.judging) return { text: until === null ? "Judging now" : `Judging until ${until}`, judging: true, title };
+  return { text: until === null ? "Judging paused" : `Judging paused until ${until}`, judging: false, title };
+}
+
+// --- the day as a strip ---------------------------------------------------------------------------
+
+/** A stretch of the day in minutes after midnight on the camera's clock (0 to 1440), `to` after `from`. */
+export interface Segment {
+  from: number;
+  to: number;
+}
+
+export const DAY_MINUTES = 1440;
+
+/** The minutes after local midnight of an instant, by a zone's clock. */
+export function minutesOfDay(ms: number, timeZone: string): number {
+  const text = formatDateTime(ms, timeZone); // "2026-10-09 14:05"
+  return Number(text.slice(11, 13)) * 60 + Number(text.slice(14, 16));
+}
+
+const minutesOf = (time: string): number => Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5));
+
+/** Segments in order, with those that overlap or touch joined, and any of no length dropped. */
+export function mergeSegments(segments: readonly Segment[]): Segment[] {
+  const sorted = segments.filter((one) => one.to > one.from).sort((a, b) => a.from - b.from);
+  const merged: Segment[] = [];
+  for (const one of sorted) {
+    const last = merged.at(-1);
+    if (last !== undefined && one.from <= last.to) last.to = Math.max(last.to, one.to);
+    else merged.push({ ...one });
+  }
+  return merged;
+}
+
+/** Where two sets of segments are both: what is in the daylight window and in the set times. */
+export function intersectSegments(a: readonly Segment[], b: readonly Segment[]): Segment[] {
+  const found: Segment[] = [];
+  for (const x of mergeSegments(a)) {
+    for (const y of mergeSegments(b)) {
+      const from = Math.max(x.from, y.from);
+      const to = Math.min(x.to, y.to);
+      if (to > from) found.push({ from, to });
+    }
+  }
+  return found;
+}
+
+/** 0 for Monday, as the days of the limit are numbered, of a date like "2026-10-09". */
+function weekdayOf(date: string): number {
+  const [year, month, day] = date.split("-").map(Number);
+  return (new Date(Date.UTC(year ?? 1970, (month ?? 1) - 1, day ?? 1)).getUTCDay() + 6) % 7;
+}
+
+/** What the limits come to on one day, to draw: each limit's own stretches, the stretches that are judged, and where "now" is. */
+export interface Timeline {
+  /** The daylight window of today, or null when that limit is off. */
+  daylight: Segment[] | null;
+  sunrise: number | null;
+  sunset: number | null;
+  /** The set times that fall today (a range through midnight is in two days), or null when that limit is off. */
+  setTimes: Segment[] | null;
+  /** Where a pass is judged: inside every limit that is on, and all day when none is. */
+  judged: Segment[];
+  /** Minutes after midnight now, on the camera's clock. */
+  now: number;
+}
+
+/**
+ * The limits of a setting on the day `status` is about, as stretches of that day. The sun's times come
+ * from the server's answer for the place (`status.day`); the set times are worked out here from the
+ * setting itself, on the weekday of that day.
+ */
+export function timeline(status: StopHoursStatus, config: StopHoursConfig): Timeline {
+  const zone = status.timezone;
+  const day = status.day;
+  const date = day?.date ?? localDate(status.now, zone);
+  let daylight: Segment[] | null = null;
+  let sunrise: number | null = null;
+  let sunset: number | null = null;
+  if (config.daylight) {
+    if (day === null || day.polar === "night" || day.start === null || day.end === null) {
+      daylight = []; // no place yet, the sun does not rise, or the margins leave no window
+    } else {
+      // A window that began the evening before (or ends after midnight) has only today's part on today's strip.
+      const from = localDate(day.start, zone) < date ? 0 : minutesOfDay(day.start, zone);
+      const to = localDate(day.end, zone) > date ? DAY_MINUTES : minutesOfDay(day.end, zone);
+      daylight = mergeSegments([{ from, to }]);
+    }
+    if (day?.polar === "day") daylight = [{ from: 0, to: DAY_MINUTES }];
+    if (day?.sunrise != null && localDate(day.sunrise, zone) === date) sunrise = minutesOfDay(day.sunrise, zone);
+    if (day?.sunset != null && localDate(day.sunset, zone) === date) sunset = minutesOfDay(day.sunset, zone);
+  }
+  let setTimes: Segment[] | null = null;
+  if (config.clock) {
+    const weekday = weekdayOf(date);
+    const today = config.days.includes(weekday);
+    const yesterday = config.days.includes((weekday + 6) % 7);
+    const found: Segment[] = [];
+    for (const range of config.ranges) {
+      const from = minutesOf(range.start);
+      const to = minutesOf(range.end);
+      if (from < to) {
+        if (today) found.push({ from, to });
+      } else if (from > to) {
+        if (today) found.push({ from, to: DAY_MINUTES });
+        if (yesterday) found.push({ from: 0, to }); // the end of a range that began yesterday evening
+      }
+    }
+    setTimes = mergeSegments(found);
+  }
+  const judged =
+    daylight !== null && setTimes !== null
+      ? intersectSegments(daylight, setTimes)
+      : daylight ?? setTimes ?? [{ from: 0, to: DAY_MINUTES }];
+  return { daylight, sunrise, sunset, setTimes, judged, now: minutesOfDay(status.now, zone) };
+}
+
+/** "06:45", for minutes after midnight. */
+export function clockText(minutes: number): string {
+  const whole = Math.max(0, Math.min(DAY_MINUTES, Math.round(minutes)));
+  return `${String(Math.floor(whole / 60) % 24).padStart(2, "0")}:${String(whole % 60).padStart(2, "0")}`;
+}
+
+/** The stretches as words, for a screen reader and a tooltip: "06:45 to 19:10, 21:00 to 23:00", or "nowhere today". */
+export function segmentsText(segments: readonly Segment[]): string {
+  if (segments.length === 0) return "none today";
+  if (segments.length === 1 && segments[0]?.from === 0 && segments[0].to === DAY_MINUTES) return "all day";
+  return segments.map((one) => `${clockText(one.from)} to ${clockText(one.to)}`).join(", ");
 }

@@ -2,7 +2,8 @@
 
 import { useId, useMemo, useState } from "react";
 import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis, type TooltipContentProps } from "recharts";
-import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardBody, CardHeader, CardSubtitle, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Segmented } from "@/components/ui/segmented";
 import { StatTile } from "@/components/ui/stat";
 import { StatusBadge } from "@/components/ui/status";
@@ -10,9 +11,11 @@ import { api } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import {
   DEFAULT_HEALTH_PERIOD,
+  EPISODE_MEANING,
   HEALTH_PERIODS,
   axisTicks,
   describeEpisode,
+  episodeSummary,
   flagNames,
   frameRateDomain,
   hasRecord,
@@ -20,7 +23,9 @@ import {
   periodHours,
   summaryTiles,
   temperatureDomain,
+  trimLeadingGap,
   valueTicks,
+  type EpisodeRow,
   type HealthPeriod,
   type HealthRow,
 } from "@/lib/health";
@@ -50,7 +55,10 @@ export function HealthCard() {
   const history = useRequest(key, (signal) => api.systemHistory(hours, signal), { refreshMs: REFRESH_MS });
   const data = history.data;
   const busy = data !== null && history.answeredKey !== key; // the numbers on show are being replaced
-  const rows = useMemo(() => (data ? healthRows(data) : []), [data]);
+  const allRows = useMemo(() => (data ? healthRows(data) : []), [data]);
+  // A record that began this afternoon has no chart that is empty until then: it starts where the record does.
+  const rows = useMemo(() => trimLeadingGap(allRows), [allRows]);
+  const trimmed = allRows.length - rows.length;
   const recorded = data !== null && hasRecord(data);
 
   return (
@@ -58,7 +66,7 @@ export function HealthCard() {
       <CardHeader>
         <div>
           <CardTitle>Health over time</CardTitle>
-          <p className="mt-0.5 text-sm text-ink-2">A reading of the machine every minute, kept for 30 days: temperature, frame rate and the Pi&rsquo;s own warnings.</p>
+          <CardSubtitle>A reading of the machine every minute, kept for 30 days.</CardSubtitle>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Segmented
@@ -92,10 +100,18 @@ export function HealthCard() {
             <dl className="grid grid-cols-2 gap-3 xl:grid-cols-4" aria-label="This period in numbers">
               {summaryTiles(data.summary, data).map((tile) => (
                 <StatTile key={tile.label} label={tile.label} value={tile.value} note={tile.note} wrap>
-                  {tile.flag && <StatusBadge level={tile.flag.level}>{tile.flag.text}</StatusBadge>}
+                  {tile.flag &&
+                    (tile.flag.href ? (
+                      <a href={tile.flag.href} className="inline-block rounded-lg underline-offset-2 hover:underline">
+                        <StatusBadge level={tile.flag.level}>{tile.flag.text}</StatusBadge>
+                      </a>
+                    ) : (
+                      <StatusBadge level={tile.flag.level}>{tile.flag.text}</StatusBadge>
+                    ))}
                 </StatTile>
               ))}
             </dl>
+            {trimmed > 0 && rows[0] && <p className="text-sm text-ink-3">The record begins {rows[0].title}; the time before it is left off the charts.</p>}
             {view === "chart" ? <Charts rows={rows} timeZone={data.timezone} /> : <HistoryTable rows={rows} />}
             <Episodes data={data} />
           </>
@@ -117,7 +133,7 @@ function Charts({ rows, timeZone }: { rows: HealthRow[]; timeZone: string }) {
         domain={temperatureDomain(rows)}
         lines={[{ key: "temp", label: "Hottest minute", color: "var(--series-2)" }]}
         limits={[
-          { y: 80, label: "slows down", color: "var(--warning)" },
+          { y: 80, label: "throttles", color: "var(--warning)" },
           { y: 85, label: "throttles hard", color: "var(--critical)" },
         ]}
       />
@@ -166,14 +182,24 @@ function TrendChart({
         <span className="font-medium text-ink">
           {title} <span className="font-normal text-ink-2">({unit})</span>
         </span>
-        {lines.length > 1 && (
+        {(lines.length > 1 || limits.length > 0) && (
           <ul className="flex flex-wrap gap-x-4 text-ink-2" aria-label="Key">
-            {lines.map((line) => (
-              <li key={line.key} className="inline-flex items-center gap-1.5">
+            {lines.length > 1 &&
+              lines.map((line) => (
+                <li key={line.key} className="inline-flex items-center gap-1.5">
+                  <svg width="18" height="6" aria-hidden="true">
+                    <line x1="0" y1="3" x2="18" y2="3" stroke={line.color} strokeWidth="2" strokeDasharray={line.dashed ? "5 3" : undefined} />
+                  </svg>
+                  {line.label}
+                </li>
+              ))}
+            {/* The limits are named here, at a size that reads, instead of on the lines, where two labels five degrees apart ran into each other. */}
+            {limits.map((limit) => (
+              <li key={limit.y} className="inline-flex items-center gap-1.5">
                 <svg width="18" height="6" aria-hidden="true">
-                  <line x1="0" y1="3" x2="18" y2="3" stroke={line.color} strokeWidth="2" strokeDasharray={line.dashed ? "5 3" : undefined} />
+                  <line x1="0" y1="3" x2="18" y2="3" stroke={limit.color} strokeWidth="2" strokeDasharray="4 3" />
                 </svg>
-                {line.label}
+                {limit.y} {unit} {limit.label}
               </li>
             ))}
           </ul>
@@ -195,7 +221,6 @@ function TrendChart({
                 y={limit.y}
                 stroke={limit.color}
                 strokeDasharray="4 4"
-                label={{ value: `${limit.y} ${unit}, ${limit.label}`, position: "insideTopLeft", fill: "var(--ink-2)", fontSize: 11 }}
               />
             ))}
             {lines.map((line) => (
@@ -246,7 +271,7 @@ function HistoryTooltip({ active, payload }: TooltipContentProps) {
           <Item label="Processor load" value={number(row.cpu, 0, "%")} />
           <Item label="Frame rate" value={row.fps === null ? "camera away" : number(row.fps, 1, " fps")} />
           {row.fpsMin !== null && <Item label="Slowest minute" value={number(row.fpsMin, 1, " fps")} />}
-          <Item label="Camera working" value={number(row.up, 0, "%")} />
+          <Item label="Camera uptime" value={number(row.up, 0, "%")} />
           {flags.length > 0 && <Item label="The Pi says" value={flags.join("; ")} />}
         </dl>
       )}
@@ -268,7 +293,7 @@ function HistoryTable({ rows }: { rows: HealthRow[] }) {
             <th scope="col" className="px-3 py-2 text-right font-medium">Load</th>
             <th scope="col" className="px-3 py-2 text-right font-medium">Frame rate</th>
             <th scope="col" className="px-3 py-2 text-right font-medium">Slowest</th>
-            <th scope="col" className="px-3 py-2 text-right font-medium">Camera</th>
+            <th scope="col" className="px-3 py-2 text-right font-medium">Camera uptime</th>
             <th scope="col" className="px-3 py-2 font-medium">The Pi says</th>
           </tr>
         </thead>
@@ -290,29 +315,91 @@ function HistoryTable({ rows }: { rows: HealthRow[] }) {
   );
 }
 
-/** What went on for a while and is worth a sentence: the point of keeping the record. */
+/** The most episodes listed before "Show all": a bad day has dozens, and the summary line above them already says how many. */
+const EPISODES_SHOWN = 8;
+
+/**
+ * What went on for a while and is worth a sentence, the point of keeping the record: one line that
+ * sums it up, then a table (the day once, then when, how long, how hot) and what each kind means said
+ * once under it, not in every row.
+ */
 function Episodes({ data }: { data: SystemHistory }) {
   const headingId = useId();
-  const episodes = data.episodes.map((episode) => describeEpisode(episode, data.timezone));
+  const [all, setAll] = useState(false);
+  const rows = data.episodes.map((episode) => describeEpisode(episode, data.timezone));
+  const shown = all ? rows : rows.slice(0, EPISODES_SHOWN);
+  const days = [...new Set(shown.map((row) => row.date))];
+  const kinds = [...new Set(rows.map((row) => row.kind))];
   return (
-    <section aria-labelledby={headingId} data-testid="system-history-episodes">
-      <h3 id={headingId} className="mb-2 text-sm font-medium text-ink">
+    <section aria-labelledby={headingId} id="health-episodes" data-testid="system-history-episodes" className="scroll-mt-20">
+      <h3 id={headingId} className="mb-1 text-sm font-semibold text-ink">
         What happened
       </h3>
-      {episodes.length === 0 ? (
-        <p className="text-sm text-ink-2">Nothing to report: the Pi did not slow itself down, the power was steady, the camera stayed on and the record has no holes.</p>
+      {rows.length === 0 ? (
+        <p className="text-sm text-ink-2">Nothing to report: the Pi was not throttled, the power was steady, the camera stayed on and the record has no holes.</p>
       ) : (
-        <ul className="grid gap-2.5">
-          {episodes.map((episode) => (
-            <li key={episode.key} className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              <StatusBadge level={episode.level}>{episode.title}</StatusBadge>
-              <span className="text-sm tabular-nums text-ink">{episode.when}</span>
-              <span className="text-sm text-ink-2">{episode.detail}</span>
-            </li>
-          ))}
-        </ul>
+        <>
+          <p className="mb-2 text-sm text-ink-2" data-testid="system-history-summary">
+            {episodeSummary(data.episodes)}
+          </p>
+          <div className="max-w-3xl overflow-x-auto">
+            <table className="w-full text-sm">
+              <caption className="sr-only">What happened to the machine, newest first</caption>
+              <thead>
+                <tr className="text-left text-ink-2">
+                  <th scope="col" className="pb-1.5 pr-3 font-medium">What</th>
+                  <th scope="col" className="pb-1.5 pr-3 font-medium">Time</th>
+                  <th scope="col" className="pb-1.5 pr-3 text-right font-medium">Duration</th>
+                  <th scope="col" className="pb-1.5 text-right font-medium">Peak</th>
+                </tr>
+              </thead>
+              <tbody>
+                {days.map((day) => (
+                  <EpisodeDay key={day} day={day} rows={shown.filter((row) => row.date === day)} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {rows.length > EPISODES_SHOWN && (
+            <Button size="sm" className="mt-2" onClick={() => setAll((was) => !was)}>
+              {all ? `Show the newest ${EPISODES_SHOWN}` : `Show all ${rows.length}`}
+            </Button>
+          )}
+          <ul className="mt-3 grid gap-1 text-sm text-ink-3">
+            {kinds.map((kind) => (
+              <li key={kind}>
+                <span className="font-medium text-ink-2">{rows.find((row) => row.kind === kind)?.title}:</span> {EPISODE_MEANING[kind]}
+              </li>
+            ))}
+          </ul>
+        </>
       )}
       {data.episodes.length >= 50 && <p className="mt-2 text-sm text-ink-2">Only the newest 50 are listed.</p>}
     </section>
+  );
+}
+
+/** One day's episodes: the day as a line of its own, then a row for each, so that the date is not said again and again. */
+function EpisodeDay({ day, rows }: { day: string; rows: EpisodeRow[] }) {
+  return (
+    <>
+      <tr>
+        <th scope="colgroup" colSpan={4} className="pb-1 pt-3 text-left text-sm font-medium text-ink-2">
+          {day}
+        </th>
+      </tr>
+      {rows.map((row) => (
+        <tr key={row.key} className="border-t border-grid">
+          <td className="py-1.5 pr-3 align-top">
+            <StatusBadge level={row.level}>{row.title}</StatusBadge>
+          </td>
+          <td className="py-1.5 pr-3 align-top tabular-nums text-ink">
+            {row.start}–{row.ongoing ? "now" : row.end}
+          </td>
+          <td className="py-1.5 pr-3 text-right align-top tabular-nums text-ink">{row.duration}</td>
+          <td className="py-1.5 text-right align-top tabular-nums text-ink">{row.peak ?? "–"}</td>
+        </tr>
+      ))}
+    </>
   );
 }

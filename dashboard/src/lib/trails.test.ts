@@ -236,9 +236,10 @@ describe("days", () => {
   });
 
   it("writes a date out, the same one wherever the browser is", () => {
-    expect(dayTitle("2026-10-09")).toBe("Friday 9 October 2026");
-    expect(dayTitle("2026-01-01")).toBe("Thursday 1 January 2026");
-    expect(dayTitle("nonsense")).toBe("nonsense");
+    expect(dayTitle("2026-10-09", 2026)).toBe("Fri, Oct 9");
+    expect(dayTitle("2026-01-01", 2026)).toBe("Thu, Jan 1");
+    expect(dayTitle("2025-12-31", 2026)).toBe("Wed, Dec 31, 2025");
+    expect(dayTitle("nonsense", 2026)).toBe("nonsense");
   });
 });
 

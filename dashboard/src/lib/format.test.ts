@@ -20,7 +20,7 @@ import {
   zoneChip,
   zoneName,
 } from "./format";
-import { cpuSeverity, describeThrottle, diskSeverity, temperatureSeverity } from "./severity";
+import { cpuSeverity, describeThrottle, diskSeverity, temperatureSeverity, temperatureWord } from "./severity";
 
 describe("dates and times for people", () => {
   const NY = "America/New_York";
@@ -150,6 +150,7 @@ describe("severity", () => {
     expect(temperatureSeverity(79.9)).toBe("ok");
     expect(temperatureSeverity(80)).toBe("warning");
     expect(temperatureSeverity(85)).toBe("critical");
+    expect([60, 69.9, 70, 79.9, 80, 84.9, 85, 90].map(temperatureWord)).toEqual(["Normal", "Normal", "Warm", "Warm", "Throttling", "Throttling", "Throttling hard", "Throttling hard"]);
   });
 
   it("flags a filling disk and a busy CPU", () => {
