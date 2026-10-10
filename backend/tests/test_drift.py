@@ -224,6 +224,22 @@ def test_the_corners_of_every_line_zone_and_stop_sign_are_what_is_checked() -> N
     assert (0.1, 0.2) in points and (0.9, 0.9) in points and (0.3, 0.7) in points
 
 
+def test_the_corners_of_a_calibration_and_the_ends_of_its_checks_are_points_too() -> None:
+    profile = Profile.model_validate(
+        {
+            "calibration": {
+                "corners": [[0.62, 0.42], [0.86, 0.42], [0.58, 0.31], [0.43, 0.31]],
+                "width_m": 7.0,
+                "length_m": 30.0,
+                "checks": [{"id": "c", "a": [0.5, 0.4], "b": [0.6, 0.35], "length_m": 12.0}],
+            }
+        }
+    )
+    points = shape_points(profile)
+    assert len(points) == 4 + 2
+    assert (0.62, 0.42) in points and (0.43, 0.31) in points and (0.6, 0.35) in points
+
+
 def test_a_profile_without_shapes_has_no_points() -> None:
     assert shape_points(empty_profile()) == []
 

@@ -73,6 +73,7 @@ class CountingRule:
                             label=track.label,
                             line_id=cfg.id,
                             direction=direction,
+                            speed_ms=None if track.speed_ms is None else round(track.speed_ms, 2),
                         )
                     )
         return events

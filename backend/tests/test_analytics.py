@@ -12,10 +12,11 @@ from trafficpi.api.analytics import (
     local_midnight_ms,
     period_for,
     shares_of,
+    speed_stats,
     stop_stats,
     traffic_stats,
 )
-from trafficpi.db.store import CountRow, StopStatRow
+from trafficpi.db.store import CountRow, SpeedRow, StopStatRow
 
 NY = ZoneInfo("America/New_York")
 DAY_S = 86_400
@@ -36,9 +37,23 @@ def stop_row(
     hold_s: float = 0.0,
     min_speed: float = -1.0,
     max_speed: float = -1.0,
+    min_speed_ms: float = -1.0,
+    max_speed_ms: float = -1.0,
     tz: tzinfo = NY,
 ) -> StopStatRow:
-    return StopStatRow(at(when, tz), kind, sign, outcome, review, hold_s, min_speed, 4.0, max_speed)
+    return StopStatRow(
+        at(when, tz),
+        kind,
+        sign,
+        outcome,
+        review,
+        hold_s,
+        min_speed,
+        4.0,
+        max_speed,
+        min_speed_ms,
+        max_speed_ms,
+    )
 
 
 # --- the period ----------------------------------------------------------------------------------
@@ -219,6 +234,8 @@ def test_a_typical_stop_and_a_typical_roll_are_the_middle_values() -> None:
         "stopped_hold_s": 2.5,  # the middle of 2.0 and 3.0
         "rolling_min_speed": 0.3,  # of 0.4 and 0.2 (the false alarm's 0.9 is not in it)
         "did_not_stop_min_speed": 1.2,
+        "rolling_min_speed_ms": None,  # no calibrated camera, no speeds in metres
+        "did_not_stop_min_speed_ms": None,
     }
 
 
@@ -237,6 +254,8 @@ def test_a_speed_that_was_not_measured_is_not_a_speed() -> None:
         "stopped_hold_s": None,
         "rolling_min_speed": None,
         "did_not_stop_min_speed": None,
+        "rolling_min_speed_ms": None,
+        "did_not_stop_min_speed_ms": None,
     }
 
 
@@ -363,11 +382,13 @@ def test_each_day_has_the_fastest_estimate_with_the_kind_and_the_time() -> None:
         "speed_ms": 10.0,
         "label": "car",
         "at": at("2026-10-09 17:42", NY),
+        "calibrated": False,
     }
     assert by_date["2026-10-08"] == {
         "speed_ms": 10.5,
         "label": "truck",
         "at": at("2026-10-08 12:00", NY),
+        "calibrated": False,
     }
     assert by_date["2026-10-07"] is None  # nothing there had a speed
 
@@ -378,6 +399,7 @@ def test_the_fastest_of_the_period_is_the_fastest_of_its_days_and_says_which() -
         "speed_ms": 10.5,
         "label": "truck",
         "at": at("2026-10-08 12:00", NY),
+        "calibrated": False,
     }
 
 
@@ -394,6 +416,7 @@ def test_a_kind_is_converted_by_its_own_size_so_a_bus_is_faster_than_a_car_at_th
         "speed_ms": 11.0,
         "label": "bus",
         "at": at("2026-10-09 11:00", NY),
+        "calibrated": False,
     }  # 2 x 5.5
 
 
@@ -419,6 +442,7 @@ def test_a_vehicle_that_stood_still_has_a_speed_of_nothing_not_no_speed() -> Non
         "speed_ms": 0.0,
         "label": "car",
         "at": at("2026-10-09 10:00", NY),
+        "calibrated": False,
     }
 
 
@@ -440,6 +464,89 @@ def test_the_day_is_the_one_in_the_zone_not_the_one_in_utc_for_the_fastest_too()
 def test_a_speed_is_rounded_to_a_tenth_of_a_metre_a_second() -> None:
     rows = [stop_row("2026-10-09 10:00", "did_not_stop", max_speed=2.3333)]  # 5.83325 m/s
     assert stop_stats(rows, None, NY, PERIOD)["fastest"]["speed_ms"] == 5.8  # type: ignore[index]
+
+
+# --- speeds measured on a calibrated road (plan.md M6) -------------------------------------------
+
+
+def test_a_measured_speed_is_the_speed_in_metres_a_second_as_it_is() -> None:
+    rows = [stop_row("2026-10-09 10:00", "did_not_stop", max_speed_ms=12.34, max_speed=1.0)]
+    assert stop_stats(rows, None, NY, PERIOD)["fastest"] == {
+        "speed_ms": 12.3,
+        "label": "car",
+        "at": at("2026-10-09 10:00", NY),
+        "calibrated": True,
+    }
+
+
+def test_a_measured_speed_beats_an_estimate_even_a_bigger_one() -> None:
+    """An estimate is good to about 40%: it could be anything, and it is never preferred."""
+    rows = [
+        stop_row("2026-10-09 10:00", "did_not_stop", max_speed=6.0),  # an estimate: 15 m/s
+        stop_row("2026-10-09 11:00", "did_not_stop", max_speed_ms=8.0),  # measured, and slower
+    ]
+    fastest = stop_stats(rows, None, NY, PERIOD)["fastest"]
+    assert fastest is not None and fastest["calibrated"] is True and fastest["speed_ms"] == 8.0
+
+
+def test_among_measured_speeds_the_faster_wins_and_among_estimates_too() -> None:
+    measured = [
+        stop_row("2026-10-09 10:00", "did_not_stop", max_speed_ms=8.0),
+        stop_row("2026-10-09 11:00", "did_not_stop", max_speed_ms=9.5),
+        stop_row("2026-10-09 12:00", "did_not_stop", max_speed_ms=9.0),
+    ]
+    fastest = stop_stats(measured, None, NY, PERIOD)["fastest"]
+    assert fastest is not None and fastest["speed_ms"] == 9.5
+    assert fastest["at"] == at("2026-10-09 11:00", NY)
+
+
+def test_a_day_with_both_shows_the_measured_one_and_a_day_with_only_estimates_its_estimate() -> (
+    None
+):
+    rows = [
+        stop_row("2026-10-08 10:00", "did_not_stop", max_speed=4.0),  # before the calibration
+        stop_row("2026-10-09 10:00", "did_not_stop", max_speed=4.0),
+        stop_row("2026-10-09 15:00", "did_not_stop", max_speed_ms=7.0),  # after it, the same day
+    ]
+    stats = stop_stats(rows, None, NY, PERIOD)
+    by_date = {d["date"]: d["fastest"] for d in stats["by_day"]}
+    assert by_date["2026-10-08"] == {
+        "speed_ms": 10.0,
+        "label": "car",
+        "at": at("2026-10-08 10:00", NY),
+        "calibrated": False,
+    }
+    assert by_date["2026-10-09"]["speed_ms"] == 7.0 and by_date["2026-10-09"]["calibrated"] is True
+    assert stats["fastest"]["calibrated"] is True and stats["fastest"]["speed_ms"] == 7.0  # type: ignore[index]
+
+
+def test_a_measured_speed_of_nothing_is_a_speed_and_not_a_missing_one() -> None:
+    rows = [stop_row("2026-10-09 10:00", "stopped", max_speed_ms=0.0)]
+    fastest = stop_stats(rows, None, NY, PERIOD)["fastest"]
+    assert fastest is not None and fastest["speed_ms"] == 0.0 and fastest["calibrated"] is True
+
+
+def test_a_false_alarm_is_not_the_fastest_measured_either() -> None:
+    rows = [
+        stop_row("2026-10-09 10:00", "did_not_stop", max_speed_ms=30.0, review="false_positive"),
+        stop_row("2026-10-09 11:00", "did_not_stop", max_speed_ms=9.0),
+    ]
+    assert stop_stats(rows, None, NY, PERIOD)["fastest"]["speed_ms"] == 9.0  # type: ignore[index]
+
+
+def test_a_typical_roll_and_a_typical_miss_in_metres_a_second_are_the_middle_values() -> None:
+    rows = [
+        stop_row("2026-10-09 10:00", "rolling", min_speed_ms=1.0),
+        stop_row("2026-10-09 10:05", "rolling", min_speed_ms=3.0),
+        stop_row("2026-10-09 10:10", "rolling", min_speed_ms=20.0),  # one odd one
+        stop_row("2026-10-09 10:15", "rolling", min_speed_ms=-1.0),  # not measured: left out
+        stop_row("2026-10-09 10:20", "did_not_stop", min_speed_ms=8.0),
+        stop_row("2026-10-09 10:25", "did_not_stop", min_speed_ms=10.0),
+        stop_row("2026-10-09 10:30", "stopped", min_speed_ms=0.2),  # a stop has no roll speed
+    ]
+    timing = stop_stats(rows, None, NY, PERIOD)["timing"]
+    assert timing["rolling_min_speed_ms"] == 3.0
+    assert timing["did_not_stop_min_speed_ms"] == 9.0
 
 
 # --- the shares, as the Data page rounds them --------------------------------------------------
@@ -474,3 +581,133 @@ def test_an_outcome_that_did_not_happen_has_no_share_and_a_missing_one_is_none()
         "did_not_stop": 0,
         "indeterminate": 0,
     }
+
+
+# --- the speeds of the vehicles counted (plan.md M6) --------------------------------------------
+
+MPH = 2.2369362920544
+
+
+def speed_row(
+    when: str,
+    mph: float,
+    *,
+    line: str = "main",
+    kind: str = "car",
+    cal: str = "ab12cd34",
+) -> SpeedRow:
+    return SpeedRow(at(when, NY), kind, line, 1, mph / MPH, cal)
+
+
+def speeds(rows: list[SpeedRow], counted: dict[str, int] | None = None, units: str = "mph"):  # type: ignore[no-untyped-def]
+    return speed_stats(rows, counted or {}, NY, PERIOD, units, line_names={"main": "Main street"})
+
+
+def test_the_speeds_are_summed_in_the_units_that_are_set() -> None:
+    rows = [speed_row("2026-10-09 09:00", mph) for mph in (20, 25, 30)]
+    mph = speeds(rows)
+    assert mph["units"] == "mph"
+    assert mph["figures"] == {
+        "count": 3,
+        "mean": 25.0,
+        "median": 25.0,
+        "p85": 30.0,
+        "fastest": 30.0,
+        "slowest": 20.0,
+    }
+    kmh = speeds(rows, units="kmh")
+    assert kmh["units"] == "kmh"
+    assert kmh["figures"]["median"] == pytest.approx(25 * 1.609344, abs=0.1)
+
+
+def test_the_85th_percentile_is_the_speed_85_percent_of_vehicles_did_not_exceed() -> None:
+    rows = [speed_row("2026-10-09 09:00", float(mph)) for mph in range(1, 21)]  # 1 to 20 mph
+    # 85% of 20 vehicles is 17; the 17th by speed is 17 mph (nearest rank)
+    assert speeds(rows)["figures"]["p85"] == 17.0
+    single = speeds([speed_row("2026-10-09 09:00", 33.0)])
+    assert single["figures"]["p85"] == single["figures"]["median"] == 33.0
+
+
+def test_the_histogram_has_bars_of_five_from_zero_with_the_empty_ones_between() -> None:
+    rows = [speed_row("2026-10-09 09:00", mph) for mph in (3, 4, 17, 17.5, 29.9)]
+    bins = speeds(rows)["bins"]
+    assert [(b["low"], b["high"], b["count"]) for b in bins] == [
+        (0.0, 5.0, 2),
+        (5.0, 10.0, 0),
+        (10.0, 15.0, 0),
+        (15.0, 20.0, 2),
+        (20.0, 25.0, 0),
+        (25.0, 30.0, 1),
+    ]
+
+
+def test_a_vehicle_faster_than_the_last_bar_is_in_the_last_bar() -> None:
+    bins = speeds([speed_row("2026-10-09 09:00", 400.0)])["bins"]
+    assert len(bins) == 40 and bins[-1]["count"] == 1 and bins[-1]["high"] == 200.0
+
+
+def test_with_nothing_measured_there_are_no_figures_and_the_shape_is_whole() -> None:
+    stats = speeds([], {"main": 120})
+    assert stats["figures"] is None and stats["bins"] == []
+    assert stats["counted"] == 120 and stats["calibrations"] == []
+    assert len(stats["by_hour"]) == 24 and all(h["count"] == 0 for h in stats["by_hour"])
+    assert [d["count"] for d in stats["by_day"]] == [0, 0, 0]
+    assert stats["by_line"] == [
+        {"line": "main", "name": "Main street", "counted": 120, "figures": None}
+    ]
+    assert stats["by_kind"] == []
+
+
+def test_the_hours_and_days_are_those_of_the_zone_not_of_utc() -> None:
+    rows = [
+        speed_row("2026-10-09 22:30", 40.0),  # 02:30 UTC the next day
+        speed_row("2026-10-09 22:40", 50.0),
+        speed_row("2026-10-08 08:05", 20.0),
+    ]
+    stats = speeds(rows)
+    assert {h["hour"]: h["count"] for h in stats["by_hour"] if h["count"]} == {22: 2, 8: 1}
+    hour_22 = next(h for h in stats["by_hour"] if h["hour"] == 22)
+    assert hour_22["mean"] == 45.0 and hour_22["p85"] == 50.0
+    assert {d["date"]: d["count"] for d in stats["by_day"] if d["count"]} == {
+        "2026-10-09": 2,
+        "2026-10-08": 1,
+    }
+
+
+def test_each_line_and_each_kind_has_its_own_figures_and_the_vehicles_counted() -> None:
+    rows = [
+        speed_row("2026-10-09 09:00", 20.0, line="main"),
+        speed_row("2026-10-09 09:05", 30.0, line="main", kind="truck"),
+        speed_row("2026-10-09 09:10", 40.0, line="side"),
+    ]
+    stats = speeds(rows, {"main": 10, "side": 3, "quiet": 7})
+    assert [(row["line"], row["name"], row["counted"]) for row in stats["by_line"]] == [
+        ("main", "Main street", 10),
+        ("quiet", "", 7),
+        ("side", "", 3),
+    ]
+    by_line = {row["line"]: row["figures"] for row in stats["by_line"]}
+    assert by_line["main"]["count"] == 2 and by_line["main"]["mean"] == 25.0
+    assert by_line["quiet"] is None
+    assert [k["label"] for k in stats["by_kind"]] == ["car", "truck"]
+    assert stats["counted"] == 20
+
+
+def test_a_line_with_speeds_but_no_count_in_the_period_is_still_listed() -> None:
+    stats = speeds([speed_row("2026-10-09 09:00", 20.0, line="side")], {})
+    assert [(row["line"], row["counted"]) for row in stats["by_line"]] == [("side", 0)]
+
+
+def test_the_calibrations_the_speeds_came_from_are_named_once_in_the_order_met() -> None:
+    rows = [
+        speed_row("2026-10-08 09:00", 20.0, cal="aaaaaaaa"),
+        speed_row("2026-10-09 09:00", 21.0, cal="bbbbbbbb"),
+        speed_row("2026-10-09 09:05", 22.0, cal="bbbbbbbb"),
+        speed_row("2026-10-09 09:10", 23.0, cal=""),  # unknown: not a name
+    ]
+    assert speeds(rows)["calibrations"] == ["aaaaaaaa", "bbbbbbbb"]
+
+
+def test_speeds_are_rounded_to_a_tenth() -> None:
+    stats = speeds([speed_row("2026-10-09 09:00", 27.349)])
+    assert stats["figures"]["mean"] == 27.3

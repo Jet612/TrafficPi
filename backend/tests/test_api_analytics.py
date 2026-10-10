@@ -194,6 +194,8 @@ def test_with_nothing_recorded_everything_is_zero_and_the_shape_is_whole(
         "stopped_hold_s": None,
         "rolling_min_speed": None,
         "did_not_stop_min_speed": None,
+        "rolling_min_speed_ms": None,
+        "did_not_stop_min_speed_ms": None,
     }
 
 
@@ -278,10 +280,25 @@ def test_each_days_fastest_estimate_and_the_periods_come_with_the_stats(
     by_date = {d["date"]: d["fastest"] for d in body["by_day"]}
     assert by_date == {
         "2026-10-07": None,
-        "2026-10-08": {"speed_ms": 10.5, "label": "truck", "at": ms("2026-10-08 12:00")},
-        "2026-10-09": {"speed_ms": 10.0, "label": "car", "at": ms("2026-10-09 17:42")},
+        "2026-10-08": {
+            "speed_ms": 10.5,
+            "label": "truck",
+            "at": ms("2026-10-08 12:00"),
+            "calibrated": False,
+        },
+        "2026-10-09": {
+            "speed_ms": 10.0,
+            "label": "car",
+            "at": ms("2026-10-09 17:42"),
+            "calibrated": False,
+        },
     }
-    assert body["fastest"] == {"speed_ms": 10.5, "label": "truck", "at": ms("2026-10-08 12:00")}
+    assert body["fastest"] == {
+        "speed_ms": 10.5,
+        "label": "truck",
+        "at": ms("2026-10-08 12:00"),
+        "calibrated": False,
+    }
 
 
 def test_passes_from_before_the_fastest_speed_was_kept_give_no_speed_and_no_error(
@@ -300,3 +317,77 @@ def test_the_estimate_is_in_metres_a_second_whatever_units_the_owner_chose(
     store.set_setting("units", "kmh")
     body = client.get("/api/stats/stops", params={"days": 1}).json()
     assert body["units"] == "kmh" and body["fastest"]["speed_ms"] == 10.0
+
+
+# --- the speeds of the vehicles counted (plan.md M6) --------------------------------------------
+
+
+def counted(line: str = "main", speed_ms: float | None = None, label: str = "car") -> CountEvent:
+    return CountEvent(0, 1, 2, label, line, 1, speed_ms=speed_ms, calibration="ab12cd34")
+
+
+def test_the_speeds_need_a_login(app: FastAPI) -> None:
+    with TestClient(app) as anonymous:
+        assert anonymous.get("/api/stats/speeds").status_code == 401
+
+
+def test_with_no_counts_the_speed_figures_are_empty_and_the_shape_is_whole(
+    client: TestClient,
+) -> None:
+    body = client.get("/api/stats/speeds").json()
+    assert body["figures"] is None and body["counted"] == 0 and body["bins"] == []
+    assert (len(body["by_hour"]), len(body["by_day"])) == (24, 7)
+    assert body["units"] == "mph" and body["calibrations"] == []
+
+
+def test_vehicles_counted_with_a_speed_are_summed_and_those_without_are_counted_apart(
+    client: TestClient, store: Store
+) -> None:
+    store.record_count(counted(speed_ms=11.176), ms("2026-10-09 09:00"))  # 25 mph
+    store.record_count(counted(speed_ms=13.411), ms("2026-10-09 09:05"))  # 30 mph
+    store.record_count(counted(), ms("2026-10-09 09:10"))  # counted, no speed
+    body = client.get("/api/stats/speeds", params={"days": 7}).json()
+    assert body["counted"] == 3
+    assert body["figures"]["count"] == 2 and body["figures"]["mean"] == pytest.approx(27.5, abs=0.1)
+    assert body["calibrations"] == ["ab12cd34"]
+    (line,) = [row for row in body["by_line"] if row["line"] == "main"]
+    assert line["counted"] == 3 and line["figures"]["count"] == 2
+
+
+def test_the_units_are_the_ones_that_are_set(client: TestClient, store: Store) -> None:
+    store.record_count(counted(speed_ms=10.0), ms("2026-10-09 09:00"))
+    assert client.get("/api/stats/speeds").json()["figures"]["median"] == pytest.approx(
+        22.4, abs=0.1
+    )
+    store.set_setting("units", "kmh")
+    body = client.get("/api/stats/speeds").json()
+    assert body["units"] == "kmh" and body["figures"]["median"] == 36.0
+
+
+def test_one_counting_line_can_be_asked_for(client: TestClient, store: Store) -> None:
+    store.record_count(counted("main", 10.0), ms("2026-10-09 09:00"))
+    store.record_count(counted("side", 20.0), ms("2026-10-09 09:05"))
+    body = client.get("/api/stats/speeds", params={"line": "side"}).json()
+    assert body["line"] == "side" and body["counted"] == 1
+    assert body["figures"]["count"] == 1 and body["figures"]["median"] == pytest.approx(
+        44.7, abs=0.1
+    )
+    assert [row["line"] for row in body["by_line"]] == ["side"]
+
+
+def test_the_period_is_in_local_days_and_all_time_starts_at_the_first_count(
+    client: TestClient, store: Store
+) -> None:
+    store.record_count(counted(speed_ms=10.0), ms("2026-10-09 09:00"))
+    store.record_count(counted(speed_ms=10.0), ms("2026-10-01 09:00"))  # eight days ago
+    assert client.get("/api/stats/speeds", params={"days": 7}).json()["figures"]["count"] == 1
+    everything = client.get("/api/stats/speeds", params={"days": 0}).json()
+    assert everything["figures"]["count"] == 2 and everything["all_time"] is True
+    assert everything["days"] == 9
+
+
+@pytest.mark.parametrize("params", [{"days": -1}, {"days": 400}, {"line": "x" * 70}])
+def test_a_request_that_makes_no_sense_is_refused(
+    client: TestClient, params: dict[str, int | str]
+) -> None:
+    assert client.get("/api/stats/speeds", params=params).status_code == 422

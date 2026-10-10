@@ -210,7 +210,9 @@ def estimate_drift(
 
 
 def shape_points(profile: Profile) -> list[tuple[float, float]]:
-    """The corners of every line, zone and stop sign in ``profile``, as fractions of the picture."""
+    """The corners of every line, zone, stop sign and calibration in ``profile``, as fractions of
+    the picture. A calibration is drawn on the picture like the rest, so a camera that moved puts
+    its speeds out as much as it does the lines."""
     points: list[tuple[float, float]] = []
     for line in profile.lines:
         points += [line.a, line.b]
@@ -218,6 +220,10 @@ def shape_points(profile: Profile) -> list[tuple[float, float]]:
         points += list(zone.points)
     for sign in profile.stop_signs:
         points += [*sign.approach, sign.a, sign.b]
+    if profile.calibration is not None:
+        points += list(profile.calibration.corners)
+        for check in profile.calibration.checks:
+            points += [check.a, check.b]
     return [(float(x), float(y)) for x, y in points]
 
 

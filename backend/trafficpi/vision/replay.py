@@ -7,6 +7,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
+from trafficpi.core.ground import GroundCalibration
 from trafficpi.vision.engine import CountTotals, EngineResult, TrafficEngine
 from trafficpi.vision.recorder import read_detection_log
 from trafficpi.vision.rules import (
@@ -18,6 +19,7 @@ from trafficpi.vision.rules import (
     StopSign,
     StopSignRule,
 )
+from trafficpi.vision.speedmeter import SpeedMeter
 from trafficpi.vision.tracker import ByteTracker, TrackerConfig
 from trafficpi.vision.zones import DetectionFilter
 
@@ -45,11 +47,13 @@ def replay_log(
     tracker_config: TrackerConfig | None = None,
     detection_filter: DetectionFilter | None = None,
     stop_signs: Sequence[StopSign] = (),
+    calibration: GroundCalibration | None = None,
 ) -> ReplayResult:
     """Feed a detection log (see ``trafficpi.vision.recorder``) through the engine.
 
     Stop signs measure distances by the picture's shape, which the log's header says (when it
-    does not, they keep the aspect they were given).
+    does not, they keep the aspect they were given). With a ``calibration`` the events carry the
+    speeds the speed meter measures, which is how a calibration is tried on a recorded clip.
     """
     header, frames = read_detection_log(path)
     rules: list[Rule] = [CountingRule(lines)] if lines else []
@@ -57,7 +61,8 @@ def replay_log(
         width, height = header.get("frame_size") or (0, 0)
         aspect = width / height if width > 0 and height > 0 else None
         rules.append(StopSignRule([replace(s, aspect=aspect) if aspect else s for s in stop_signs]))
-    engine = TrafficEngine(ByteTracker(tracker_config), rules, detection_filter)
+    meter = SpeedMeter(calibration) if calibration is not None else None
+    engine = TrafficEngine(ByteTracker(tracker_config), rules, detection_filter, meter)
     out = ReplayResult(header, [], [])
     for frame in frames:
         result = engine.update(frame.timestamp_ns, frame.detections)

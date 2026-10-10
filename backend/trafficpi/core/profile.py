@@ -10,7 +10,11 @@ A profile is one JSON document per camera::
      "exclusion_zones": [{"id": "parking", "name": "Parked cars", "points": [...]}],
      "stop_signs": [{"id": "elm", "name": "Elm Street", "approach": [[0.1, 0.5], ...],
                      "a": [0.5, 0.9], "b": [0.5, 0.3], "direction": 1,
-                     "classes": ["car", "truck", "bus", "motorcycle"], "hold_s": 1.0, ...}]}
+                     "classes": ["car", "truck", "bus", "motorcycle"], "hold_s": 1.0, ...}],
+     "calibration": {"corners": [[0.2, 0.9], [0.8, 0.9], [0.7, 0.4], [0.3, 0.4]],
+                     "width_m": 7.0, "length_m": 30.0,
+                     "checks": [{"id": "drive", "name": "Driveway to pole", "a": [0.3, 0.8],
+                                 "b": [0.6, 0.5], "length_m": 18.0}]}}
 
 Points are fractions of the frame (0-1) with x to the right and y *downwards*, so a profile does
 not depend on the capture or inference resolution. A vehicle is "in" a zone when the point where
@@ -22,7 +26,8 @@ canonical form (the form the API returns and stores); a document with members le
 one saved before zones existed or typed by hand, is filled in by the "before" step of each model,
 so older documents keep loading. ``schema_version`` goes up when a new kind of element appears (a
 document of an older version is filled in and loads as the newest; a document of a newer version
-is refused, with a message to update TrafficPi): 2 added stop signs.
+is refused, with a message to update TrafficPi): 2 added stop signs, 3 the calibration that puts the
+picture in metres (and so speeds in metres a second: plan.md M6).
 """
 
 from __future__ import annotations
@@ -44,9 +49,19 @@ from pydantic import (
 
 from trafficpi.core.coco import COCO_NAMES
 from trafficpi.core.geometry import Polygon
+from trafficpi.core.ground import (
+    MAX_LENGTH_M,
+    MAX_WIDTH_M,
+    MIN_LENGTH_M,
+    MIN_WIDTH_M,
+    CalibrationError,
+    rectangle_map,
+)
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 MAX_ELEMENTS = 32  # lines, or zones of one kind
+MAX_CHECKS = 8  # known distances that test a calibration
+MIN_CHECK_M = 0.5
 MAX_POINTS = 32  # corners in one zone
 MIN_ZONE_AREA = 1e-4  # of the frame (about 10 x 10 pixels at 720p): smaller is a slip of the mouse
 
@@ -224,6 +239,60 @@ class StopSignConfig(_Model):
         return Polygon(tuple(self.approach))
 
 
+class GroundCheckConfig(_Model):
+    """A distance on the road that is known, drawn between two points of the picture.
+
+    It does not make the calibration, it tests it: the dashboard says how long the calibrated map
+    finds the distance, and how far that is from ``length_m``. A check that is wrong by much says
+    that a corner, a length, or the check itself was measured badly. Put them where speeds will be
+    measured, and not only in the rectangle (the map is only sure of what it was made from).
+    """
+
+    id: ElementId
+    name: Label
+    a: Point
+    b: Point
+    length_m: Annotated[float, Field(strict=True, ge=MIN_CHECK_M, le=MAX_LENGTH_M)]
+
+    @classmethod
+    def defaults(cls) -> dict[str, Any]:
+        return {"name": ""}
+
+    @model_validator(mode="after")
+    def _has_a_length_in_the_picture(self) -> Self:
+        if self.a == self.b:
+            raise ValueError("the two ends are in the same place")
+        return self
+
+
+class CalibrationConfig(_Model):
+    """Four points of the picture that are the corners of a rectangle on the road, and its size.
+
+    The corners go round the rectangle one after the other, either way. The side from the first
+    corner to the second is ``width_m`` long (across the road) and the side from the second to the
+    third is ``length_m`` (along it). With that the picture can be put in metres (plan.md M6, D44):
+    the speed of a vehicle follows from where it was on the road and when. It is only as good as
+    the rectangle is big, flat and well measured; the dashboard says where speeds are believed.
+    """
+
+    corners: Annotated[list[Point], Field(min_length=4, max_length=4)]
+    width_m: Annotated[float, Field(strict=True, ge=MIN_WIDTH_M, le=MAX_WIDTH_M)]
+    length_m: Annotated[float, Field(strict=True, ge=MIN_LENGTH_M, le=MAX_LENGTH_M)]
+    checks: Annotated[list[GroundCheckConfig], Field(max_length=MAX_CHECKS)]
+
+    @classmethod
+    def defaults(cls) -> dict[str, Any]:
+        return {"checks": []}
+
+    @model_validator(mode="after")
+    def _is_a_rectangle_on_a_road(self) -> Self:
+        try:
+            rectangle_map(self.corners, self.width_m, self.length_m)
+        except CalibrationError as exc:
+            raise ValueError(str(exc)) from exc
+        return self
+
+
 class Profile(_Model):
     """Everything configured for one camera.
 
@@ -236,6 +305,7 @@ class Profile(_Model):
     detection_zones: Annotated[list[ZoneConfig], Field(max_length=MAX_ELEMENTS)]
     exclusion_zones: Annotated[list[ZoneConfig], Field(max_length=MAX_ELEMENTS)]
     stop_signs: Annotated[list[StopSignConfig], Field(max_length=MAX_ELEMENTS)]
+    calibration: CalibrationConfig | None  # None: the camera is not calibrated, no speeds in metres
 
     @classmethod
     def defaults(cls) -> dict[str, Any]:
@@ -245,6 +315,7 @@ class Profile(_Model):
             "detection_zones": [],
             "exclusion_zones": [],
             "stop_signs": [],
+            "calibration": None,
         }
 
     @model_validator(mode="before")
@@ -275,6 +346,7 @@ class Profile(_Model):
             *self.detection_zones,
             *self.exclusion_zones,
             *self.stop_signs,
+            *(self.calibration.checks if self.calibration is not None else ()),
         ):
             if element.id in seen:
                 raise ValueError(f"the id {element.id!r} is used twice; every id must be unique")

@@ -11,7 +11,9 @@ size as its length, as the Data page first did, overstated every speed about 1.8
 
 An estimate made this way is good to about 40%: the view angle, the box (which is never exact)
 and the kind of car all matter. It is shown as "about", rounded to what it can claim, and the
-pages say so. A real figure needs a calibration (plan.md M6).
+pages say so. A real figure needs a calibration (plan.md M6): a speed measured on a calibrated
+road (``core/ground``) is in metres a second already, needs no size, and is shown to a whole mile
+or kilometre an hour, without the "about", and marked as measured.
 """
 
 from __future__ import annotations
@@ -30,6 +32,21 @@ SIZE_M: Mapping[str, float] = {
 DEFAULT_SIZE_M = SIZE_M["car"]  # any other kind, and a vehicle with no label
 MPS_TO_MPH = 2.2369362920544
 MPS_TO_KMH = 3.6
+
+
+# What a speed on a page or in the mail is worth, in a sentence, for each kind of speed. The
+# dashboard says the same words (lib/speed.ts); tests/data/speed_cases.json holds them for both, so
+# that they cannot drift. When a calibration has been checked against vehicles of known speed
+# (plan.md M6's "done when"), MEASURED_CAVEAT is where its error band goes.
+ESTIMATE_CAVEAT = (
+    "A speed is an estimate: how fast a vehicle crossed the picture, compared with its own size. "
+    "It is good to about 40% and is not a measurement."
+)
+MEASURED_CAVEAT = (
+    "A speed is measured on the road as it was calibrated on the dashboard's Setup page. The "
+    "calibration has not yet been checked against a vehicle of known speed, so treat the figure "
+    "as unproven."
+)
 
 
 def size_metres(label: str | None) -> float:
@@ -55,9 +72,19 @@ def rough_speed(value: float) -> int:
     return 5 * math.floor(value / 5 + 0.5)
 
 
-def speed_phrase(speed_ms: float, units: str) -> str:
-    """ "about 30 mph", "about 50 km/h", or "almost still"."""
+def measured_speed(value: float) -> int:
+    """A speed measured on a calibrated road, rounded to a whole mile or kilometre an hour (halves
+    go up, as in the dashboard's ``Math.round``)."""
+    return math.floor(value + 0.5)
+
+
+def speed_phrase(speed_ms: float, units: str, measured: bool = False) -> str:
+    """ "about 30 mph" for an estimate, "30 mph" for a speed measured on a calibrated road, "about
+    50 km/h", or "almost still"."""
     value = to_units(speed_ms, units)
+    unit = "mph" if units == "mph" else "km/h"
     if value < 1:
         return "almost still"
-    return f"about {rough_speed(value)} {'mph' if units == 'mph' else 'km/h'}"
+    if measured:
+        return f"{measured_speed(value)} {unit}"
+    return f"about {rough_speed(value)} {unit}"

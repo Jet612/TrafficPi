@@ -7,8 +7,11 @@ import pytest
 
 from trafficpi.core.speed import (
     DEFAULT_SIZE_M,
+    ESTIMATE_CAVEAT,
+    MEASURED_CAVEAT,
     SIZE_M,
     estimated_speed_ms,
+    measured_speed,
     rough_speed,
     size_metres,
     speed_phrase,
@@ -56,3 +59,34 @@ def test_rounding_never_goes_backwards() -> None:
     values = [i / 10 for i in range(0, 1500)]
     rounded = [rough_speed(v) for v in values]
     assert rounded == sorted(rounded)
+
+
+@pytest.mark.parametrize("case", CASES["measured"], ids=lambda c: str(c["value"]))
+def test_a_measured_speed_is_rounded_to_a_whole_mile_or_kilometre_an_hour(
+    case: dict[str, float],
+) -> None:
+    assert measured_speed(case["value"]) == case["whole"]
+
+
+@pytest.mark.parametrize(
+    "case", CASES["measured_phrases"], ids=lambda c: f"{c['speed_ms']}-{c['units']}"
+)
+def test_a_measured_speed_is_put_in_words_without_an_about(case: dict[str, object]) -> None:
+    assert speed_phrase(float(case["speed_ms"]), str(case["units"]), measured=True) == case["text"]  # type: ignore[arg-type]
+
+
+def test_an_estimate_is_still_an_about_unless_it_is_said_to_be_measured() -> None:
+    assert speed_phrase(13.411, "mph") == "about 30 mph"
+    assert speed_phrase(13.411, "mph", measured=False) == "about 30 mph"
+    assert speed_phrase(13.411, "mph", measured=True) == "30 mph"
+
+
+def test_measured_rounding_never_goes_backwards() -> None:
+    rounded = [measured_speed(i / 10) for i in range(0, 1500)]
+    assert rounded == sorted(rounded)
+
+
+def test_the_sentences_that_say_what_a_speed_is_worth_are_the_dashboards_too() -> None:
+    assert CASES["caveats"]["estimate"] == ESTIMATE_CAVEAT
+    assert CASES["caveats"]["measured"] == MEASURED_CAVEAT
+    assert "40%" in ESTIMATE_CAVEAT and "unproven" in MEASURED_CAVEAT

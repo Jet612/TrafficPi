@@ -25,6 +25,7 @@ from starlette.concurrency import run_in_threadpool
 
 from trafficpi.api import (
     analytics,
+    calibration_routes,
     machine,
     mail_routes,
     stats,
@@ -63,6 +64,7 @@ from trafficpi.api.schemas import (
     ReviewRequest,
     SeriesPoint,
     Settings,
+    SpeedStats,
     StatusResponse,
     StopOut,
     StopStats,
@@ -225,6 +227,13 @@ def _evidence_file(data_dir: Path, relative: str | None) -> Path | None:
     return path if path.is_relative_to(folder) and path.is_file() else None
 
 
+def _measured(value: Any) -> float | None:
+    """A speed kept in an event's details, or None if there is none (it is -1 when not measured)."""
+    if isinstance(value, bool) or not isinstance(value, int | float) or value < 0:
+        return None
+    return float(value)
+
+
 def _stop_out(event: EventRow, data_dir: Path) -> StopOut:
     details = event.details or {}
     has_snapshot = _evidence_file(data_dir, event.evidence_path) is not None
@@ -238,6 +247,9 @@ def _stop_out(event: EventRow, data_dir: Path) -> StopOut:
         hold_s=details.get("hold_s", 0.0),
         min_speed=details.get("min_speed", -1.0),
         observed_s=details.get("observed_s", 0.0),
+        min_speed_ms=_measured(details.get("min_speed_ms")),
+        max_speed_ms=_measured(details.get("max_speed_ms")),
+        line_speed_ms=_measured(details.get("line_speed_ms")),
         review=event.review,  # type: ignore[arg-type]
         reviewed_at=event.reviewed_at,
         snapshot_url=f"/api/stops/{event.id}/snapshot.jpg" if has_snapshot else None,
@@ -356,6 +368,7 @@ def create_app(
     app.state.ctx = ctx
     app.include_router(mail_routes.build_router(_ctx, require_user))
     app.include_router(stop_hours_routes.build_router(_ctx, require_user))
+    app.include_router(calibration_routes.build_router(_ctx, require_user))
 
     @app.exception_handler(RequestValidationError)
     async def unusable_request(_request: Request, exc: RequestValidationError) -> JSONResponse:
@@ -613,6 +626,35 @@ def create_app(
         )
         rows = ctx.store.minute_counts(period.start_ms // 1000, period.end_ms // 1000)
         return analytics.traffic_stats(rows, tz, period, line_names())
+
+    @app.get("/api/stats/speeds", response_model=SpeedStats)
+    def stats_speeds(
+        user: User,
+        days: Annotated[int, Query(ge=0, le=analytics.MAX_DAYS)] = 7,
+        line: Annotated[str | None, Query(max_length=64)] = None,
+    ) -> dict[str, Any]:
+        """How fast the vehicles counted over the last ``days`` local days (today included) were
+        going, in the units that are set; ``days=0`` is everything since the first count."""
+        tz = _timezone(ctx.store)
+        first_s = ctx.store.first_count_s()
+        period = analytics.period_for(
+            ctx.clock.now_ms(), tz, days, None if first_s is None else first_s * 1000
+        )
+        rows = ctx.store.speed_rows(period.start_ms, period.end_ms, line=line)
+        counted: dict[str, int] = {}
+        for count in ctx.store.minute_counts(period.start_ms // 1000, period.end_ms // 1000):
+            if line is None or count.line_id == line:
+                counted[count.line_id] = counted.get(count.line_id, 0) + count.count
+        units = ctx.store.get_setting("units", "mph")
+        return analytics.speed_stats(
+            rows,
+            counted,
+            tz,
+            period,
+            "kmh" if units == "kmh" else "mph",
+            line_names=line_names(),
+            line=line,
+        )
 
     @app.get("/api/events", response_model=list[EventOut])
     def events(

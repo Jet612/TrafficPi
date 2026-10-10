@@ -38,8 +38,11 @@ def stop(
     review: str | None = None,
     kind: str = "car",
     max_speed: float = -1.0,
+    max_speed_ms: float = -1.0,
 ) -> StopStatRow:
-    return StopStatRow(at(when), kind, "elm", outcome, review, 0.0, -1.0, 4.0, max_speed)
+    return StopStatRow(
+        at(when), kind, "elm", outcome, review, 0.0, -1.0, 4.0, max_speed, -1.0, max_speed_ms
+    )
 
 
 def passes(**by_outcome: int) -> list[StopStatRow]:
@@ -498,7 +501,7 @@ def test_a_mail_that_covers_several_days_gives_the_fastest_of_each() -> None:
         stop("did_not_stop", "2026-10-12 08:00", max_speed=5.0),  # Mon: 12.5 m/s, 28 mph
     ]
     digest = build(rows, start_ms=start, end_ms=end)
-    assert [d for d, _ in digest.facts.fastest_by_day] == [
+    assert [d for d, _, _ in digest.facts.fastest_by_day] == [
         "2026-10-09",
         "2026-10-10",
         "2026-10-11",
@@ -525,6 +528,58 @@ def test_a_vehicle_that_never_moved_has_a_speed_of_almost_still() -> None:
 def test_the_caveat_about_estimates_is_there_only_when_a_speed_is_shown() -> None:
     assert "not a measurement" not in build(passes(did_not_stop=2)).text
     assert "not a measurement" in build([stop("did_not_stop", max_speed=3.0)]).text
+
+
+# --- a speed measured on a calibrated road (plan.md M6) -------------------------------------------
+
+
+def test_a_measured_speed_is_a_speed_and_not_an_estimate_and_has_no_about() -> None:
+    digest = build([stop("did_not_stop", "2026-10-09 17:42", max_speed_ms=12.5)])
+    assert digest.facts.fastest_measured is True and digest.facts.fastest_speed_ms == 12.5
+    assert "Fastest speed:" in digest.text and "Fastest estimate" not in digest.text
+    for where in (digest.text, digest.html):
+        assert "28 mph (a car, Fri 9 Oct 5:42 pm)" in where
+        assert "about 28" not in where and "about 30" not in where
+
+
+def test_a_measured_speed_is_in_the_owners_units_to_the_whole_number() -> None:
+    rows = [stop("did_not_stop", max_speed_ms=12.5)]
+    assert "28 mph" in build(rows, units="mph").text
+    assert "45 km/h" in build(rows, units="kmh").text
+
+
+def test_a_measured_speed_beats_a_bigger_estimate_in_the_mail_too() -> None:
+    rows = [
+        stop("did_not_stop", "2026-10-09 09:00", max_speed=6.0),  # an estimate: 15 m/s
+        stop("did_not_stop", "2026-10-09 10:00", max_speed_ms=8.0),  # measured: 17.9 mph
+    ]
+    digest = build(rows)
+    assert digest.facts.fastest_speed_ms == 8.0 and digest.facts.fastest_measured is True
+    assert "18 mph" in digest.text
+
+
+def test_the_mail_says_what_a_measured_speed_is_worth_and_not_what_an_estimate_is() -> None:
+    text = build([stop("did_not_stop", max_speed_ms=12.5)]).text
+    assert "calibrated" in text and "unproven" in text
+    assert "own size" not in text and "40%" not in text
+
+
+def test_a_long_mail_with_both_kinds_says_both_and_marks_each_day_as_it_was_made() -> None:
+    start, end = at("2026-10-09 20:00"), at("2026-10-12 20:00")
+    rows = [
+        stop("did_not_stop", "2026-10-09 21:00", max_speed=3.0),  # Fri: an estimate, 7.5 m/s
+        stop("did_not_stop", "2026-10-10 12:00", max_speed_ms=10.0),  # Sat: measured, 22.4 mph
+        stop("did_not_stop", "2026-10-12 08:00", max_speed_ms=12.5),  # Mon: measured, 28 mph
+    ]
+    digest = build(rows, start_ms=start, end_ms=end)
+    assert [m for _, speed, m in digest.facts.fastest_by_day if speed is not None] == [
+        False,
+        True,
+        True,
+    ]
+    line = next(line for line in digest.text.splitlines() if line.startswith("Fastest by day"))
+    assert line.split(":", 1)[1].strip() == f"Fri about 15 mph, Sat 22 mph, Sun {D}, Mon 28 mph"
+    assert "own size" in digest.text and "unproven" in digest.text  # both sentences
 
 
 # --- the hours stop signs are judged in (plan.md D42) ---------------------------------------------

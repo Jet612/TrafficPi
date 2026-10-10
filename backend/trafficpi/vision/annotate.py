@@ -12,6 +12,7 @@ import cv2
 import numpy as np
 
 from trafficpi.core.geometry import Point
+from trafficpi.core.ground import GroundCalibration
 from trafficpi.vision.engine import CountTotals
 from trafficpi.vision.replay import replay_log
 from trafficpi.vision.rules import CountEvent, CountingLine, StopEvent, StopSign
@@ -116,7 +117,8 @@ def draw(
         x0, y0, x1, y1 = track.box
         cv2.rectangle(image, _px((x0, y0), size), _px((x1, y1), size), color, 2)
         label_at = (round(x0 * width), max(14, round(y0 * height) - 5))
-        cv2.putText(image, f"#{track.id} {track.label}", label_at, FONT, 0.5, color, 1)
+        speed = f" {track.speed_ms:.1f} m/s" if track.speed_ms is not None else ""
+        cv2.putText(image, f"#{track.id} {track.label}{speed}", label_at, FONT, 0.5, color, 1)
         points = [_px(p, size) for p in trails.get(track.id, ())]
         if len(points) > 1:
             cv2.polylines(image, [np.array(points, np.int32)], False, color, 2)
@@ -157,6 +159,7 @@ def annotate_clip(
     stills_dir: Path | None = None,
     trail_s: float = 2.0,
     stop_signs: Sequence[StopSign] = (),
+    calibration: GroundCalibration | None = None,
 ) -> AnnotateReport:
     """Draw the tracks, trails, lines, zones and running counts of ``log`` onto ``clip``.
 
@@ -164,7 +167,13 @@ def annotate_clip(
     starts both together, so they agree to within a frame or two). With ``stills_dir`` a JPEG is
     saved at every count event.
     """
-    replayed = replay_log(log, lines, detection_filter=detection_filter, stop_signs=stop_signs)
+    replayed = replay_log(
+        log,
+        lines,
+        detection_filter=detection_filter,
+        stop_signs=stop_signs,
+        calibration=calibration,
+    )
     stamps, results = replayed.timestamps_ns, replayed.results
     report = AnnotateReport()
     if not stamps:
@@ -208,8 +217,10 @@ def annotate_clip(
                     if isinstance(event, CountEvent):
                         totals.add(event)
                         report.events.append(event)
+                        speed = f" {event.speed_ms:.1f} m/s" if event.speed_ms is not None else ""
                         text = (
-                            f"{event.line_id} {event.direction:+d} {event.label} #{event.track_id}"
+                            f"{event.line_id} {event.direction:+d} {event.label} "
+                            f"#{event.track_id}{speed}"
                         )
                         banners.append((relative[current], text))
                         new_event_frame = True

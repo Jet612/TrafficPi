@@ -1,4 +1,5 @@
 import json
+import math
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -29,6 +30,7 @@ def test_an_empty_document_is_an_empty_profile() -> None:
         "detection_zones": [],
         "exclusion_zones": [],
         "stop_signs": [],
+        "calibration": None,
     }
 
 
@@ -294,3 +296,123 @@ def test_there_is_a_limit_to_the_stop_signs_too() -> None:
     signs = [STOP | {"id": f"s{i}"} for i in range(33)]
     with pytest.raises(ProfileError, match="stop_signs"):
         parse_profile({"stop_signs": signs})
+
+
+# --- the calibration that puts the picture in metres (plan.md M6) -----------------------------
+
+# A rectangle across a road 7 m wide and 30 m long, seen from a camera standing to one side.
+CALIBRATION: dict[str, Any] = {
+    "corners": [[0.62, 0.42], [0.86, 0.42], [0.58, 0.31], [0.43, 0.31]],
+    "width_m": 7.0,
+    "length_m": 30.0,
+}
+
+
+def test_a_profile_has_no_calibration_until_one_is_drawn() -> None:
+    assert parse_profile({}).calibration is None
+    assert parse_profile({"calibration": None}).calibration is None
+
+
+def test_a_calibration_needs_only_its_corners_and_its_size() -> None:
+    profile = parse_profile({"calibration": CALIBRATION})
+    assert profile.calibration is not None
+    assert profile.calibration.checks == []
+    assert profile.calibration.width_m == 7.0 and profile.calibration.length_m == 30.0
+
+
+def test_a_calibration_comes_back_whole_in_the_canonical_form() -> None:
+    check = {"id": "drive", "a": [0.5, 0.4], "b": [0.6, 0.35], "length_m": 12.0}
+    profile = parse_profile({"calibration": {**CALIBRATION, "checks": [check]}})
+    dumped = profile.model_dump(mode="json")["calibration"]
+    assert dumped["checks"] == [{**check, "name": ""}]
+    assert parse_profile({"calibration": dumped}) == profile
+    assert Profile.model_validate(profile.model_dump(mode="json")) == profile
+
+
+def test_a_profile_saved_before_the_calibration_existed_loads_as_the_newest() -> None:
+    old = parse_profile({"schema_version": 2, "lines": [LINE]})
+    assert old.schema_version == SCHEMA_VERSION == 3 and old.calibration is None
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        ({"corners": CALIBRATION["corners"][:3]}, r"calibration\.corners"),
+        ({"corners": [*CALIBRATION["corners"], [0.5, 0.5]]}, r"calibration\.corners"),
+        (
+            {"corners": [[0.62, 0.42], [1.2, 0.42], [0.58, 0.31], [0.43, 0.31]]},
+            "inside the picture",
+        ),
+        ({"width_m": 0.1}, r"calibration\.width_m"),
+        ({"width_m": 400.0}, r"calibration\.width_m"),
+        ({"length_m": 0.2}, r"calibration\.length_m"),
+        ({"length_m": 900.0}, r"calibration\.length_m"),
+        ({"width_m": "7"}, "must be a number"),
+        ({"width_m": True}, "must be a number"),
+        ({"width_m": math.nan}, r"calibration\.width_m"),
+        (
+            {"corners": [[0.62, 0.42], [0.58, 0.31], [0.86, 0.42], [0.43, 0.31]]},
+            "one after the other",
+        ),
+        ({"corners": [[0.1, 0.1], [0.2, 0.2], [0.3, 0.3], [0.5, 0.2]]}, "one after the other"),
+        ({"colour": "red"}, "not something TrafficPi knows"),
+    ],
+)
+def test_a_calibration_that_makes_no_sense_is_refused_with_the_reason(
+    change: dict[str, Any], message: str
+) -> None:
+    with pytest.raises(ProfileError, match=message):
+        parse_profile({"calibration": {**CALIBRATION, **change}})
+
+
+def test_a_check_is_a_known_distance_between_two_points() -> None:
+    check = {"id": "drive", "name": "Driveway to the pole", "a": [0.5, 0.4], "b": [0.6, 0.35]}
+    profile = parse_profile({"calibration": {**CALIBRATION, "checks": [{**check, "length_m": 12}]}})
+    assert profile.calibration is not None and profile.calibration.checks[0].length_m == 12.0
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        ({"b": [0.5, 0.4]}, "same place"),
+        ({"length_m": 0.1}, "length_m"),
+        ({"length_m": -3.0}, "length_m"),
+        ({"a": [0.5, 1.5]}, "inside the picture"),
+        ({"length_m": "12"}, "must be a number"),
+    ],
+)
+def test_a_check_that_makes_no_sense_is_refused(change: dict[str, Any], message: str) -> None:
+    check = {"id": "drive", "name": "Driveway", "a": [0.5, 0.4], "b": [0.6, 0.35], "length_m": 12.0}
+    with pytest.raises(ProfileError, match=message):
+        parse_profile({"calibration": {**CALIBRATION, "checks": [{**check, **change}]}})
+
+
+def test_the_name_of_a_check_is_part_of_the_complaint() -> None:
+    check = {"id": "drive", "name": "Driveway", "a": [0.5, 0.4], "b": [0.5, 0.4], "length_m": 12.0}
+    with pytest.raises(ProfileError, match=r'checks\[0\] \("Driveway"\)'):
+        parse_profile({"calibration": {**CALIBRATION, "checks": [check]}})
+
+
+def test_a_check_may_not_share_an_id_with_a_line_or_with_another_check() -> None:
+    check = {"id": "north", "a": [0.5, 0.4], "b": [0.6, 0.35], "length_m": 12.0}
+    with pytest.raises(ProfileError, match="'north' is used twice"):
+        parse_profile({"lines": [LINE], "calibration": {**CALIBRATION, "checks": [check]}})
+    twin = {**check, "id": "south"}
+    with pytest.raises(ProfileError, match="'south' is used twice"):
+        parse_profile({"calibration": {**CALIBRATION, "checks": [twin, twin]}})
+
+
+def test_there_is_a_limit_to_the_checks() -> None:
+    checks = [
+        {"id": f"c{i}", "a": [0.5, 0.4], "b": [0.6, 0.35], "length_m": 12.0} for i in range(9)
+    ]
+    with pytest.raises(ProfileError, match=r"calibration\.checks"):
+        parse_profile({"calibration": {**CALIBRATION, "checks": checks}})
+    parse_profile({"calibration": {**CALIBRATION, "checks": checks[:8]}})
+
+
+def test_a_profile_with_a_calibration_survives_a_round_trip_through_a_file(tmp_path: Path) -> None:
+    original = parse_profile({"lines": [LINE], "calibration": CALIBRATION})
+    path = tmp_path / "profile.json"
+    path.write_text(json.dumps(original.model_dump(mode="json")))
+    assert load_profile_file(path) == original

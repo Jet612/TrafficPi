@@ -1,9 +1,10 @@
+import math
 import random
 from collections.abc import Iterator, Sequence
 
 import pytest
 
-from tests.fakes import FULL_STOP, ROLLING_STOP
+from tests.fakes import FULL_STOP, ROLLING_STOP, STRAIGHT_THROUGH
 from tests.fakes import drive as positions
 from trafficpi.core.coco import class_name
 from trafficpi.core.geometry import Line, Polygon
@@ -471,3 +472,101 @@ def test_a_slow_jerky_crawl_still_has_a_fastest_speed() -> None:
     pts = [(0.0, 0.300, 0.8), (0.1, 0.316, 0.8), (0.2, 0.332, 0.8)]
     pts += [(0.3, 0.332, 0.8), (0.4, 0.332, 0.8), (0.5, 0.332, 0.8)]
     assert fastest(samples(pts), SIGN) == pytest.approx(0.032 / (0.5 * 0.17))
+
+
+# --- the speeds of a calibrated camera (plan.md M6) -----------------------------------------------
+
+
+def measured_run(
+    speeds: Sequence[float | None], xs: Sequence[float], rule: StopSignRule | None = None
+) -> StopEvent:
+    """Drive a vehicle along ``xs`` with the speed meter's reading at each frame."""
+    from dataclasses import replace
+
+    rule = rule or StopSignRule([SIGN])
+    events: list[StopEvent] = []
+    for i, (x, speed) in enumerate(zip(xs, speeds, strict=True)):
+        for event in rule.update(i * FRAME_NS, [replace(track(1, x), speed_ms=speed)]):
+            assert isinstance(event, StopEvent)
+            events.append(event)
+    (event,) = events
+    return event
+
+
+def test_a_pass_records_the_slowest_and_the_fastest_speed_the_meter_measured_in_the_zone() -> None:
+    xs = list(positions(STRAIGHT_THROUGH))
+    # Fast on the way in, slowest in the middle of the zone, and a little quicker at the line.
+    speeds = [8.0 - 4.0 * math.sin(math.pi * min(1.0, i / 90)) for i in range(len(xs))]
+    event = measured_run(speeds, xs)
+    zone_start = next(i for i, x in enumerate(xs) if x >= 0.1)
+    inside = speeds[zone_start : next(i for i, x in enumerate(xs) if x > 0.5)]
+    assert event.min_speed_ms == pytest.approx(min(inside), abs=0.06)
+    assert event.max_speed_ms == pytest.approx(max(inside), abs=0.06)
+
+
+def test_what_was_measured_outside_the_zone_is_not_part_of_the_pass() -> None:
+    xs = list(positions(STRAIGHT_THROUGH, x0=0.02))  # starts left of the zone, which begins at 0.1
+    speeds = [30.0 if x < 0.1 else 6.0 for x in xs]
+    event = measured_run(speeds, xs)
+    assert event.max_speed_ms == pytest.approx(6.0)
+    assert event.min_speed_ms == pytest.approx(6.0)
+
+
+def test_the_speed_at_the_line_is_the_last_one_measured_before_it() -> None:
+    xs = list(positions(STRAIGHT_THROUGH))
+    speeds = [10.0 - 5.0 * i / len(xs) for i in range(len(xs))]
+    event = measured_run(speeds, xs)
+    crossing = next(i for i, x in enumerate(xs) if x > 0.5)
+    assert event.line_speed_ms == pytest.approx(speeds[crossing - 1], abs=0.2)
+    assert event.line_speed_ms < event.max_speed_ms
+
+
+def test_a_frame_with_no_speed_is_skipped_and_one_with_none_at_all_leaves_minus_one() -> None:
+    xs = list(positions(STRAIGHT_THROUGH))
+    some = [5.0 if i % 3 else None for i in range(len(xs))]
+    event = measured_run(some, xs)
+    assert event.min_speed_ms == event.max_speed_ms == 5.0
+    none = measured_run([None] * len(xs), xs)
+    assert (none.min_speed_ms, none.max_speed_ms, none.line_speed_ms) == (-1.0, -1.0, -1.0)
+
+
+def test_a_speed_measured_long_before_the_line_is_not_the_speed_at_it() -> None:
+    """The vehicle was last measured more than two seconds before the crossing was decided: that
+    is the slowest and fastest it went, but not how fast it went at the line."""
+    xs = list(positions(STRAIGHT_THROUGH))
+    crossing = next(i for i, x in enumerate(xs) if x > 0.5)
+    speeds: list[float | None] = [7.0] * len(xs)
+    for i in range(crossing - 66, len(xs)):  # nothing measured for the last 2.2 s or more
+        speeds[i] = None
+    event = measured_run(speeds, xs)
+    assert event.max_speed_ms == pytest.approx(7.0)
+    assert event.line_speed_ms == -1.0
+
+
+def test_a_speed_measured_a_moment_before_the_line_is_the_speed_at_it() -> None:
+    """The crossing is only decided once the vehicle is clear of the line, so the last speed in the
+    zone is a few frames older than the event, and it is still the speed at the line."""
+    xs = list(positions(STRAIGHT_THROUGH))
+    crossing = next(i for i, x in enumerate(xs) if x > 0.5)
+    speeds: list[float | None] = [7.0] * len(xs)
+    for i in range(crossing - 20, len(xs)):  # the last 0.7 s are not measured
+        speeds[i] = None
+    assert measured_run(speeds, xs).line_speed_ms == pytest.approx(7.0)
+
+
+def test_the_outcome_does_not_depend_on_the_speed_the_meter_gave() -> None:
+    xs = list(positions(FULL_STOP))
+    plain = measured_run([None] * len(xs), xs)
+    wild = measured_run([40.0] * len(xs), xs)  # a meter that is wrong changes no verdict
+    assert (plain.outcome, plain.hold_s, plain.min_speed, plain.max_speed) == (
+        wild.outcome,
+        wild.hold_s,
+        wild.min_speed,
+        wild.max_speed,
+    )
+
+
+def test_the_speeds_are_rounded_to_a_centimetre_a_second() -> None:
+    xs = list(positions(STRAIGHT_THROUGH))
+    event = measured_run([6.123456] * len(xs), xs)
+    assert event.max_speed_ms == 6.12 and event.min_speed_ms == 6.12

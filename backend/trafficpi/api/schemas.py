@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, SecretStr
 
 from trafficpi.core.evidence_settings import MAX_CLIP_HOURS, MAX_MAX_MB, MIN_MAX_MB
 from trafficpi.core.evidence_settings import MAX_KEEP_DAYS as MAX_EVIDENCE_DAYS
-from trafficpi.core.profile import Profile
+from trafficpi.core.profile import Point, Profile
 from trafficpi.core.stop_hours import MAX_MARGIN_MIN, MIN_MARGIN_MIN
 from trafficpi.core.stop_hours import MAX_RANGES as MAX_STOP_HOURS_RANGES
 from trafficpi.core.trail_settings import MAX_KEEP_DAYS
@@ -93,6 +93,12 @@ class StopOut(BaseModel):
     hold_s: float  # the longest it was still in the approach zone
     min_speed: float  # the slowest it went there, in its own sizes a second; -1 if not measured
     observed_s: float  # how long it was watched in the zone before the line
+    # With a calibrated camera (plan.md M6), in metres a second as the speed meter measured them
+    # while the vehicle was in the approach zone: the slowest, the fastest, and the last one before
+    # the line. None where the camera was not calibrated or the speed could not be believed.
+    min_speed_ms: float | None
+    max_speed_ms: float | None
+    line_speed_ms: float | None
     review: ReviewState | None  # None: not looked at yet
     reviewed_at: int | None
     snapshot_url: str | None  # the picture of the moment it crossed the line; None: none is kept
@@ -131,11 +137,14 @@ class HourOutcomes(OutcomeCounts):
 
 
 class SpeedEstimate(BaseModel):
-    """The fastest estimated speed in some time: an estimate, not a measurement (plan.md D41)."""
+    """The fastest speed in some time. Without a calibration it is an estimate from the vehicle's
+    own size, good to about 40% (plan.md D41); with one (``calibrated``) it was measured in metres
+    on the road, and a calibrated speed always beats an estimate, whatever their sizes (M6)."""
 
     speed_ms: float  # metres a second, to a tenth
     label: str  # the kind of vehicle it was
     at: int  # when it passed, ms since the epoch
+    calibrated: bool  # measured on the calibrated road, and not estimated from the vehicle's size
 
 
 class DayOutcomes(OutcomeCounts):
@@ -164,6 +173,11 @@ class StopTiming(BaseModel):
         float | None
     )  # how slowly one that rolled through went, in its sizes a second
     did_not_stop_min_speed: float | None  # and one that did not stop
+    # The same two with a calibrated camera, in metres a second, over the passes it measured (None
+    # where there are none): the slowest a vehicle that rolled through went, and one that did not
+    # stop.
+    rolling_min_speed_ms: float | None
+    did_not_stop_min_speed_ms: float | None
 
 
 class StopReviews(BaseModel):
@@ -192,6 +206,74 @@ class StopStats(BaseModel):
     by_sign: list[SignOutcomes]  # stop signs with passes, most passes first
     timing: StopTiming
     review: StopReviews
+
+
+class SpeedFigures(BaseModel):
+    """What can be said of some speeds, in the units shown and to a tenth of one."""
+
+    count: int  # how many vehicles had a speed
+    mean: float
+    median: float
+    p85: float  # the speed that 85% of the vehicles did not exceed
+    fastest: float
+    slowest: float
+
+
+class SpeedBin(BaseModel):
+    low: float  # a bar of the histogram: from here (inclusive)
+    high: float  # to here (exclusive), in the units shown
+    count: int
+
+
+class SpeedPeriod(BaseModel):
+    """The speeds in one hour of the day or one day."""
+
+    count: int
+    mean: float | None
+    p85: float | None
+
+
+class SpeedHour(SpeedPeriod):
+    hour: int  # local hour of the day, 0 to 23, over every day of the period
+
+
+class SpeedDay(SpeedPeriod):
+    date: str  # the local day, YYYY-MM-DD
+    t: int  # when that local day began, ms since the epoch
+
+
+class SpeedLine(BaseModel):
+    line: str  # the counting line's id
+    name: str  # its name now; empty if it has been deleted
+    counted: int  # vehicles it counted in the period, measured or not
+    figures: SpeedFigures | None  # None: none of them had a speed
+
+
+class SpeedKind(BaseModel):
+    label: str  # the kind of vehicle
+    figures: SpeedFigures | None
+
+
+class SpeedStats(BaseModel):
+    """How fast the vehicles counted at the counting lines were going (plan.md M6). A speed is
+    given only for a vehicle seen for long enough and in a part of the picture the calibration
+    can be believed, so ``counted`` is more than ``figures.count`` and the difference is shown."""
+
+    timezone: str
+    units: Literal["mph", "kmh"]  # the owner's choice; every speed here is in them
+    from_ms: int
+    to_ms: int
+    days: int
+    all_time: bool
+    line: str | None  # only this counting line, if asked
+    counted: int  # vehicles counted in the period (at that line), with a speed or without
+    calibrations: list[str]  # the names of the calibrations the speeds were measured under
+    figures: SpeedFigures | None  # None: nothing was measured in the period
+    bins: list[SpeedBin]  # from zero up to the bar of the fastest, empty bars included
+    by_hour: list[SpeedHour]  # all 24
+    by_day: list[SpeedDay]  # every day of the period, oldest first, empty ones included
+    by_line: list[SpeedLine]  # most vehicles counted first
+    by_kind: list[SpeedKind]  # kinds with a speed, most first
 
 
 class TrafficHour(BaseModel):
@@ -255,6 +337,64 @@ class ProfileCheck(BaseModel):
     ok: bool
     problem: str | None  # what is wrong, when something is
     profile: Profile | None  # the document in canonical form, when it is usable
+
+
+class CalibrationProbe(BaseModel):
+    """A place in the picture to say what the calibration is at (a stop line, a counting line)."""
+
+    id: str = Field(min_length=1, max_length=64)
+    point: Point  # x and y as fractions of the picture, from 0 to 1
+
+
+class CalibrationRequest(BaseModel):
+    """A calibration that may not be saved yet, and places to ask about."""
+
+    calibration: object  # the profile's calibration (corners, width_m, length_m, checks)
+    probes: list[CalibrationProbe] = Field(default_factory=list, max_length=64)
+
+
+class CalibrationCheckResult(BaseModel):
+    """What the calibrated map finds for a distance the owner knows."""
+
+    id: str
+    entered_m: float  # the length that was typed
+    measured_m: float | None  # the length the map finds; None if an end is beyond the horizon
+    error_pct: float | None  # how far that is from the typed one, in %, negative when short
+    expected_pct: float | None  # how far the map is expected to be out for it (1 sigma), in %
+    agrees: bool | None  # within twice what is expected, and what a typed length may be out by
+
+
+class CalibrationProbeResult(BaseModel):
+    id: str
+    metres_per_pixel_along: float | None  # one pixel of a 1280 pixel wide picture, along the road
+    metres_per_pixel_across: float | None  # and across it; None beyond the horizon
+    error_along_pct: float | None  # how far a distance driven along the road can be believed
+    error_across_pct: float | None  # and one driven across it (1 sigma, in %); None: not at all
+    believed: bool  # whether a vehicle driving along the road here is given a speed
+
+
+class CalibrationGrid(BaseModel):
+    """How far a distance can be believed over the picture, in %, row by row from the top."""
+
+    columns: int
+    rows: int
+    along_pct: list[list[float | None]]  # None where the road does not reach
+    across_pct: list[list[float | None]]
+
+
+class CalibrationReport(BaseModel):
+    id: str  # the name speeds are stored under
+    limit_pct: float  # a speed is given only where the error in the direction of travel is below
+    centre_error_pct: float | None  # along the road, at the middle of the rectangle
+    checks: list[CalibrationCheckResult]
+    probes: list[CalibrationProbeResult]
+    grid: CalibrationGrid
+
+
+class CalibrationAnswer(BaseModel):
+    ok: bool
+    problem: str | None  # why the calibration cannot be used, when it cannot
+    report: CalibrationReport | None
 
 
 class ReferenceSaved(BaseModel):

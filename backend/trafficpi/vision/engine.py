@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from trafficpi.core.types import Detection
-from trafficpi.vision.rules import CountEvent, Event, Rule
+from trafficpi.vision.rules import CountEvent, Event, Rule, StopEvent
+from trafficpi.vision.speedmeter import SpeedMeter
 from trafficpi.vision.tracker import ByteTracker, TrackUpdate
 from trafficpi.vision.zones import DetectionFilter
 
@@ -31,21 +32,43 @@ class TrafficEngine:
         tracker: ByteTracker | None = None,
         rules: Sequence[Rule] = (),
         detection_filter: DetectionFilter | None = None,
+        speed_meter: SpeedMeter | None = None,
     ) -> None:
         self.tracker = tracker or ByteTracker()
         self.rules = list(rules)
         self.detection_filter = detection_filter  # None: look at every detection
+        self.speed_meter = speed_meter  # None: the camera is not calibrated, no speeds
 
     def update(self, timestamp_ns: int, detections: Sequence[Detection]) -> EngineResult:
         if self.detection_filter is not None:
             detections = self.detection_filter.apply(detections)
         tracked = self.tracker.update(timestamp_ns, detections)
+        tracks = tracked.tracks
+        if self.speed_meter is not None:
+            tracks = self.speed_meter.update(timestamp_ns, tracks)
         events: list[Event] = []
         for rule in self.rules:
-            events.extend(rule.update(timestamp_ns, tracked.tracks))
+            events.extend(self._stamped(event) for event in rule.update(timestamp_ns, tracks))
         for rule in self.rules:
             rule.forget(tracked.ended)
-        return EngineResult(tracked.tracks, events, tracked.ended)
+        if self.speed_meter is not None:
+            self.speed_meter.forget(tracked.ended)
+        return EngineResult(tracks, events, tracked.ended)
+
+    def _stamped(self, event: Event) -> Event:
+        """An event with the name of the calibration its speeds were measured under (a rule is a
+        function of tracks and cannot know it)."""
+        if self.speed_meter is None or not _has_speed(event):
+            return event
+        return replace(event, calibration=self.speed_meter.calibration.id)
+
+
+def _has_speed(event: Event) -> bool:
+    if isinstance(event, CountEvent):
+        return event.speed_ms is not None
+    if isinstance(event, StopEvent):
+        return event.min_speed_ms >= 0 or event.max_speed_ms >= 0 or event.line_speed_ms >= 0
+    return False
 
 
 @dataclass(slots=True)

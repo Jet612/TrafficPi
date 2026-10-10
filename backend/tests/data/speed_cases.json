@@ -24,5 +24,26 @@
     {"speed_ms": 13.411, "units": "kmh", "text": "about 50 km/h"},
     {"speed_ms": 17.9, "units": "mph", "text": "about 40 mph"},
     {"speed_ms": 17.9, "units": "kmh", "text": "about 65 km/h"}
+  ],
+  "caveats": {
+    "estimate": "A speed is an estimate: how fast a vehicle crossed the picture, compared with its own size. It is good to about 40% and is not a measurement.",
+    "measured": "A speed is measured on the road as it was calibrated on the dashboard's Setup page. The calibration has not yet been checked against a vehicle of known speed, so treat the figure as unproven."
+  },
+  "measured": [
+    {"value": 0.4, "whole": 0},
+    {"value": 0.5, "whole": 1},
+    {"value": 27.49, "whole": 27},
+    {"value": 27.5, "whole": 28},
+    {"value": 28.4, "whole": 28},
+    {"value": 101.5, "whole": 102}
+  ],
+  "measured_phrases": [
+    {"speed_ms": 0.1, "units": "mph", "text": "almost still"},
+    {"speed_ms": 3.0, "units": "mph", "text": "7 mph"},
+    {"speed_ms": 3.0, "units": "kmh", "text": "11 km/h"},
+    {"speed_ms": 12.5, "units": "mph", "text": "28 mph"},
+    {"speed_ms": 12.5, "units": "kmh", "text": "45 km/h"},
+    {"speed_ms": 13.411, "units": "mph", "text": "30 mph"},
+    {"speed_ms": 17.9, "units": "kmh", "text": "64 km/h"}
   ]
 }

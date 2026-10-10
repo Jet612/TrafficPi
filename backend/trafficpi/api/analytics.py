@@ -18,8 +18,8 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from trafficpi.api.stats import summarize
-from trafficpi.core.speed import estimated_speed_ms
-from trafficpi.db.store import STOP_OUTCOMES, CountRow, StopStatRow
+from trafficpi.core.speed import estimated_speed_ms, to_units
+from trafficpi.db.store import STOP_OUTCOMES, CountRow, SpeedRow, StopStatRow
 
 MAX_DAYS = 366  # the most a request may cover (days=0, "all time", stops here too)
 # Every zone's offset from UTC is a multiple of 15 minutes, so every local hour, day and weekday
@@ -155,13 +155,24 @@ def shares_of(counts: Mapping[str, int]) -> dict[str, int]:
     return shares
 
 
-def _fastest(best: tuple[float, str, int] | None) -> dict[str, Any] | None:
-    """A day's fastest estimated speed as the API gives it: metres a second to a tenth, the kind of
-    vehicle and when it passed (ms since the epoch); None if no pass of the day had a speed."""
+# The fastest speed of some passes: the speed in metres a second, the kind of vehicle, when it
+# passed, and whether the speed was measured on a calibrated road (and not estimated from the size).
+Fastest = tuple[float, str, int, bool]
+
+
+def _fastest(best: Fastest | None) -> dict[str, Any] | None:
+    """A fastest speed as the API gives it: metres a second to a tenth, the kind of vehicle, when
+    it passed (ms since the epoch) and whether it was measured; None if no pass had a speed."""
     if best is None:
         return None
-    speed, label, at = best
-    return {"speed_ms": round(speed, 1), "label": label, "at": at}
+    speed, label, at, calibrated = best
+    return {"speed_ms": round(speed, 1), "label": label, "at": at, "calibrated": calibrated}
+
+
+def _faster(candidate: Fastest, current: Fastest | None) -> bool:
+    """Whether a pass is the new fastest: a measured speed beats any estimate (an estimate is good
+    to about 40% and could be anything), then the faster wins, and on a tie the earlier stays."""
+    return current is None or (candidate[3], candidate[0]) > (current[3], current[0])
 
 
 def _median(values: Sequence[float], digits: int) -> float | None:
@@ -195,8 +206,10 @@ def stop_stats(
     holds: list[float] = []
     roll_speeds: list[float] = []
     miss_speeds: list[float] = []
-    # The fastest estimated speed of each local day: the speed, the kind of vehicle, when it passed.
-    fastest_by_day: dict[date, tuple[float, str, int]] = {}
+    # The fastest speed of each local day: the speed, the kind of vehicle, when it passed.
+    fastest_by_day: dict[date, Fastest] = {}
+    roll_speeds_ms: list[float] = []
+    miss_speeds_ms: list[float] = []
     confirmed = false_alarms = waiting = 0
 
     for row in rows:
@@ -216,22 +229,33 @@ def stop_stats(
         by_weekday[weekday][row.outcome] += 1
         by_kind.setdefault(row.kind or "unknown", Counter())[row.outcome] += 1
         by_sign.setdefault(row.sign, Counter())[row.outcome] += 1
-        if row.max_speed >= 0:  # -1 is "not measured": passes from before it was kept, or too short
+        # -1 is "not measured": passes from before it was kept, or too short. A speed measured on
+        # a calibrated road is used when there is one; the estimate from the vehicle's size is not.
+        if row.max_speed_ms >= 0:
+            found: Fastest | None = (row.max_speed_ms, row.kind or "unknown", row.occurred_at, True)
+        elif row.max_speed >= 0:
             speed = estimated_speed_ms(row.max_speed, row.kind)
-            if day not in fastest_by_day or speed > fastest_by_day[day][0]:  # the earlier on a tie
-                fastest_by_day[day] = (speed, row.kind or "unknown", row.occurred_at)
+            found = (speed, row.kind or "unknown", row.occurred_at, False)
+        else:
+            found = None
+        if found is not None and _faster(found, fastest_by_day.get(day)):
+            fastest_by_day[day] = found
         if row.outcome == "stopped":
             holds.append(row.hold_s)
         elif row.min_speed >= 0 and row.outcome == "rolling":
             roll_speeds.append(row.min_speed)
         elif row.min_speed >= 0 and row.outcome == "did_not_stop":
             miss_speeds.append(row.min_speed)
+        if row.min_speed_ms >= 0 and row.outcome == "rolling":
+            roll_speeds_ms.append(row.min_speed_ms)
+        elif row.min_speed_ms >= 0 and row.outcome == "did_not_stop":
+            miss_speeds_ms.append(row.min_speed_ms)
 
-    fastest_overall: tuple[float, str, int] | None = None
+    fastest_overall: Fastest | None = None
     for day in _days_of(period):
-        found = fastest_by_day.get(day)
-        if found is not None and (fastest_overall is None or found[0] > fastest_overall[0]):
-            fastest_overall = found
+        best = fastest_by_day.get(day)
+        if best is not None and _faster(best, fastest_overall):
+            fastest_overall = best
 
     def ranked(groups: Mapping[str, Counter[str]]) -> list[tuple[str, Counter[str]]]:
         return sorted(groups.items(), key=lambda item: (-item[1].total(), item[0]))
@@ -267,6 +291,8 @@ def stop_stats(
             "stopped_hold_s": _median(holds, 1),
             "rolling_min_speed": _median(roll_speeds, 2),
             "did_not_stop_min_speed": _median(miss_speeds, 2),
+            "rolling_min_speed_ms": _median(roll_speeds_ms, 1),
+            "did_not_stop_min_speed_ms": _median(miss_speeds_ms, 1),
         },
         "review": {"confirmed": confirmed, "false_alarms": false_alarms, "waiting": waiting},
     }
@@ -313,4 +339,125 @@ def traffic_stats(
             for day in _days_of(period)
         ],
         "by_weekday": [{"weekday": n, "total": total} for n, total in enumerate(by_weekday)],
+    }
+
+
+# --- the speeds of the vehicles counted (plan.md M6) --------------------------------------------
+
+SPEED_BIN = 5.0  # the histogram's bars are this wide, in miles or kilometres an hour, from zero
+MAX_SPEED_BINS = 40  # so nothing is drawn beyond 200: a faster vehicle is in the last bar
+
+
+def _percentile(sorted_values: Sequence[float], share: float) -> float:
+    """The smallest value that at least ``share`` of the values are not above (nearest rank)."""
+    return sorted_values[max(0, math.ceil(share * len(sorted_values)) - 1)]
+
+
+def _speed_figures(speeds: Sequence[float], counted: int | None = None) -> dict[str, Any] | None:
+    """The count, mean, median, 85th percentile, fastest and slowest of some speeds (already in
+    the units shown, to a tenth), or None for none. The 85th percentile is the speed that 85% of
+    the vehicles do not exceed, the figure that speed studies are summed up by."""
+    if not speeds:
+        return None
+    ordered = sorted(speeds)
+    figures: dict[str, Any] = {
+        "count": len(ordered),
+        "mean": round(statistics.fmean(ordered), 1),
+        "median": round(statistics.median(ordered), 1),
+        "p85": round(_percentile(ordered, 0.85), 1),
+        "fastest": round(ordered[-1], 1),
+        "slowest": round(ordered[0], 1),
+    }
+    if counted is not None:
+        figures["counted"] = counted
+    return figures
+
+
+def speed_stats(
+    rows: Sequence[SpeedRow],
+    counted: Mapping[str, int],
+    tz: ZoneInfo,
+    period: Period,
+    units: str,
+    *,
+    line_names: Mapping[str, str] | None = None,
+    line: str | None = None,
+) -> dict[str, Any]:
+    """How fast the vehicles that were counted were going, over a period of local days.
+
+    ``rows`` are the counts that have a measured speed; ``counted`` is how many vehicles each
+    counting line counted in the period, measured or not (a speed is given only when it can be
+    believed, so a share of the vehicles has none, and the page says how many that is). Speeds are
+    in ``units`` (miles or kilometres an hour), to a tenth.
+    """
+    local = _LocalTimes(tz)
+    names = line_names or {}
+    everything: list[float] = []
+    by_hour: list[list[float]] = [[] for _ in range(24)]
+    by_day: dict[date, list[float]] = {}
+    by_line: dict[str, list[float]] = {}
+    by_kind: dict[str, list[float]] = {}
+    bins: Counter[int] = Counter()
+    calibrations: list[str] = []
+    for row in rows:
+        value = to_units(row.speed_ms, units)
+        hour, day, _ = local.of(row.occurred_at)
+        everything.append(value)
+        by_hour[hour].append(value)
+        by_day.setdefault(day, []).append(value)
+        by_line.setdefault(row.line, []).append(value)
+        by_kind.setdefault(row.kind or "unknown", []).append(value)
+        bins[min(MAX_SPEED_BINS - 1, int(value // SPEED_BIN))] += 1
+        if row.calibration and row.calibration not in calibrations:
+            calibrations.append(row.calibration)
+    last = max(bins, default=-1)
+
+    def hour_of(values: list[float]) -> dict[str, Any]:
+        figures = _speed_figures(values)
+        return {
+            "count": len(values),
+            "mean": None if figures is None else figures["mean"],
+            "p85": None if figures is None else figures["p85"],
+        }
+
+    def ranked(groups: Mapping[str, list[float]]) -> list[tuple[str, list[float]]]:
+        return sorted(groups.items(), key=lambda item: (-len(item[1]), item[0]))
+
+    lines_seen = {**dict.fromkeys(by_line, 0), **counted}
+    return {
+        "timezone": str(tz),
+        "units": "mph" if units == "mph" else "kmh",
+        "from_ms": period.start_ms,
+        "to_ms": period.end_ms,
+        "days": period.days,
+        "all_time": period.all_time,
+        "line": line,
+        "counted": sum(counted.values()),
+        "calibrations": calibrations,
+        "figures": _speed_figures(everything),
+        "bins": [
+            {"low": n * SPEED_BIN, "high": (n + 1) * SPEED_BIN, "count": bins.get(n, 0)}
+            for n in range(last + 1)
+        ],
+        "by_hour": [{"hour": hour, **hour_of(values)} for hour, values in enumerate(by_hour)],
+        "by_day": [
+            {
+                "date": day.isoformat(),
+                "t": local_midnight_ms(day, tz),
+                **hour_of(by_day.get(day, [])),
+            }
+            for day in _days_of(period)
+        ],
+        "by_line": [
+            {
+                "line": name,
+                "name": names.get(name, ""),
+                "counted": lines_seen.get(name, 0),
+                "figures": _speed_figures(by_line.get(name, [])),
+            }
+            for name in sorted(lines_seen, key=lambda n: (-lines_seen[n], n))
+        ],
+        "by_kind": [
+            {"label": label, "figures": _speed_figures(values)} for label, values in ranked(by_kind)
+        ],
     }

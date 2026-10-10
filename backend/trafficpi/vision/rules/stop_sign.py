@@ -33,6 +33,11 @@ from trafficpi.vision.tracker import TrackUpdate
 Outcome = Literal["stopped", "rolling", "did_not_stop", "indeterminate"]
 
 SAMPLE_SPACING_NS = 60_000_000  # points closer in time than this add nothing; this bounds the work
+# The speed "at the line" is the last one measured in the approach zone, which ends at the line, as
+# long as that was not long before the crossing was decided: the crossing is only seen when the
+# vehicle is clear of the line (the counting margin) and has stayed there, so a fast vehicle is
+# decided a third of a second late and one at a walking pace some seconds late.
+LINE_SPEED_WITHIN_NS = 2_000_000_000
 MAX_SAMPLES = 2_000  # about two minutes at that spacing; the oldest are dropped
 # What the fastest speed trusts (a day's "fastest" is the extreme of many passes, so a glitch of the
 # tracker, two close cars swapping numbers say, would become the answer if it were let through):
@@ -55,6 +60,12 @@ class StopEvent(Event):
     # The fastest it went there, in the same units and over the same windows, among those that can
     # be trusted (``fastest``): how fast it arrived. -1 if there was no window to trust.
     max_speed: float = -1.0
+    # With a calibrated camera, the same in metres a second as the speed meter measured it (over
+    # the last second at each frame while the vehicle was in the approach zone): the slowest, the
+    # fastest, and the last one before the line. -1 for each that was not measured.
+    min_speed_ms: float = -1.0
+    max_speed_ms: float = -1.0
+    line_speed_ms: float = -1.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,13 +98,14 @@ class _Sample:
     x: float  # the ground point, in units of the picture's height
     y: float
     size: float  # the vehicle's size in the same unit: the geometric mean of its box's sides
+    speed_ms: float | None = None  # as the speed meter measured it, if the camera is calibrated
 
 
 def _sample(timestamp_ns: int, track: TrackUpdate, aspect: float) -> _Sample:
     x0, y0, x1, y1 = track.box
     gx, gy = track.ground_point
     size = math.sqrt(max((x1 - x0) * aspect, 1e-9) * max(y1 - y0, 1e-9))
-    return _Sample(timestamp_ns, gx * aspect, gy, size)
+    return _Sample(timestamp_ns, gx * aspect, gy, size, track.speed_ms)
 
 
 def longest_still(samples: Sequence[_Sample], sign: StopSign) -> float:
@@ -248,6 +260,13 @@ def _judge(crossing: CountEvent, sign: StopSign, seen: list[_Sample]) -> StopEve
     hold = longest_still(seen, sign) if seen else 0.0
     speed = slowest(seen, sign) if seen else None
     quickest = fastest(seen, sign) if seen else None
+    measured = [s.speed_ms for s in seen if s.speed_ms is not None]
+    last = next((s for s in reversed(seen) if s.speed_ms is not None), None)
+    at_line = (
+        last.speed_ms
+        if last is not None and crossing.timestamp_ns - last.t_ns <= LINE_SPEED_WITHIN_NS
+        else None
+    )
     if hold >= sign.hold_s:
         outcome: Outcome = "stopped"  # seen to stop: that needs no more watching than it took
     elif observed < sign.min_observed_s or speed is None:
@@ -267,4 +286,7 @@ def _judge(crossing: CountEvent, sign: StopSign, seen: list[_Sample]) -> StopEve
         min_speed=round(speed, 3) if speed is not None else -1.0,
         observed_s=round(observed, 3),
         max_speed=round(quickest, 3) if quickest is not None else -1.0,
+        min_speed_ms=round(min(measured), 2) if measured else -1.0,
+        max_speed_ms=round(max(measured), 2) if measured else -1.0,
+        line_speed_ms=round(at_line, 2) if at_line is not None else -1.0,
     )

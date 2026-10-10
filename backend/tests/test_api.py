@@ -471,11 +471,12 @@ def test_events_are_newest_first_and_page_with_before_id(
 
 
 EMPTY_PROFILE = {
-    "schema_version": 2,
+    "schema_version": 3,
     "lines": [],
     "detection_zones": [],
     "exclusion_zones": [],
     "stop_signs": [],
+    "calibration": None,
 }
 CANONICAL_LINE = {
     "id": "north",
@@ -516,7 +517,7 @@ def test_profile_starts_empty_then_saves_and_tells_the_vision_service(
 
 
 def test_zones_are_saved_and_come_back_unchanged(logged_in: TestClient) -> None:
-    document = {"schema_version": 2, "stop_signs": [], **ZONES}
+    document = {"schema_version": 3, "stop_signs": [], "calibration": None, **ZONES}
     assert logged_in.put("/api/profile", json=document).status_code == 200
     assert logged_in.get("/api/profile").json()["profile"] == document
 

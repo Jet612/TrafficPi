@@ -24,7 +24,7 @@ from zoneinfo import ZoneInfo
 
 from trafficpi.api import analytics
 from trafficpi.api.system_history import MIN_SAMPLES_FOR_OUTAGE
-from trafficpi.core.speed import speed_phrase
+from trafficpi.core.speed import ESTIMATE_CAVEAT, MEASURED_CAVEAT, speed_phrase
 from trafficpi.db.store import CountRow, StopStatRow
 from trafficpi.vision.health import HealthRow
 
@@ -79,12 +79,15 @@ class DigestFacts:
     busiest_hour_vehicles: int
     down_minutes: int
     shares: dict[str, int]  # of all the passes judged, as the Data page rounds them (add up to 100)
-    fastest_speed_ms: float | None  # the fastest estimated speed in the stretch, in metres a second
+    fastest_speed_ms: float | None  # the fastest speed in the stretch, in metres a second
     fastest_label: str | None  # of what kind of vehicle
     fastest_at_ms: int | None  # and when it passed
-    # For a stretch that touches three days or more: each local day and its fastest estimate (None
-    # if no pass of that day had a speed); empty for a stretch of a day or so.
-    fastest_by_day: tuple[tuple[str, float | None], ...]
+    fastest_measured: (
+        bool  # measured on a calibrated road; False: estimated from the vehicle's size
+    )
+    # For a stretch that touches three days or more: each local day, its fastest speed (None if no
+    # pass of that day had one) and whether that was measured; empty for a stretch of a day or so.
+    fastest_by_day: tuple[tuple[str, float | None, bool], ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -180,12 +183,12 @@ def _a(label: str | None) -> str:
     return kinds.get(label or "", "a vehicle")
 
 
-def _by_day_text(days: tuple[tuple[str, float | None], ...], units: str) -> str:
-    """Each day of a long stretch, with its fastest estimate (a dash for a day with none)."""
+def _by_day_text(days: tuple[tuple[str, float | None, bool], ...], units: str) -> str:
+    """Each day of a long stretch, with its fastest speed (a dash for a day with none)."""
     return ", ".join(
         f"{_DAYS[date.fromisoformat(day).weekday()][:3]} "
-        f"{_DASH if speed is None else speed_phrase(speed, units)}"
-        for day, speed in days
+        f"{_DASH if speed is None else speed_phrase(speed, units, measured)}"
+        for day, speed, measured in days
     )
 
 
@@ -239,9 +242,14 @@ def _facts(data: DigestInput) -> DigestFacts:
         fastest_speed_ms=None if fastest is None else fastest["speed_ms"],
         fastest_label=None if fastest is None else fastest["label"],
         fastest_at_ms=None if fastest is None else fastest["at"],
+        fastest_measured=fastest is not None and fastest["calibrated"],
         fastest_by_day=(
             tuple(
-                (d["date"], None if d["fastest"] is None else d["fastest"]["speed_ms"])
+                (
+                    d["date"],
+                    None if d["fastest"] is None else d["fastest"]["speed_ms"],
+                    d["fastest"] is not None and d["fastest"]["calibrated"],
+                )
                 for d in days
             )
             if len(days) >= 3
@@ -315,10 +323,12 @@ def build_digest(data: DigestInput) -> Digest:
         else:
             passed = datetime.fromtimestamp((facts.fastest_at_ms or 0) / 1000, data.tz)
             fastest_text = (
-                f"{speed_phrase(facts.fastest_speed_ms, data.units)} "
+                f"{speed_phrase(facts.fastest_speed_ms, data.units, facts.fastest_measured)} "
                 f"({_a(facts.fastest_label)}, {_short_day(passed)} {_clock(passed)})"
             )
-        rows.append(("Fastest estimate", fastest_text))
+        rows.append(
+            ("Fastest speed" if facts.fastest_measured else "Fastest estimate", fastest_text)
+        )
         if facts.fastest_by_day:
             rows.append(("Fastest by day", _by_day_text(facts.fastest_by_day, data.units)))
 
@@ -352,11 +362,16 @@ def build_digest(data: DigestInput) -> Digest:
             "in these numbers."
         )
 
-    caveat = (
-        "A speed is an estimate: how fast a vehicle crossed the picture, compared with its own "
-        "size. It is good to about 40% and is not a measurement. "
-        if facts.fastest_speed_ms is not None
-        else ""
+    # What the speeds shown are worth: one sentence for the estimates among them, one for the
+    # measured ones (a stretch of several days can hold both).
+    shown = [
+        (facts.fastest_speed_ms, facts.fastest_measured),
+        *((s, m) for _, s, m in facts.fastest_by_day),
+    ]
+    caveat = "".join(
+        f"{sentence} "
+        for sentence, wanted in ((ESTIMATE_CAVEAT, False), (MEASURED_CAVEAT, True))
+        if any(speed is not None and measured is wanted for speed, measured in shown)
     )
     footer = caveat + (
         "This email holds numbers only: no pictures or clips. You get it because the owner of "

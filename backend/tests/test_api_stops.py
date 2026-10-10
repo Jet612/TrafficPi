@@ -79,11 +79,48 @@ def test_a_stop_comes_back_with_what_was_seen_and_nothing_reviewed(
         "hold_s": 1.6,
         "min_speed": 0.05,
         "observed_s": 4.2,
+        "min_speed_ms": None,  # the camera was not calibrated
+        "max_speed_ms": None,
+        "line_speed_ms": None,
         "review": None,
         "reviewed_at": None,
         "snapshot_url": None,
         "clip_url": None,
     }
+
+
+def test_a_pass_measured_on_a_calibrated_road_comes_back_with_its_speeds(
+    client: TestClient, store: Store
+) -> None:
+    measured = StopEvent(
+        0,
+        7,
+        2,
+        "car",
+        "elm",
+        "rolling",
+        hold_s=0.2,
+        min_speed=0.5,
+        observed_s=4.0,
+        min_speed_ms=1.5,
+        max_speed_ms=9.75,
+        line_speed_ms=0.0,
+        calibration="ab12cd34",
+    )
+    store.record_stop(measured, BASE + 5_000)
+    (row,) = client.get("/api/stops", params=RANGE).json()
+    assert (row["min_speed_ms"], row["max_speed_ms"], row["line_speed_ms"]) == (1.5, 9.75, 0.0)
+
+
+def test_a_speed_that_was_not_measured_is_none_not_minus_one(
+    client: TestClient, store: Store
+) -> None:
+    partly = StopEvent(
+        0, 7, 2, "car", "elm", "did_not_stop", 0.0, 6.0, 3.0, max_speed_ms=9.0, calibration="x"
+    )
+    store.record_stop(partly, BASE + 5_000)
+    (row,) = client.get("/api/stops", params=RANGE).json()
+    assert (row["min_speed_ms"], row["max_speed_ms"], row["line_speed_ms"]) == (None, 9.0, None)
 
 
 def test_stops_are_listed_newest_first_filtered_and_paged(client: TestClient, store: Store) -> None:

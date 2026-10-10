@@ -533,3 +533,73 @@ def test_wall_clock_maps_monotonic_to_utc_and_follows_clock_steps() -> None:
     wall[0] += 3_000_000_000  # NTP steps the wall clock forward by 3 s...
     mono[0] += 61_000_000_000  # ...and a minute passes, so the offset is re-measured
     assert clock.epoch_ms(mono[0]) == wall[0] // 1_000_000
+
+
+# --- the speeds of a calibrated camera (plan.md M6) -----------------------------------------------
+
+
+def test_a_count_with_a_measured_speed_keeps_it_and_the_calibration_it_came_from(
+    store: Store,
+) -> None:
+    event = CountEvent(0, 3, 2, "car", "main", 1, speed_ms=11.25, calibration="ab12cd34")
+    store.record_count(event, minute(0) + 1_000)
+    store.record_count(count(), minute(0) + 2_000)  # no speed: stored exactly as it always was
+    first, second = reversed(store.recent_events())
+    assert first.details == {"speed_ms": 11.25, "cal": "ab12cd34"}
+    assert second.details is None
+
+
+def test_details_given_by_the_caller_for_a_count_are_kept_as_they_are(store: Store) -> None:
+    event = CountEvent(0, 3, 2, "car", "main", 1, speed_ms=11.25, calibration="ab12cd34")
+    store.record_count(event, minute(0) + 1_000, details={"note": "x"})
+    (found,) = store.recent_events()
+    assert found.details == {"note": "x"}
+
+
+def test_a_stop_with_measured_speeds_keeps_them_and_the_calibration(store: Store) -> None:
+    measured = StopEvent(
+        0,
+        7,
+        2,
+        "car",
+        "elm",
+        "rolling",
+        hold_s=0.4,
+        min_speed=0.3,
+        observed_s=4.0,
+        min_speed_ms=1.5,
+        max_speed_ms=9.75,
+        line_speed_ms=3.0,
+        calibration="ab12cd34",
+    )
+    store.record_stop(measured, minute(0) + 1_000)
+    (found,) = store.recent_events(type="stop")
+    assert found.details is not None
+    assert {
+        k: found.details[k] for k in ("min_speed_ms", "max_speed_ms", "line_speed_ms", "cal")
+    } == {
+        "min_speed_ms": 1.5,
+        "max_speed_ms": 9.75,
+        "line_speed_ms": 3.0,
+        "cal": "ab12cd34",
+    }
+    (row,) = store.stop_rows(minute(0), minute(1))
+    assert (row.min_speed_ms, row.max_speed_ms, row.line_speed_ms) == (1.5, 9.75, 3.0)
+
+
+def test_a_stop_without_speeds_in_metres_is_stored_as_it_always_was(store: Store) -> None:
+    store.record_stop(stop(), minute(0) + 1_000)
+    (found,) = store.recent_events(type="stop")
+    assert found.details is not None
+    assert "min_speed_ms" not in found.details and "cal" not in found.details
+    (row,) = store.stop_rows(minute(0), minute(1))
+    assert (row.min_speed_ms, row.max_speed_ms, row.line_speed_ms) == (-1.0, -1.0, -1.0)
+
+
+def test_a_stop_with_only_some_speeds_measured_keeps_minus_one_for_the_rest(store: Store) -> None:
+    some = StopEvent(
+        0, 7, 2, "car", "elm", "did_not_stop", 0.0, 6.0, 3.0, max_speed_ms=9.0, calibration="x"
+    )
+    store.record_stop(some, minute(0) + 1_000)
+    (row,) = store.stop_rows(minute(0), minute(1))
+    assert (row.min_speed_ms, row.max_speed_ms, row.line_speed_ms) == (-1.0, 9.0, -1.0)

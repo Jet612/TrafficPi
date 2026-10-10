@@ -159,3 +159,28 @@ def test_forgetting_a_track_clears_its_memory() -> None:
     rule.update(0, [track(1, 0.5, 0.45)])
     rule.forget([1])
     assert rule.update(1, [track(1, 0.5, 0.55)]) == []  # nothing remembered to cross from
+
+
+# --- the speed of a calibrated camera (plan.md M6) ------------------------------------------------
+
+
+def test_a_count_carries_the_speed_the_meter_measured_as_the_vehicle_crossed() -> None:
+    from dataclasses import replace
+
+    rule = CountingRule([LINE])
+    events: list[object] = []
+    for i, (x, y) in enumerate(down()):
+        events += rule.update(i, [replace(track(1, x, y), speed_ms=7.123456)])
+    (event,) = events
+    assert isinstance(event, CountEvent)
+    assert event.speed_ms == 7.12  # to a centimetre a second
+    assert event.calibration is None  # a rule never knows it: the engine names it
+
+
+def test_a_count_has_no_speed_when_none_was_measured() -> None:
+    rule = CountingRule([LINE])
+    events: list[object] = []
+    for i, (x, y) in enumerate(down()):
+        events += rule.update(i, [track(1, x, y)])
+    (event,) = events
+    assert isinstance(event, CountEvent) and event.speed_ms is None

@@ -90,6 +90,23 @@ class StopStatRow:
     min_speed: float  # in the vehicle's own sizes a second; -1 if it was not measured
     observed_s: float
     max_speed: float = -1.0  # the fastest it went, the same units; -1 if it was not measured
+    # With a calibrated camera (plan.md M6): the same, measured in metres a second; -1 if the
+    # camera was not calibrated, or the speed could not be believed.
+    min_speed_ms: float = -1.0
+    max_speed_ms: float = -1.0
+    line_speed_ms: float = -1.0
+
+
+@dataclass(frozen=True, slots=True)
+class SpeedRow:
+    """What the speed sums need of a count that has a measured speed (plan.md M6)."""
+
+    occurred_at: int  # ms since the epoch, UTC
+    kind: str  # the vehicle's class label; "" if the event has none
+    line: str  # the counting line's id; "" if the event has none
+    direction: int
+    speed_ms: float  # metres a second, as the speed meter measured it as the vehicle crossed
+    calibration: str  # the calibration it was measured under; "" if unknown
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,6 +134,20 @@ class UserRow:
     id: int
     username: str
     password_hash: str
+
+
+def _measured_speeds(event: StopEvent) -> dict[str, Any]:
+    """The speeds in metres a second that a calibrated camera measured for a stop, with the
+    calibration they came from; nothing at all if none was (so that an uncalibrated pass is stored
+    exactly as it always was)."""
+    speeds = {
+        "min_speed_ms": event.min_speed_ms,
+        "max_speed_ms": event.max_speed_ms,
+        "line_speed_ms": event.line_speed_ms,
+    }
+    if all(value < 0 for value in speeds.values()):
+        return {}
+    return {**speeds, "cal": event.calibration}
 
 
 class Store:
@@ -166,8 +197,14 @@ class Store:
         details: dict[str, Any] | None = None,
         evidence_path: str | None = None,
     ) -> int:
-        """Store a count event and add it to its minute's totals; returns the event id."""
+        """Store a count event and add it to its minute's totals; returns the event id.
+
+        With a calibrated camera the event also keeps how fast the vehicle was going (``speed_ms``)
+        and under which calibration, as its details.
+        """
         bucket = occurred_at_ms // 60_000 * 60
+        if details is None and event.speed_ms is not None:
+            details = {"speed_ms": event.speed_ms, "cal": event.calibration}
         with self._session() as s:
             row = Event(
                 camera_id=self.camera_id,
@@ -228,6 +265,7 @@ class Store:
                     "min_speed": event.min_speed,
                     "observed_s": event.observed_s,
                     "max_speed": event.max_speed,
+                    **_measured_speeds(event),
                 },
                 evidence_path=evidence_path,
             )
@@ -354,6 +392,9 @@ class Store:
                 details["min_speed"].as_float(),
                 details["observed_s"].as_float(),
                 details["max_speed"].as_float(),
+                details["min_speed_ms"].as_float(),
+                details["max_speed_ms"].as_float(),
+                details["line_speed_ms"].as_float(),
             )
             .where(
                 Event.camera_id == self.camera_id,
@@ -377,10 +418,56 @@ class Store:
                     min_speed=-1.0 if speed is None else float(speed),
                     observed_s=0.0 if watched is None else float(watched),
                     max_speed=-1.0 if quickest is None else float(quickest),
+                    min_speed_ms=-1.0 if slow_ms is None else float(slow_ms),
+                    max_speed_ms=-1.0 if fast_ms is None else float(fast_ms),
+                    line_speed_ms=-1.0 if line_ms is None else float(line_ms),
                 )
-                for at, kind, line, outcome, review, hold, speed, watched, quickest in s.execute(
-                    query
-                )
+                for (
+                    at,
+                    kind,
+                    line,
+                    outcome,
+                    review,
+                    hold,
+                    speed,
+                    watched,
+                    quickest,
+                    slow_ms,
+                    fast_ms,
+                    line_ms,
+                ) in s.execute(query)
+            ]
+
+    def speed_rows(self, start_ms: int, end_ms: int, *, line: str | None = None) -> list[SpeedRow]:
+        """Every count in ``[start_ms, end_ms)`` that has a measured speed (of one counting line, if
+        given), oldest first. A count made before the camera was calibrated, or whose speed could
+        not be believed, has none and is not here."""
+        details = Event.details
+        speed = details["speed_ms"].as_float()
+        query = (
+            select(
+                Event.occurred_at,
+                Event.class_label,
+                Event.line_id,
+                Event.direction,
+                speed,
+                details["cal"].as_string(),
+            )
+            .where(
+                Event.camera_id == self.camera_id,
+                Event.type == "count",
+                Event.occurred_at >= start_ms,
+                Event.occurred_at < end_ms,
+                speed.is_not(None),
+            )
+            .order_by(Event.occurred_at, Event.id)
+        )
+        if line is not None:
+            query = query.where(Event.line_id == line)
+        with self._session() as s:
+            return [
+                SpeedRow(at, kind or "", line_id or "", direction or 0, float(value), cal or "")
+                for at, kind, line_id, direction, value, cal in s.execute(query)
             ]
 
     def first_stop_ms(self, *, sign: str | None = None) -> int | None:

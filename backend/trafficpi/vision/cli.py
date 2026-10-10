@@ -332,7 +332,7 @@ def cmd_redetect(args: argparse.Namespace) -> int:
 
 def _load_profile(path: Path | None) -> CompiledProfile:
     """The profile in a JSON file (see ``trafficpi.core.profile``), or an empty one."""
-    return load_compiled_profile(path) if path else CompiledProfile([], None, [])
+    return load_compiled_profile(path) if path else CompiledProfile([], None, [], None)
 
 
 def _print_stops(replayed) -> None:  # type: ignore[no-untyped-def]
@@ -344,13 +344,20 @@ def _print_stops(replayed) -> None:  # type: ignore[no-untyped-def]
     print(
         "fast = the fastest it went, in the vehicle's own sizes a second, watched = how long it was"
     )
-    print("followed in the zone):")
+    print("followed in the zone; with a calibration, also the slowest and fastest speed measured")
+    print("there and the last one before the line, in metres a second):")
     for e in replayed.stops:
         seconds = (e.timestamp_ns - t0) / 1e9
+        metres = (
+            f"  {e.min_speed_ms:5.1f} to {e.max_speed_ms:5.1f} m/s, "
+            f"{e.line_speed_ms:5.1f} at the line"
+            if e.max_speed_ms >= 0
+            else ""
+        )
         print(
             f"  {seconds:8.2f} s  {e.sign_id:16} {e.outcome:13} {e.label:10} track {e.track_id}"
             f"  still {e.hold_s:4.1f} s  slow {e.min_speed:5.2f}  fast {e.max_speed:5.2f}"
-            f"  watched {e.observed_s:4.1f} s"
+            f"  watched {e.observed_s:4.1f} s{metres}"
         )
 
 
@@ -380,8 +387,10 @@ def _print_replay(path: Path, replayed, lines) -> None:  # type: ignore[no-untyp
     print("events (time since the first frame):")
     for e in replayed.events:
         seconds = (e.timestamp_ns - t0) / 1e9
+        speed = f"  {e.speed_ms:5.1f} m/s" if e.speed_ms is not None else ""
         print(
             f"  {seconds:8.2f} s  {e.line_id:16} {e.direction:+d}  {e.label:10} track {e.track_id}"
+            f"{speed}"
         )
     _print_stops(replayed)
 
@@ -391,7 +400,11 @@ def cmd_replay(args: argparse.Namespace) -> int:
     profile = _load_profile(args.profile)
     lines = profile.counting_lines
     replayed = replay_log(
-        args.log, lines, detection_filter=profile.detection_filter, stop_signs=profile.stop_signs
+        args.log,
+        lines,
+        detection_filter=profile.detection_filter,
+        stop_signs=profile.stop_signs,
+        calibration=profile.calibration,
     )
     _print_replay(args.log, replayed, lines)
     if args.events_json:
@@ -403,6 +416,7 @@ def cmd_replay(args: argparse.Namespace) -> int:
                 "direction": e.direction,
                 "class": e.label,
                 "track": e.track_id,
+                "speed_ms": e.speed_ms,
             }
             for e in replayed.events
         ]
@@ -429,6 +443,7 @@ def cmd_annotate(args: argparse.Namespace) -> int:
         video_out=args.video or folder / "annotated.mp4",
         stills_dir=args.stills or folder / "event-stills",
         stop_signs=profile.stop_signs,
+        calibration=profile.calibration,
     )
     print(
         f"{report.frames_written} frames written, {len(report.events)} count events, "

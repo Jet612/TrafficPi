@@ -5,12 +5,15 @@ from __future__ import annotations
 import argparse
 import getpass
 import sys
+from datetime import date, datetime
 from pathlib import Path
 
-from trafficpi.api import backup
+from trafficpi.api import backup, speed_check
 from trafficpi.api.auth import MIN_PASSWORD_LENGTH, hash_password, normalize_username
 from trafficpi.api.settings import ApiSettings
+from trafficpi.core.clock import resolve_timezone
 from trafficpi.core.paths import DATA_DIR_HELP
+from trafficpi.core.profile import ProfileError, parse_profile
 from trafficpi.db.mail_store import MailStore
 from trafficpi.db.store import open_store
 from trafficpi.mail.mailer import MailMessage, SendOutcome
@@ -97,6 +100,41 @@ def cmd_digest(args: argparse.Namespace) -> int:
         args.html.chmod(0o600)
         print(f"\n(the HTML version is in {args.html}; open it in a browser)")
     return 0
+
+
+def cmd_speed_check(args: argparse.Namespace) -> int:
+    """Compare the speeds the camera measured with those of vehicles whose speed was known."""
+    store = open_store(args.data_dir)
+    try:
+        tz = resolve_timezone(store.get_setting("timezone"))
+        units = args.units or ("kmh" if store.get_setting("units", "mph") == "kmh" else "mph")
+        day = date.fromisoformat(args.date) if args.date else datetime.now(tz).date()
+        try:
+            readings = speed_check.parse_readings(
+                args.file.read_text(encoding="utf-8"), tz, units, day
+            )
+        except (OSError, UnicodeDecodeError) as exc:
+            raise RuntimeError(f"cannot read {args.file}: {exc}") from exc
+        except speed_check.ReadingsError as exc:
+            raise RuntimeError(f"{args.file}: {exc}") from exc
+        margin = round(args.tolerance * 1000)
+        events = store.speed_rows(
+            min(r.at_ms for r in readings) - margin, max(r.at_ms for r in readings) + margin + 1
+        )
+        names: dict[str, str] = {}
+        stored = store.get_profile()
+        if stored is not None:
+            try:
+                names = {line.name: line.id for line in parse_profile(stored[0]).lines if line.name}
+            except ProfileError:
+                names = {}
+    finally:
+        store.close()
+    matches = speed_check.match_readings(
+        readings, events, tolerance_s=args.tolerance, line_ids=names
+    )
+    print(speed_check.report(matches, tz, units, exclude_ambiguous=args.exclude_ambiguous))
+    return 0 if any(m.event is not None for m in matches) else 1
 
 
 def cmd_users(args: argparse.Namespace) -> int:
@@ -228,6 +266,43 @@ def build_parser() -> argparse.ArgumentParser:
     )
     dg.add_argument("--html", type=Path, help="also write the HTML version to this file")
     dg.set_defaults(func=cmd_digest)
+
+    sc = sub.add_parser(
+        "speed-check",
+        help="compare the speeds the camera measured with vehicles whose speed was known",
+        description="FILE has a line for each vehicle that went past at a known speed: the time it "
+        "crossed a counting line and how fast it was going, like `14:03:20, 25` (a speed is in the "
+        "units set on the dashboard unless it says `mph`, `km/h` or `m/s`; a third column names "
+        "the counting line). Each is matched to the nearest count that has a speed, and the "
+        "differences are summed up. Nothing is changed.",
+    )
+    sc.add_argument(
+        "file", type=Path, help="the passes, one to a line: time, speed[, line[, note]]"
+    )
+    sc.add_argument(
+        "--tolerance",
+        type=float,
+        default=speed_check.DEFAULT_TOLERANCE_S,
+        metavar="SECONDS",
+        help="how near in time a count must be to a pass (default %(default)s)",
+    )
+    sc.add_argument(
+        "--date",
+        metavar="YYYY-MM-DD",
+        help="the day of times written as a clock only (default today)",
+    )
+    sc.add_argument(
+        "--units",
+        choices=["mph", "kmh"],
+        help="the units of speeds with none written (default: the dashboard's)",
+    )
+    sc.add_argument(
+        "--exclude-ambiguous",
+        action="store_true",
+        help="leave out passes with another count as near in time (other traffic may have "
+        "been taken for the vehicle)",
+    )
+    sc.set_defaults(func=cmd_speed_check)
     return parser
 
 

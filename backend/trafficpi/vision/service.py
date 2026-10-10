@@ -46,6 +46,7 @@ from trafficpi.vision.profile import DEFAULT_ASPECT, compile_profile
 from trafficpi.vision.rules import CountEvent, CountingRule, Rule, StopEvent, StopSign, StopSignRule
 from trafficpi.vision.shutdown import StopRequest
 from trafficpi.vision.sources import EndOfStream, Frame, FrameSource
+from trafficpi.vision.speedmeter import SpeedMeter
 from trafficpi.vision.tracker import ByteTracker, TrackerConfig, TrackUpdate
 from trafficpi.vision.trails import FinishedTrail, TrailConfig, TrailRecorder, trail_classes
 
@@ -108,6 +109,7 @@ class LiveState:
         self._lines: list[dict[str, Any]] = []
         self._zones: list[dict[str, Any]] = []
         self._stop_signs: list[dict[str, Any]] = []
+        self._calibration: dict[str, Any] | None = None
         self._profile_error: str | None = None
         self._system: dict[str, Any] = {}
         self._drift: dict[str, Any] = {}
@@ -176,6 +178,15 @@ class LiveState:
                 }
                 for s in profile.stop_signs
             ]
+            self._calibration = (
+                None
+                if profile.calibration is None
+                else {
+                    "corners": [list(c) for c in profile.calibration.corners],
+                    "width_m": profile.calibration.width_m,
+                    "length_m": profile.calibration.length_m,
+                }
+            )
             self._profile_version = version
             self._profile_error = None
 
@@ -253,6 +264,7 @@ class LiveState:
                 "lines": list(self._lines),
                 "zones": list(self._zones),
                 "stop_signs": list(self._stop_signs),
+                "calibration": self._calibration,
                 "tracks": list(self._tracks),
                 "events": list(self._events),
                 "system": dict(self._system),
@@ -272,7 +284,7 @@ class LiveState:
 
 
 def _track_json(track: TrackUpdate) -> dict[str, Any]:
-    return {
+    found = {
         "id": track.id,
         "label": track.label,
         "score": round(track.score, 3),
@@ -280,6 +292,9 @@ def _track_json(track: TrackUpdate) -> dict[str, Any]:
         "velocity": [round(v, 4) for v in track.velocity],
         "confirmed": track.confirmed,
     }
+    if track.speed_ms is not None:  # only a calibrated camera, and only when it can be believed
+        found["speed_ms"] = round(track.speed_ms, 1)
+    return found
 
 
 class VisionService:
@@ -427,6 +442,11 @@ class VisionService:
             rules.append(StopSignRule(compiled.stop_signs))
         self._engine.rules = rules
         self._engine.detection_filter = compiled.detection_filter
+        meter = self._engine.speed_meter
+        if compiled.calibration is None:
+            self._engine.speed_meter = None
+        elif meter is None or meter.calibration is not compiled.calibration:
+            self._engine.speed_meter = SpeedMeter(compiled.calibration)  # else: keep its history
         self._stop_signs = {sign.id: sign for sign in compiled.stop_signs}
         self._active_profile = profile
         self.profile_version = version
