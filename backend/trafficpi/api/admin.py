@@ -118,9 +118,14 @@ def cmd_speed_check(args: argparse.Namespace) -> int:
         except speed_check.ReadingsError as exc:
             raise RuntimeError(f"{args.file}: {exc}") from exc
         margin = round(args.tolerance * 1000)
-        events = store.speed_rows(
+        every = store.speed_rows(
             min(r.at_ms for r in readings) - margin, max(r.at_ms for r in readings) + margin + 1
         )
+        current = store.current_calibration()
+        # The calibration in force: a check of a corrected rectangle must not be matched to speeds
+        # that the old, wrong one measured (--any-calibration says otherwise).
+        events = every if args.any_calibration else [e for e in every if e.calibration == current]
+        left_out = len(every) - len(events)
         names: dict[str, str] = {}
         stored = store.get_profile()
         if stored is not None:
@@ -133,6 +138,11 @@ def cmd_speed_check(args: argparse.Namespace) -> int:
     matches = speed_check.match_readings(
         readings, events, tolerance_s=args.tolerance, line_ids=names
     )
+    if left_out:
+        print(
+            f"({left_out} count(s) with a speed in these minutes were measured under another "
+            "calibration than the one in force and are left out; --any-calibration keeps them)\n"
+        )
     print(speed_check.report(matches, tz, units, exclude_ambiguous=args.exclude_ambiguous))
     return 0 if any(m.event is not None for m in matches) else 1
 
@@ -301,6 +311,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="leave out passes with another count as near in time (other traffic may have "
         "been taken for the vehicle)",
+    )
+    sc.add_argument(
+        "--any-calibration",
+        action="store_true",
+        help="also match counts whose speed was measured under an earlier calibration",
     )
     sc.set_defaults(func=cmd_speed_check)
     return parser

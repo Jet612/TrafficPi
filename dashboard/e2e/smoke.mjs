@@ -633,6 +633,12 @@ try {
       await page.getByText(/choose at least one kind/).first().waitFor({ state: "detached" });
     });
 
+    /** Select the speed calibration in the list (a press on a selected row would let go of it). */
+    const selectCalibration = async () => {
+      if ((await corners().count()) === 0) await page.getByRole("button", { name: /^Speed calibration/ }).first().click();
+      await corners().first().waitFor();
+    };
+
     // The made-up street runs left and right across the picture, so its road is a horizontal band:
     // a rectangle laid along it has its length across the picture and its width up and down. The
     // street is flat, so the map is an even scale, and the speeds it gives are those of the drawing.
@@ -698,7 +704,7 @@ try {
 
     await step("corners dragged into a bow tie are refused in words, and the draft can be undone", async () => {
       await openEditor();
-      await page.getByRole("button", { name: /^Speed calibration/ }).first().click();
+      await selectCalibration();
       await dragCorner(1, 0.85, 0.5); // corner 2 onto corner 4's place: the sides cross
       await page.getByText(/Needs fixing: the corners must go round the rectangle one after the other, without crossing/).waitFor();
       await page.getByText(/This calibration cannot be used/).waitFor();
@@ -726,7 +732,8 @@ try {
       const speeds = () => page.evaluate(async () => (await (await fetch("/api/stats/speeds?days=1")).json()));
       await eventually(async () => assert.ok((await speeds()).figures?.count >= 3, "vehicles counted with a speed"), "counts get speeds", 90_000);
       const stats = await speeds();
-      assert.equal(stats.calibrations.length, 1, "all from the one calibration");
+      assert.equal(typeof stats.calibration, "string", "the calibration in force is named");
+      assert.equal(stats.excluded, 0, "all from the one calibration");
       assert.ok(stats.figures.fastest < 40 && stats.figures.slowest > 0, `plausible speeds: ${stats.figures.slowest} to ${stats.figures.fastest} mph`);
       assert.ok(stats.counted >= stats.figures.count, "no more speeds than vehicles");
 
@@ -741,13 +748,22 @@ try {
 
     await step("the speed calibration can be taken away again", async () => {
       await openEditor();
-      await page.getByRole("button", { name: /^Speed calibration/ }).first().click();
+      await selectCalibration();
       await page.getByRole("region", { name: "Speed calibration: properties" }).getByRole("button", { name: "Delete this speed calibration" }).click();
       assert.equal(await corners().count(), 0, "the rectangle and its known distance are gone");
       await saveButton().click();
       await page.getByText(/Saved as version \d+/).waitFor();
       assert.equal((await stored()).calibration, null);
       assert.equal(await page.getByRole("button", { name: "Add speed calibration" }).isEnabled(), true);
+
+      // with none in force, the speeds it measured are counted nowhere, and the Data page says how many it leaves out
+      const after = await page.evaluate(async () => (await (await fetch("/api/stats/speeds?days=1")).json()));
+      assert.equal(after.calibration, null);
+      assert.equal(after.figures, null, "no calibration in force: no speed is counted");
+      assert.ok(after.excluded >= 3, `the speeds of the calibration taken away are left out (${after.excluded})`);
+      await goTo("Data");
+      await page.getByTestId("data-speeds-none").waitFor();
+      assert.match(await page.getByTestId("data-speeds-none").innerText(), /with a speed from an earlier calibration (is|are) left out/);
     });
   }
 

@@ -186,7 +186,8 @@ export function placeText(report: CalibrationReport, id: string): { believed: bo
   if (place.believed) {
     const error = place.error_along_pct === null ? "" : `, expected to be right to about ${Math.round(place.error_along_pct)}%`;
     const pixel = place.metres_per_pixel_along === null ? "" : `; a pixel is about ${Math.round(place.metres_per_pixel_along * 100)} cm along the road`;
-    return { believed: true, text: `speeds are given here${error}${pixel}` };
+    const across = place.error_across_pct === null || place.error_across_pct > report.limit_pct ? "; a vehicle driving across the road is given none" : "";
+    return { believed: true, text: `speeds are given here for a vehicle driving along the road${error}${pixel}${across}` };
   }
   return {
     believed: false,

@@ -16,7 +16,9 @@ from trafficpi.core import evidence_settings as ev
 from trafficpi.core import stop_hours as sh
 from trafficpi.core.clock import WallClock
 from trafficpi.core.evidence_settings import EvidenceSettings
+from trafficpi.core.ground import calibration_id
 from trafficpi.core.paths import ensure_private_dir
+from trafficpi.core.profile import ProfileError, parse_profile
 from trafficpi.core.stop_hours import StopHours, ranges_as_stored, read_stop_hours
 from trafficpi.core.trail_settings import (
     DEFAULT_KEEP_DAYS,
@@ -95,6 +97,7 @@ class StopStatRow:
     min_speed_ms: float = -1.0
     max_speed_ms: float = -1.0
     line_speed_ms: float = -1.0
+    calibration: str = ""  # the calibration those were measured under; "" if there are none
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,6 +137,18 @@ class UserRow:
     id: int
     username: str
     password_hash: str
+
+
+def _in_force(
+    value: float | None, calibration: str | None, current: str | None, any_calibration: bool
+) -> float:
+    """A speed kept in an event, or -1 if it has none or was measured under another calibration
+    than the one in force."""
+    if value is None or not (
+        any_calibration or (calibration is not None and calibration == current)
+    ):
+        return -1.0
+    return float(value)
 
 
 def _measured_speeds(event: StopEvent) -> dict[str, Any]:
@@ -375,11 +390,22 @@ class Store:
         return totals
 
     def stop_rows(
-        self, start_ms: int, end_ms: int, *, sign: str | None = None
+        self,
+        start_ms: int,
+        end_ms: int,
+        *,
+        sign: str | None = None,
+        any_calibration: bool = False,
     ) -> list[StopStatRow]:
         """Every stop event in ``[start_ms, end_ms)`` (of one stop sign, if given), as the few
         fields that sums over them need; oldest first. Events without a recognised outcome are
-        left to the caller to ignore."""
+        left to the caller to ignore.
+
+        The speeds in metres a second that were measured under another calibration than the one
+        in force now (``current_calibration``) are left out, as if they had not been measured:
+        after the rectangle has been corrected, the figures must not be a mixture of the map that
+        was wrong and the one that is right. ``any_calibration`` keeps them.
+        """
         details = Event.details
         query = (
             select(
@@ -395,6 +421,7 @@ class Store:
                 details["min_speed_ms"].as_float(),
                 details["max_speed_ms"].as_float(),
                 details["line_speed_ms"].as_float(),
+                details["cal"].as_string(),
             )
             .where(
                 Event.camera_id == self.camera_id,
@@ -406,6 +433,7 @@ class Store:
         )
         if sign is not None:
             query = query.where(Event.line_id == sign)
+        current = self.current_calibration()
         with self._session() as s:
             return [
                 StopStatRow(
@@ -418,9 +446,10 @@ class Store:
                     min_speed=-1.0 if speed is None else float(speed),
                     observed_s=0.0 if watched is None else float(watched),
                     max_speed=-1.0 if quickest is None else float(quickest),
-                    min_speed_ms=-1.0 if slow_ms is None else float(slow_ms),
-                    max_speed_ms=-1.0 if fast_ms is None else float(fast_ms),
-                    line_speed_ms=-1.0 if line_ms is None else float(line_ms),
+                    min_speed_ms=_in_force(slow_ms, cal, current, any_calibration),
+                    max_speed_ms=_in_force(fast_ms, cal, current, any_calibration),
+                    line_speed_ms=_in_force(line_ms, cal, current, any_calibration),
+                    calibration=cal or "",
                 )
                 for (
                     at,
@@ -435,6 +464,7 @@ class Store:
                     slow_ms,
                     fast_ms,
                     line_ms,
+                    cal,
                 ) in s.execute(query)
             ]
 
@@ -469,6 +499,22 @@ class Store:
                 SpeedRow(at, kind or "", line_id or "", direction or 0, float(value), cal or "")
                 for at, kind, line_id, direction, value, cal in s.execute(query)
             ]
+
+    def current_calibration(self) -> str | None:
+        """The name (``GroundCalibration.id``) of the speed calibration in the saved profile; None
+        if it has none or cannot be read. A speed is used by the sums only if it was measured under
+        this one."""
+        stored = self.get_profile()
+        if stored is None:
+            return None
+        try:
+            calibration = parse_profile(stored[0]).calibration
+        except ProfileError:
+            return None
+        if calibration is None:
+            return None
+        corners = [(float(x), float(y)) for x, y in calibration.corners]
+        return calibration_id(corners, calibration.width_m, calibration.length_m)
 
     def first_stop_ms(self, *, sign: str | None = None) -> int | None:
         """When the earliest stop event happened (of one stop sign, if given); None if none has."""

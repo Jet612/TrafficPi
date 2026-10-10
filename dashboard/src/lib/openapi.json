@@ -2231,12 +2231,16 @@
             "title": "By Line",
             "type": "array"
           },
-          "calibrations": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Calibrations",
-            "type": "array"
+          "calibration": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calibration"
           },
           "counted": {
             "title": "Counted",
@@ -2244,6 +2248,10 @@
           },
           "days": {
             "title": "Days",
+            "type": "integer"
+          },
+          "excluded": {
+            "title": "Excluded",
             "type": "integer"
           },
           "figures": {
@@ -2297,7 +2305,8 @@
           "all_time",
           "line",
           "counted",
-          "calibrations",
+          "calibration",
+          "excluded",
           "figures",
           "bins",
           "by_hour",

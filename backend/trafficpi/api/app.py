@@ -640,7 +640,11 @@ def create_app(
         period = analytics.period_for(
             ctx.clock.now_ms(), tz, days, None if first_s is None else first_s * 1000
         )
-        rows = ctx.store.speed_rows(period.start_ms, period.end_ms, line=line)
+        # Only speeds measured under the calibration in force: after the rectangle has been
+        # corrected, the figures must not be a mixture of the map that was wrong and the right one.
+        current = ctx.store.current_calibration()
+        every = ctx.store.speed_rows(period.start_ms, period.end_ms, line=line)
+        rows = [r for r in every if current is not None and r.calibration == current]
         counted: dict[str, int] = {}
         for count in ctx.store.minute_counts(period.start_ms // 1000, period.end_ms // 1000):
             if line is None or count.line_id == line:
@@ -654,6 +658,8 @@ def create_app(
             "kmh" if units == "kmh" else "mph",
             line_names=line_names(),
             line=line,
+            calibration=current,
+            excluded=len(every) - len(rows),
         )
 
     @app.get("/api/events", response_model=list[EventOut])

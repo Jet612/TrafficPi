@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
-from trafficpi.core.speed import MPS_TO_KMH, MPS_TO_MPH
+from trafficpi.core.speed import MPS_TO_KMH, MPS_TO_MPH, to_units
 from trafficpi.db.store import SpeedRow
 
 DEFAULT_TOLERANCE_S = 8.0  # a pass and its count are this near in time at most
@@ -71,13 +71,19 @@ def _speed_ms(text: str, units: str) -> float | None:
 
 
 def _parse_time(text: str, day: date, tz: ZoneInfo) -> int | None:
+    """A moment in ms, or None if the text is not one: a clock only (on ``day``), or a date and a
+    clock, on the camera's clock unless it carries an offset of its own (``+00:00`` or ``Z``)."""
     cleaned = text.strip().replace("T", " ")
+    if ":" not in cleaned:  # a date with no time is no moment, whatever midnight might match
+        return None
     try:
         if len(cleaned) <= 8:  # a clock only: the day is the one given
             clock = datetime.strptime(cleaned, "%H:%M:%S" if cleaned.count(":") == 2 else "%H:%M")
             moment = datetime.combine(day, clock.time(), tzinfo=tz)
         else:
-            moment = datetime.fromisoformat(cleaned).replace(tzinfo=tz)
+            moment = datetime.fromisoformat(cleaned)
+            if moment.tzinfo is None:
+                moment = moment.replace(tzinfo=tz)
     except ValueError:
         return None
     return int(moment.timestamp() * 1000)
@@ -186,10 +192,6 @@ def _clock(ms: int, tz: ZoneInfo) -> str:
     return datetime.fromtimestamp(ms / 1000, tz).strftime("%Y-%m-%d %H:%M:%S")
 
 
-def _in_units(speed_ms: float, units: str) -> float:
-    return speed_ms * (MPS_TO_MPH if units == "mph" else MPS_TO_KMH)
-
-
 def report(
     matches: Sequence[Match], tz: ZoneInfo, units: str, *, exclude_ambiguous: bool = False
 ) -> str:
@@ -199,7 +201,7 @@ def report(
         f"{'time':19}  {'line':12}  {'true':>8}  {'camera':>8}  {'error':>7}  note",
     ]
     for m in matches:
-        true = f"{_in_units(m.reading.speed_ms, units):.1f}"
+        true = f"{to_units(m.reading.speed_ms, units):.1f}"
         if m.event is None:
             lines.append(
                 f"{_clock(m.reading.at_ms, tz):19}  {m.reading.line or '':12}  {true:>8}  "
@@ -209,7 +211,7 @@ def report(
         error = m.error
         shown = f"{100 * error:+.1f}%" if error is not None else ""
         note = "another count was as near: may be another vehicle" if m.ambiguous else ""
-        camera = f"{_in_units(m.event.speed_ms, units):8.1f}"
+        camera = f"{to_units(m.event.speed_ms, units):8.1f}"
         lines.append(
             f"{_clock(m.reading.at_ms, tz):19}  {m.event.line:12}  {true:>8}  {camera}  "
             f"{shown:>7}  {note or m.reading.note}".rstrip()
@@ -227,9 +229,9 @@ def report(
         lines += [
             f"mean error (bias):      {100 * s['mean_error']:+.1f}%  (minus: too slow)",
             f"mean absolute error:    {100 * s['mean_abs_error']:.1f}%  "
-            f"({_in_units(float(s['mean_abs_error_ms']), units):.1f} {unit})",
+            f"({to_units(float(s['mean_abs_error_ms']), units):.1f} {unit})",
             f"largest absolute error: {100 * s['max_abs_error']:.1f}%  "
-            f"({_in_units(float(s['max_abs_error_ms']), units):.1f} {unit})",
+            f"({to_units(float(s['max_abs_error_ms']), units):.1f} {unit})",
             f"root mean square:       {100 * s['rms_error']:.1f}%",
         ]
         if s["matched"] < 10:

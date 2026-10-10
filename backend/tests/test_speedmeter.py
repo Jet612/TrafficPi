@@ -264,6 +264,67 @@ def test_a_track_above_the_horizon_is_left_alone() -> None:
     assert found == sky and found.ground is None and found.speed_ms is None
 
 
+def _cut_off(track: TrackUpdate, side: str) -> TrackUpdate:
+    """The same car with its box run up against an edge of the picture."""
+    x0, y0, x1, y1 = track.box
+    box = {
+        "left": (0.005, y0, x1, y1),
+        "right": (x0, y0, 0.996, y1),
+        "bottom": (x0, y0, x1, 0.995),
+    }[side]
+    return replace(track, box=box)
+
+
+@pytest.mark.parametrize("side", ["left", "right", "bottom"])
+def test_a_box_cut_off_by_the_edge_of_the_picture_is_put_on_the_road_but_has_no_speed(
+    side: str,
+) -> None:
+    """The vehicle goes on past the edge and the box does not, so a line through the box looks like
+    a vehicle slowing down: it is not measured, and nothing of it is kept to be joined to later."""
+    meter = SpeedMeter(CALIBRATION)
+    found = [
+        meter.update(i * FRAME_NS, [_cut_off(track_at(1, 1.5, 6.0 + 8.0 * i / 30), side)])[0]
+        for i in range(60)
+    ]
+    assert all(t.ground is not None for t in found)
+    assert all(t.speed_ms is None for t in found)
+    assert meter.following == 0
+
+
+def test_a_vehicle_that_leaves_by_the_edge_keeps_the_speed_it_had_until_the_box_is_cut() -> None:
+    meter = SpeedMeter(CALIBRATION)
+    seen = drive(meter, 8.0, seconds=2.0)
+    assert seen[-1].speed_ms == pytest.approx(8.0, rel=0.02)
+    (cut,) = meter.update(
+        61 * FRAME_NS, [_cut_off(track_at(1, 1.5, 6.0 + 8.0 * 61 / 30), "bottom")]
+    )
+    assert cut.speed_ms is None and cut.ground is not None
+    # and when the box is whole again the second goes on from the points kept, not from nothing
+    (back,) = meter.update(62 * FRAME_NS, [track_at(1, 1.5, 6.0 + 8.0 * 62 / 30)])
+    assert back.speed_ms == pytest.approx(8.0, rel=0.02)
+
+
+def test_a_box_one_pixel_inside_the_edge_is_measured() -> None:
+    meter = SpeedMeter(CALIBRATION, MeterConfig(edge=0.01))
+    track = track_at(1, 1.5, 12.0)
+    _, y0, x1, y1 = track.box
+    inside = replace(track, box=(0.0101, y0, x1, y1))
+    meter.update(0, [inside])
+    assert meter.following == 1
+
+
+def test_a_track_in_the_sky_is_not_kept_in_mind() -> None:
+    horizon_camera = PinholeCamera(x=0.0, y=-25.0, yaw_deg=0.0, pitch_deg=18.0, height=6.0)
+    corners = [
+        horizon_camera.project(*p) for p in ((-4.0, 4.0), (4.0, 4.0), (4.0, 34.0), (-4.0, 34.0))
+    ]
+    meter = SpeedMeter(calibrate_rectangle([c for c in corners if c is not None], 8.0, 30.0))
+    sky = TrackUpdate(3, 2, "car", 0.9, (0.4, 0.0, 0.5, 0.03), (0.0, 0.0), 10, 1.0, True)
+    for i in range(40):
+        meter.update(i * FRAME_NS, [sky])
+    assert meter.following == 0
+
+
 def test_the_same_instant_twice_adds_nothing() -> None:
     meter = SpeedMeter(CALIBRATION)
     seen = drive(meter, 8.0, seconds=2.0)

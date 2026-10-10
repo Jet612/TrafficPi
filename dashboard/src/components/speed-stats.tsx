@@ -12,6 +12,12 @@ import type { SpeedStats } from "@/lib/types";
 
 const plural = (n: number, one: string) => `${formatCount(n)} ${one}${n === 1 ? "" : "s"}`;
 
+/** The counts with a speed from an earlier calibration, which no figure here includes; null when there are none. */
+function leftOutText(stats: SpeedStats): string | null {
+  if (stats.excluded === 0) return null;
+  return `${plural(stats.excluded, "vehicle")} counted with a speed from an earlier calibration ${stats.excluded === 1 ? "is" : "are"} left out.`;
+}
+
 /**
  * How fast the vehicles that the counting lines counted were going (plan.md M6): the figures that
  * a speed study is summed up by, a histogram, and the same by counting line and by hour. A speed is
@@ -20,6 +26,7 @@ const plural = (n: number, one: string) => `${formatCount(n)} ${one}${n === 1 ? 
  */
 export function SpeedStatsSection({ stats, busy }: { stats: SpeedStats; busy: boolean }) {
   const { figures, units } = stats;
+  const leftOut = leftOutText(stats);
   if (figures === null) {
     return (
       <Card data-testid="data-speeds-none">
@@ -29,6 +36,7 @@ export function SpeedStatsSection({ stats, busy }: { stats: SpeedStats; busy: bo
               ? "No vehicle was counted in this time, so there is no speed to show."
               : `No speed was measured for the ${plural(stats.counted, "vehicle")} counted in this time.`}{" "}
             A counting line gives a speed once the camera is calibrated, for a vehicle seen for long enough in a part of the picture the calibration reaches.{" "}
+            {leftOut !== null && `${leftOut} `}
             <Link href="/setup/" className="font-medium text-accent underline underline-offset-2">
               Calibrate the camera on the Setup page
             </Link>
@@ -64,7 +72,7 @@ export function SpeedStatsSection({ stats, busy }: { stats: SpeedStats; busy: bo
           </dl>
           <p className="text-sm text-ink-3">
             {MEASURED_CAVEAT}
-            {stats.calibrations.length > 1 && ` These speeds were measured under ${stats.calibrations.length} different calibrations: the rectangle was changed during this time.`}
+            {leftOut !== null && ` ${leftOut}`}
           </p>
         </CardBody>
       </Card>

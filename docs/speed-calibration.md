@@ -48,12 +48,12 @@ Setup page, **Lines and zones**, then **Add speed calibration**. A rectangle app
 4. **Add a known distance** for each extra distance you measured: drag its two ends onto the two points and type its length. The page says what the calibrated map finds for it. "Agrees" means within what is expected of the map and of a length you typed. "Does not agree" means a corner, a length or this distance is wrong: look again at the one furthest from where you suspect.
 5. **Save.** The camera service reads it at once; speeds begin once a vehicle has been in view for about a second.
 
-Undo, redo, Delete and the arrow keys work as for the other shapes. Deleting the calibration removes its known distances too. Changing the rectangle later gives later speeds a different calibration name (eight characters, stored with each speed); the speeds already recorded keep the name they were made under.
+Undo, redo, Delete and the arrow keys work as for the other shapes. Deleting the calibration removes its known distances too. Changing the rectangle later (a corner, the width or the length) gives later speeds a different calibration name (eight characters, stored with each speed); the speeds already recorded keep the name they were made under. Only speeds made under the calibration that is saved now are counted: the Speeds section, the fastest speed of each day and the stop-sign sums leave the others out (the Speeds section says how many), and `speed-check` leaves them out unless it is given `--any-calibration`. They stay in the database. Moving a known distance changes no name, since it is not part of the map.
 
 ## What the pages show
 
 * **The live view** writes a vehicle's speed after its name when it has one (Labels switched on).
-* **The Data page**, Speeds section: the average, the median, the 85th percentile (the speed 85 in 100 vehicles did not exceed), the fastest, a histogram in bars of 5, and the same by counting line and by hour. It says how many of the vehicles counted had a speed. A vehicle has none when it was in view for less than about a second before the line, or where the calibration is not believed.
+* **The Data page**, Speeds section: the average, the median, the 85th percentile (the speed 85 in 100 vehicles did not exceed), the fastest, a histogram in bars of 5, and the same by counting line and by hour. It says how many of the vehicles counted had a speed. A vehicle has none when it was in view for less than about a second before the line, where the calibration is not believed, or while its box touches the left, right or bottom edge of the picture (the edge cuts the box off).
 * **The Data page**, stop-sign section, **the daily email** and **the Stop signs card**: the fastest speed of each day is the fastest *measured* speed when there is one, and only otherwise the old estimate (marked with a ≈ in a table that holds both). A pass records the slowest, the fastest and the last speed measured while it was in the approach zone; whether it counts as a stop is still judged in the vehicle's own sizes, so calibrating changes no verdict and no count.
 
 A speed is the average over the last second, from a straight line fitted through the vehicle's position on the road (the middle of the bottom of its box) and the camera's own clock. It is not the speed at an instant: a vehicle braking hard shows the speed it had half a second earlier.
@@ -73,7 +73,7 @@ This is what turns a figure into one you can rely on. The test is a vehicle driv
    14:09:10, 20
    ```
 
-   A speed with no unit is in the units set on the dashboard; `40 km/h`, `11 m/s` and `25 mph` say their own. A time with no date is on the day given with `--date` (today by default). The camera's clock is the Pi's (the Setup page's time zone); the time to the second is what matters, so note it from a phone that is set by the network.
+   A speed with no unit is in the units set on the dashboard (`--units mph` or `--units kmh` says otherwise); `40 km/h`, `11 m/s` and `25 mph` say their own. A time with no date is on the day given with `--date` (today by default); a date with no time is refused. A time is on the camera's clock, the Pi's (the Setup page's time zone), unless it ends with an offset of its own (`2026-10-11T18:03:20+00:00`, `2026-10-11 18:03:20Z`). The time to the second is what matters, so note it from a phone that is set by the network.
 4. Run, on the Pi:
 
    ```bash
@@ -81,7 +81,7 @@ This is what turns a figure into one you can rely on. The test is a vehicle driv
    uv run trafficpi-admin speed-check /path/to/passes.csv
    ```
 
-   Each pass is matched to the nearest count that has a speed, within 8 seconds (`--tolerance`), on the line named if one is. A pass with another count as near in time is marked: it may be another vehicle (`--exclude-ambiguous` leaves those out). It prints one row for each pass and then the mean error (the bias; minus means the camera reads slow), the mean and the largest error without regard to sign (in percent and in miles or kilometres an hour), and the root mean square. It changes nothing.
+   Each pass is matched to the nearest count that has a speed, within 8 seconds (`--tolerance`), on the line named if one is, and only among counts measured under the calibration that is saved (`--any-calibration` takes the others too; the command says how many it left out). A pass with another count as near in time is marked: it may be another vehicle (`--exclude-ambiguous` leaves those out). It prints one row for each pass and then the mean error (the bias; minus means the camera reads slow), the mean and the largest error without regard to sign (in percent and in miles or kilometres an hour), and the root mean square. It changes nothing.
 
 Ten or more passes, at several speeds, are what a band should rest on; the command says so when there are fewer. A bias that is the same at every speed points at a length that was typed wrongly (a rectangle 3% too long reads 3% fast, or slow); a bias that grows with distance from the rectangle, at the far end of the road, points at a corner.
 

@@ -184,3 +184,12 @@ def test_a_count_has_no_speed_when_none_was_measured() -> None:
         events += rule.update(i, [track(1, x, y)])
     (event,) = events
     assert isinstance(event, CountEvent) and event.speed_ms is None
+
+
+def test_a_count_has_a_speed_only_when_one_was_measured() -> None:
+    assert not CountEvent(0, 1, 2, "car", "main", 1).has_speed
+    assert not CountEvent(0, 1, 2, "car", "main", 1, speed_ms=None).has_speed
+    assert CountEvent(0, 1, 2, "car", "main", 1, speed_ms=8.5).has_speed
+    assert CountEvent(
+        0, 1, 2, "car", "main", 1, speed_ms=0.0
+    ).has_speed  # standing still is a speed

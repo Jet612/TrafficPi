@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy.exc import IntegrityError
 
+from tests.calibrations import CALIBRATION, OTHER, name_of
 from trafficpi.core import stop_hours as sh
 from trafficpi.core.clock import WallClock
 from trafficpi.core.evidence_settings import EvidenceSettings
@@ -583,8 +584,9 @@ def test_a_stop_with_measured_speeds_keeps_them_and_the_calibration(store: Store
         "line_speed_ms": 3.0,
         "cal": "ab12cd34",
     }
-    (row,) = store.stop_rows(minute(0), minute(1))
+    (row,) = store.stop_rows(minute(0), minute(1), any_calibration=True)
     assert (row.min_speed_ms, row.max_speed_ms, row.line_speed_ms) == (1.5, 9.75, 3.0)
+    assert row.calibration == "ab12cd34"
 
 
 def test_a_stop_without_speeds_in_metres_is_stored_as_it_always_was(store: Store) -> None:
@@ -597,9 +599,81 @@ def test_a_stop_without_speeds_in_metres_is_stored_as_it_always_was(store: Store
 
 
 def test_a_stop_with_only_some_speeds_measured_keeps_minus_one_for_the_rest(store: Store) -> None:
+    store.set_profile({"calibration": CALIBRATION})
     some = StopEvent(
-        0, 7, 2, "car", "elm", "did_not_stop", 0.0, 6.0, 3.0, max_speed_ms=9.0, calibration="x"
-    )
+        0, 7, 2, "car", "elm", "did_not_stop", 0.0, 6.0, 3.0,
+        max_speed_ms=9.0, calibration=name_of(CALIBRATION),
+    )  # fmt: skip
     store.record_stop(some, minute(0) + 1_000)
     (row,) = store.stop_rows(minute(0), minute(1))
     assert (row.min_speed_ms, row.max_speed_ms, row.line_speed_ms) == (-1.0, 9.0, -1.0)
+
+
+# --- only the calibration in force counts ---------------------------------------------------------
+
+
+def measured_stop(calibration: str) -> StopEvent:
+    return StopEvent(
+        0, 7, 2, "car", "elm", "did_not_stop", 0.0, 6.0, 3.0,
+        min_speed_ms=5.0, max_speed_ms=9.0, line_speed_ms=8.0, calibration=calibration,
+    )  # fmt: skip
+
+
+def test_there_is_no_calibration_in_force_without_a_profile_or_with_one_that_has_none(
+    store: Store,
+) -> None:
+    assert store.current_calibration() is None
+    store.set_profile({"lines": []})
+    assert store.current_calibration() is None
+
+
+def test_the_calibration_in_force_is_named_as_the_vision_service_names_it(store: Store) -> None:
+    store.set_profile({"calibration": CALIBRATION})
+    assert store.current_calibration() == name_of(CALIBRATION)
+    store.set_profile({"calibration": OTHER})
+    assert store.current_calibration() == name_of(OTHER) != name_of(CALIBRATION)
+
+
+def test_a_profile_that_cannot_be_read_has_no_calibration_in_force(store: Store) -> None:
+    store.set_profile({"calibration": {"corners": [[0, 0]], "width_m": 1, "length_m": 1}})
+    assert store.current_calibration() is None
+
+
+def test_known_distances_do_not_change_the_calibration_in_force(store: Store) -> None:
+    store.set_profile({"calibration": CALIBRATION})
+    before = store.current_calibration()
+    check = {"id": "c", "a": [0.5, 0.4], "b": [0.6, 0.35], "length_m": 12.0}
+    store.set_profile({"calibration": {**CALIBRATION, "checks": [check]}})
+    assert store.current_calibration() == before
+
+
+def test_speeds_measured_under_another_calibration_are_not_in_the_stop_rows(store: Store) -> None:
+    store.set_profile({"calibration": OTHER})  # the rectangle has been corrected
+    store.record_stop(measured_stop(name_of(CALIBRATION)), minute(0) + 1_000)  # under the old one
+    store.record_stop(measured_stop(name_of(OTHER)), minute(0) + 2_000)  # under the one in force
+    old, new = store.stop_rows(minute(0), minute(1))
+    assert (old.min_speed_ms, old.max_speed_ms, old.line_speed_ms) == (-1.0, -1.0, -1.0)
+    assert (new.min_speed_ms, new.max_speed_ms, new.line_speed_ms) == (5.0, 9.0, 8.0)
+    assert old.calibration == name_of(CALIBRATION)  # still said, for whoever wants to know
+    kept = store.stop_rows(minute(0), minute(1), any_calibration=True)
+    assert [r.max_speed_ms for r in kept] == [9.0, 9.0]
+
+
+def test_with_no_calibration_in_force_no_measured_speed_is_used(store: Store) -> None:
+    store.record_stop(measured_stop("ab12cd34"), minute(0) + 1_000)
+    (row,) = store.stop_rows(minute(0), minute(1))
+    assert row.max_speed_ms == -1.0
+    (kept,) = store.stop_rows(minute(0), minute(1), any_calibration=True)
+    assert kept.max_speed_ms == 9.0
+
+
+def test_a_stop_that_was_never_measured_is_unchanged_by_all_this(store: Store) -> None:
+    store.set_profile({"calibration": CALIBRATION})
+    store.record_stop(stop(), minute(0) + 1_000)
+    (row,) = store.stop_rows(minute(0), minute(1))
+    assert (row.min_speed_ms, row.max_speed_ms, row.line_speed_ms, row.calibration) == (
+        -1,
+        -1,
+        -1,
+        "",
+    )

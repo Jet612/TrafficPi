@@ -22,6 +22,12 @@ class Event:
     # function of tracks.
     calibration: str | None = field(default=None, kw_only=True)
 
+    @property
+    def has_speed(self) -> bool:
+        """Whether the event carries a speed measured on a calibrated road. The engine then names
+        the calibration on it; an event kind that carries speeds says so by overriding this."""
+        return False
+
 
 @dataclass(frozen=True, slots=True)
 class CountEvent(Event):
@@ -32,6 +38,10 @@ class CountEvent(Event):
     # How fast it was going as it crossed, in metres a second over the last second; None if the
     # camera is not calibrated or the speed could not be believed (see ``SpeedMeter``).
     speed_ms: float | None = None
+
+    @property
+    def has_speed(self) -> bool:
+        return self.speed_ms is not None
 
 
 class Rule(Protocol):

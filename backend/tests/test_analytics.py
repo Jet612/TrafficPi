@@ -649,7 +649,7 @@ def test_a_vehicle_faster_than_the_last_bar_is_in_the_last_bar() -> None:
 def test_with_nothing_measured_there_are_no_figures_and_the_shape_is_whole() -> None:
     stats = speeds([], {"main": 120})
     assert stats["figures"] is None and stats["bins"] == []
-    assert stats["counted"] == 120 and stats["calibrations"] == []
+    assert stats["counted"] == 120 and stats["calibration"] is None and stats["excluded"] == 0
     assert len(stats["by_hour"]) == 24 and all(h["count"] == 0 for h in stats["by_hour"])
     assert [d["count"] for d in stats["by_day"]] == [0, 0, 0]
     assert stats["by_line"] == [
@@ -698,14 +698,18 @@ def test_a_line_with_speeds_but_no_count_in_the_period_is_still_listed() -> None
     assert [(row["line"], row["counted"]) for row in stats["by_line"]] == [("side", 0)]
 
 
-def test_the_calibrations_the_speeds_came_from_are_named_once_in_the_order_met() -> None:
-    rows = [
-        speed_row("2026-10-08 09:00", 20.0, cal="aaaaaaaa"),
-        speed_row("2026-10-09 09:00", 21.0, cal="bbbbbbbb"),
-        speed_row("2026-10-09 09:05", 22.0, cal="bbbbbbbb"),
-        speed_row("2026-10-09 09:10", 23.0, cal=""),  # unknown: not a name
-    ]
-    assert speeds(rows)["calibrations"] == ["aaaaaaaa", "bbbbbbbb"]
+def test_the_calibration_in_force_and_the_counts_left_out_are_passed_on() -> None:
+    stats = speed_stats(
+        [speed_row("2026-10-09 09:00", 20.0)],
+        {"main": 5},
+        NY,
+        PERIOD,
+        "mph",
+        calibration="bbbbbbbb",
+        excluded=3,
+    )
+    assert stats["calibration"] == "bbbbbbbb" and stats["excluded"] == 3
+    assert speeds([])["calibration"] is None and speeds([])["excluded"] == 0
 
 
 def test_speeds_are_rounded_to_a_tenth() -> None:

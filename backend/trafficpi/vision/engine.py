@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 
 from trafficpi.core.types import Detection
-from trafficpi.vision.rules import CountEvent, Event, Rule, StopEvent
+from trafficpi.vision.rules import CountEvent, Event, Rule
 from trafficpi.vision.speedmeter import SpeedMeter
 from trafficpi.vision.tracker import ByteTracker, TrackUpdate
 from trafficpi.vision.zones import DetectionFilter
@@ -58,17 +58,9 @@ class TrafficEngine:
     def _stamped(self, event: Event) -> Event:
         """An event with the name of the calibration its speeds were measured under (a rule is a
         function of tracks and cannot know it)."""
-        if self.speed_meter is None or not _has_speed(event):
+        if self.speed_meter is None or not event.has_speed:
             return event
         return replace(event, calibration=self.speed_meter.calibration.id)
-
-
-def _has_speed(event: Event) -> bool:
-    if isinstance(event, CountEvent):
-        return event.speed_ms is not None
-    if isinstance(event, StopEvent):
-        return event.min_speed_ms >= 0 or event.max_speed_ms >= 0 or event.line_speed_ms >= 0
-    return False
 
 
 @dataclass(slots=True)

@@ -42,6 +42,10 @@ class MeterConfig:
         45.0  # about 100 mph: faster is no road vehicle, whatever the picture says
     )
     history_points: int = 120  # four seconds at 30 frames a second, and no more
+    # A box that touches the left, right or bottom edge of the picture is cut off by it: the vehicle
+    # goes on, the bottom of the box does not, and a line fitted through that is a vehicle slowing
+    # down. Such a box is not measured. (As a fraction of the picture, about 13 pixels of 1280.)
+    edge: float = 0.01
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,9 +103,12 @@ class SpeedMeter:
         cfg = self.config
         u, v = track.ground_point
         on_road = self.calibration.to_ground((u, v))
-        history = self._seen.setdefault(track.id, deque(maxlen=cfg.history_points))
         if on_road is None:  # above the horizon: nothing here is on the road, and nothing is added
             return track
+        x0, _, x1, y1 = track.box
+        if x0 <= cfg.edge or x1 >= 1 - cfg.edge or y1 >= 1 - cfg.edge:
+            return replace(track, ground=on_road)  # cut off by the picture's edge: no speed
+        history = self._seen.setdefault(track.id, deque(maxlen=cfg.history_points))
         if history and t - history[-1].t > cfg.max_gap_s:
             history.clear()  # a break: what came before is another stretch
         if not history or t > history[-1].t:  # the same instant twice adds nothing

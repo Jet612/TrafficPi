@@ -403,10 +403,12 @@ def estimate_length_spread(
 ) -> list[float | None]:
     """How much the length the map finds for each segment (two picture points) is expected to
     vary, as a share of itself (1 sigma), when the corners and lengths are moved as in
-    :func:`estimate_accuracy`; None for a segment with an end beyond the horizon."""
+    :func:`estimate_accuracy`; None for a segment with an end beyond the horizon, and for one so
+    near it that some of the shaken maps put an end of it there (its length cannot be trusted)."""
     nominal = rectangle_map(corners, width_m, length_m)
     measured = [nominal.distance(a, b) for a, b in segments]
     squares = [0.0] * len(segments)
+    lost = [False] * len(segments)  # some shaken map has an end of this segment beyond the horizon
     used = 0
     for matrix in _shaken_maps(
         corners,
@@ -419,14 +421,16 @@ def estimate_length_spread(
         shaken = GroundMap.from_matrix(matrix)
         for k, (a, b) in enumerate(segments):
             now, then = shaken.distance(a, b), measured[k]
-            if now is not None and then:
+            if now is None:
+                lost[k] = True
+            elif then:
                 squares[k] += (now / then - 1.0) ** 2
         used += 1
     if used < trials // 2:
         raise CalibrationError("the corners are too close to a line for the map to be trusted")
     return [
-        None if then is None else math.sqrt(sq / used)
-        for then, sq in zip(measured, squares, strict=True)
+        None if then is None or gone else math.sqrt(sq / used)
+        for then, sq, gone in zip(measured, squares, lost, strict=True)
     ]
 
 

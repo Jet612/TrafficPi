@@ -386,6 +386,7 @@ function HowTheyStop({ stats }: { stats: StopStats }) {
         ? null
         : `slowed to ${speedText(sizesPerSecond, stats.units)}`;
   const measured = rolling_min_speed_ms !== null || did_not_stop_min_speed_ms !== null;
+  const estimated = (rolling_min_speed_ms === null && rolling_min_speed !== null) || (did_not_stop_min_speed_ms === null && did_not_stop_min_speed !== null);
   const lines: { outcome: StopOutcome; text: string | null }[] = [
     { outcome: "stopped", text: stopped_hold_s === null ? null : `stood still for ${stopped_hold_s.toFixed(1)} s` },
     { outcome: "rolling", text: slowedTo(rolling_min_speed_ms, rolling_min_speed) },
@@ -419,7 +420,7 @@ function HowTheyStop({ stats }: { stats: StopStats }) {
             </ul>
             <p className="mt-3 text-sm text-ink-3">
               {measured
-                ? MEASURED_CAVEAT
+                ? `${MEASURED_CAVEAT}${estimated ? " A speed with “about” before it is an estimate from the vehicle’s own size, good to about 40%; it is not a measurement." : ""}`
                 : "Speeds are rough: they are measured in the vehicle’s own sizes a second (a size is the width and the height of its box in the picture, averaged), and here a car’s size is taken to be about 2.5 m. They are good to about 40%."}
             </p>
           </>

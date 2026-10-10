@@ -67,6 +67,10 @@ class StopEvent(Event):
     max_speed_ms: float = -1.0
     line_speed_ms: float = -1.0
 
+    @property
+    def has_speed(self) -> bool:
+        return self.min_speed_ms >= 0 or self.max_speed_ms >= 0 or self.line_speed_ms >= 0
+
 
 @dataclass(frozen=True, slots=True)
 class StopSign:

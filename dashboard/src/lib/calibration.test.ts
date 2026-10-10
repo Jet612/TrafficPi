@@ -173,6 +173,17 @@ describe("where speeds are given", () => {
     expect(believedCells({ columns: 2, rows: 1, along_pct: [[null, null]], across_pct: [[null, null]] }, 100)).toEqual([]);
   });
 
+  it("says so when a vehicle driving across the road would be given none", () => {
+    const place = { id: "line:side", metres_per_pixel_along: 0.1, metres_per_pixel_across: 0.2, error_along_pct: 6, believed: true };
+    const wide = placeText({ ...REPORT, probes: [{ ...place, error_across_pct: 25 }] }, "line:side")!;
+    expect(wide.believed).toBe(true);
+    expect(wide.text).toMatch(/; a vehicle driving across the road is given none$/);
+    const unknown = placeText({ ...REPORT, probes: [{ ...place, error_across_pct: null }] }, "line:side")!;
+    expect(unknown.text).toMatch(/given none$/);
+    const fine = placeText({ ...REPORT, probes: [{ ...place, error_across_pct: REPORT.limit_pct }] }, "line:side")!;
+    expect(fine.text).not.toContain("across");
+  });
+
   it("says, for a place, whether speeds are given and how well", () => {
     const report: CalibrationReport = {
       ...REPORT,
@@ -184,7 +195,7 @@ describe("where speeds are given", () => {
     };
     expect(placeText(report, "stop:elm")).toEqual({
       believed: true,
-      text: "speeds are given here, expected to be right to about 5%; a pixel is about 12 cm along the road",
+      text: "speeds are given here for a vehicle driving along the road, expected to be right to about 5%; a pixel is about 12 cm along the road",
     });
     const far = placeText(report, "line:far")!;
     expect(far.believed).toBe(false);

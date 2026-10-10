@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from tests.calibrations import CALIBRATION, OTHER, name_of
 from trafficpi.api import admin, speed_check
 from trafficpi.api.speed_check import Match, Reading, ReadingsError
 from trafficpi.core.speed import MPS_TO_MPH
@@ -263,7 +264,10 @@ def data_dir(tmp_path: Path) -> Path:
     store.ensure_camera()
     store.set_setting("timezone", "America/New_York")
     store.set_profile(
-        {"lines": [{"id": "main", "name": "Main street", "a": [0.2, 0.5], "b": [0.8, 0.5]}]}
+        {
+            "lines": [{"id": "main", "name": "Main street", "a": [0.2, 0.5], "b": [0.8, 0.5]}],
+            "calibration": CALIBRATION,
+        }
     )
     for when, mph in (
         ("2026-10-11 14:03:21", 26.0),
@@ -271,7 +275,7 @@ def data_dir(tmp_path: Path) -> Path:
         ("2026-10-11 14:20:00", 33.0),
     ):
         store.record_count(
-            CountEvent(0, 1, 2, "car", "main", 1, speed_ms=mph / MPH, calibration="ab12cd34"),
+            CountEvent(0, 1, 2, "car", "main", 1, speed_ms=mph / MPH, calibration=name_of()),
             at(when),
         )
     store.record_count(CountEvent(0, 2, 2, "car", "main", 1), at("2026-10-11 14:30:00"))  # no speed
@@ -361,3 +365,34 @@ def test_the_units_of_a_bare_number_are_those_set_or_asked_for(
     admin.main(["--data-dir", str(data_dir), "speed-check", str(passes), "--units", "mph"])
     out = capsys.readouterr().out
     assert "mph" in out and "40.0" in out
+
+
+def test_counts_measured_under_another_calibration_are_left_out_unless_asked_for(
+    data_dir: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The rectangle was corrected after these were measured: they say nothing about the new one."""
+    from trafficpi.db.store import open_store
+
+    store = open_store(data_dir)
+    store.set_profile({"lines": [], "calibration": OTHER})
+    store.close()
+    passes = tmp_path / "passes.csv"
+    passes.write_text("2026-10-11 14:03:20, 25\n")
+    assert admin.main(["--data-dir", str(data_dir), "speed-check", str(passes)]) == 1
+    out = capsys.readouterr().out
+    assert "1 count(s) with a speed in these minutes were measured under another" in out
+    assert "0 of 1 passes matched" in out
+    status = admin.main(
+        ["--data-dir", str(data_dir), "speed-check", str(passes), "--any-calibration"]
+    )
+    assert status == 0 and "1 of 1 passes matched" in capsys.readouterr().out
+    assert name_of(OTHER) != name_of(CALIBRATION)
+
+
+def test_a_time_with_its_own_offset_is_the_moment_it_says_and_a_date_alone_is_no_moment() -> None:
+    utc = speed_check.parse_readings("2026-10-11T18:03:20+00:00, 25\n", NY, "mph", DAY)
+    assert utc[0].at_ms == at("2026-10-11 14:03:20")  # 18:03 UTC is 14:03 in New York
+    z = speed_check.parse_readings("2026-10-11 18:03:20Z, 25\n", NY, "mph", DAY)
+    assert z[0].at_ms == at("2026-10-11 14:03:20")
+    with pytest.raises(ReadingsError, match="is not a time"):
+        speed_check.parse_readings("2026-10-11, 25\n", NY, "mph", DAY)

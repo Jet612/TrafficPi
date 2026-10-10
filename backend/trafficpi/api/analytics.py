@@ -382,13 +382,16 @@ def speed_stats(
     *,
     line_names: Mapping[str, str] | None = None,
     line: str | None = None,
+    calibration: str | None = None,
+    excluded: int = 0,
 ) -> dict[str, Any]:
     """How fast the vehicles that were counted were going, over a period of local days.
 
-    ``rows`` are the counts that have a measured speed; ``counted`` is how many vehicles each
-    counting line counted in the period, measured or not (a speed is given only when it can be
-    believed, so a share of the vehicles has none, and the page says how many that is). Speeds are
-    in ``units`` (miles or kilometres an hour), to a tenth.
+    ``rows`` are the counts that have a measured speed under the calibration in force
+    (``calibration``; ``excluded`` more were measured under another and are not in the sums);
+    ``counted`` is how many vehicles each counting line counted in the period, measured or not (a
+    speed is given only when it can be believed, so a share of the vehicles has none, and the page
+    says how many that is). Speeds are in ``units`` (miles or kilometres an hour), to a tenth.
     """
     local = _LocalTimes(tz)
     names = line_names or {}
@@ -398,7 +401,6 @@ def speed_stats(
     by_line: dict[str, list[float]] = {}
     by_kind: dict[str, list[float]] = {}
     bins: Counter[int] = Counter()
-    calibrations: list[str] = []
     for row in rows:
         value = to_units(row.speed_ms, units)
         hour, day, _ = local.of(row.occurred_at)
@@ -408,8 +410,6 @@ def speed_stats(
         by_line.setdefault(row.line, []).append(value)
         by_kind.setdefault(row.kind or "unknown", []).append(value)
         bins[min(MAX_SPEED_BINS - 1, int(value // SPEED_BIN))] += 1
-        if row.calibration and row.calibration not in calibrations:
-            calibrations.append(row.calibration)
     last = max(bins, default=-1)
 
     def hour_of(values: list[float]) -> dict[str, Any]:
@@ -433,7 +433,8 @@ def speed_stats(
         "all_time": period.all_time,
         "line": line,
         "counted": sum(counted.values()),
-        "calibrations": calibrations,
+        "calibration": calibration,
+        "excluded": excluded,
         "figures": _speed_figures(everything),
         "bins": [
             {"low": n * SPEED_BIN, "high": (n + 1) * SPEED_BIN, "count": bins.get(n, 0)}

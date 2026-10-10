@@ -1,6 +1,7 @@
 import math
 import random
 from collections.abc import Iterator, Sequence
+from dataclasses import replace
 
 import pytest
 
@@ -570,3 +571,12 @@ def test_the_speeds_are_rounded_to_a_centimetre_a_second() -> None:
     xs = list(positions(STRAIGHT_THROUGH))
     event = measured_run([6.123456] * len(xs), xs)
     assert event.max_speed_ms == 6.12 and event.min_speed_ms == 6.12
+
+
+@pytest.mark.parametrize("field", ["min_speed_ms", "max_speed_ms", "line_speed_ms"])
+def test_a_stop_has_a_speed_when_any_of_its_speeds_in_metres_was_measured(field: str) -> None:
+    bare = StopEvent(0, 7, 2, "car", "elm", "stopped", 1.0, 0.0, 4.0)
+    assert not bare.has_speed
+    assert replace(bare, **{field: 0.0}).has_speed
+    assert replace(bare, **{field: 6.5}).has_speed
+    assert not replace(bare, **{field: -1.0}).has_speed

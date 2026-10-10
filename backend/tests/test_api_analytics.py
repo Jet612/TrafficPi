@@ -10,6 +10,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests.calibrations import CALIBRATION, OTHER, name_of
 from trafficpi.api.app import create_app
 from trafficpi.api.auth import hash_password
 from trafficpi.api.settings import ApiSettings
@@ -322,8 +323,23 @@ def test_the_estimate_is_in_metres_a_second_whatever_units_the_owner_chose(
 # --- the speeds of the vehicles counted (plan.md M6) --------------------------------------------
 
 
-def counted(line: str = "main", speed_ms: float | None = None, label: str = "car") -> CountEvent:
-    return CountEvent(0, 1, 2, label, line, 1, speed_ms=speed_ms, calibration="ab12cd34")
+def counted(
+    line: str = "main",
+    speed_ms: float | None = None,
+    label: str = "car",
+    calibration: str | None = None,
+) -> CountEvent:
+    """A count, with a speed, measured under the calibration the profile holds (unless told)."""
+    return CountEvent(
+        0, 1, 2, label, line, 1, speed_ms=speed_ms, calibration=calibration or name_of()
+    )
+
+
+@pytest.fixture
+def calibrated(store: Store) -> str:
+    """The profile holds a calibration; the speeds of the tests are measured under its name."""
+    store.set_profile({"calibration": CALIBRATION})
+    return name_of()
 
 
 def test_the_speeds_need_a_login(app: FastAPI) -> None:
@@ -337,11 +353,11 @@ def test_with_no_counts_the_speed_figures_are_empty_and_the_shape_is_whole(
     body = client.get("/api/stats/speeds").json()
     assert body["figures"] is None and body["counted"] == 0 and body["bins"] == []
     assert (len(body["by_hour"]), len(body["by_day"])) == (24, 7)
-    assert body["units"] == "mph" and body["calibrations"] == []
+    assert body["units"] == "mph" and body["calibration"] is None and body["excluded"] == 0
 
 
 def test_vehicles_counted_with_a_speed_are_summed_and_those_without_are_counted_apart(
-    client: TestClient, store: Store
+    client: TestClient, store: Store, calibrated: str
 ) -> None:
     store.record_count(counted(speed_ms=11.176), ms("2026-10-09 09:00"))  # 25 mph
     store.record_count(counted(speed_ms=13.411), ms("2026-10-09 09:05"))  # 30 mph
@@ -349,12 +365,14 @@ def test_vehicles_counted_with_a_speed_are_summed_and_those_without_are_counted_
     body = client.get("/api/stats/speeds", params={"days": 7}).json()
     assert body["counted"] == 3
     assert body["figures"]["count"] == 2 and body["figures"]["mean"] == pytest.approx(27.5, abs=0.1)
-    assert body["calibrations"] == ["ab12cd34"]
+    assert body["calibration"] == calibrated and body["excluded"] == 0
     (line,) = [row for row in body["by_line"] if row["line"] == "main"]
     assert line["counted"] == 3 and line["figures"]["count"] == 2
 
 
-def test_the_units_are_the_ones_that_are_set(client: TestClient, store: Store) -> None:
+def test_the_units_are_the_ones_that_are_set(
+    client: TestClient, store: Store, calibrated: str
+) -> None:
     store.record_count(counted(speed_ms=10.0), ms("2026-10-09 09:00"))
     assert client.get("/api/stats/speeds").json()["figures"]["median"] == pytest.approx(
         22.4, abs=0.1
@@ -364,7 +382,9 @@ def test_the_units_are_the_ones_that_are_set(client: TestClient, store: Store) -
     assert body["units"] == "kmh" and body["figures"]["median"] == 36.0
 
 
-def test_one_counting_line_can_be_asked_for(client: TestClient, store: Store) -> None:
+def test_one_counting_line_can_be_asked_for(
+    client: TestClient, store: Store, calibrated: str
+) -> None:
     store.record_count(counted("main", 10.0), ms("2026-10-09 09:00"))
     store.record_count(counted("side", 20.0), ms("2026-10-09 09:05"))
     body = client.get("/api/stats/speeds", params={"line": "side"}).json()
@@ -376,7 +396,7 @@ def test_one_counting_line_can_be_asked_for(client: TestClient, store: Store) ->
 
 
 def test_the_period_is_in_local_days_and_all_time_starts_at_the_first_count(
-    client: TestClient, store: Store
+    client: TestClient, store: Store, calibrated: str
 ) -> None:
     store.record_count(counted(speed_ms=10.0), ms("2026-10-09 09:00"))
     store.record_count(counted(speed_ms=10.0), ms("2026-10-01 09:00"))  # eight days ago
@@ -391,3 +411,27 @@ def test_a_request_that_makes_no_sense_is_refused(
     client: TestClient, params: dict[str, int | str]
 ) -> None:
     assert client.get("/api/stats/speeds", params=params).status_code == 422
+
+
+def test_speeds_measured_under_an_earlier_calibration_are_left_out_and_counted(
+    client: TestClient, store: Store, calibrated: str
+) -> None:
+    """The rectangle was wrong and has been corrected: the figures are those of the right one."""
+    old = name_of(CALIBRATION)
+    store.set_profile({"calibration": OTHER})
+    store.record_count(counted(speed_ms=10.0, calibration=old), ms("2026-10-09 09:00"))
+    store.record_count(counted(speed_ms=30.0, calibration=old), ms("2026-10-09 09:05"))
+    store.record_count(counted(speed_ms=20.0, calibration=name_of(OTHER)), ms("2026-10-09 09:10"))
+    body = client.get("/api/stats/speeds").json()
+    assert body["calibration"] == name_of(OTHER) and body["excluded"] == 2
+    assert body["figures"]["count"] == 1 and body["figures"]["median"] == pytest.approx(
+        44.7, abs=0.1
+    )
+    assert body["counted"] == 3  # the vehicles were counted all the same
+
+
+def test_with_no_calibration_in_force_no_speed_is_shown(client: TestClient, store: Store) -> None:
+    store.record_count(counted(speed_ms=10.0, calibration="ab12cd34"), ms("2026-10-09 09:00"))
+    body = client.get("/api/stats/speeds").json()
+    assert body["calibration"] is None and body["figures"] is None and body["excluded"] == 1
+    assert body["counted"] == 1

@@ -1467,12 +1467,14 @@ export interface components {
             by_kind: components["schemas"]["SpeedKind"][];
             /** By Line */
             by_line: components["schemas"]["SpeedLine"][];
-            /** Calibrations */
-            calibrations: string[];
+            /** Calibration */
+            calibration: string | null;
             /** Counted */
             counted: number;
             /** Days */
             days: number;
+            /** Excluded */
+            excluded: number;
             figures: components["schemas"]["SpeedFigures"] | null;
             /** From Ms */
             from_ms: number;

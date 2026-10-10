@@ -267,7 +267,10 @@ class SpeedStats(BaseModel):
     all_time: bool
     line: str | None  # only this counting line, if asked
     counted: int  # vehicles counted in the period (at that line), with a speed or without
-    calibrations: list[str]  # the names of the calibrations the speeds were measured under
+    calibration: str | None  # the name of the calibration in force; None: the camera has none
+    # How many counts have a speed that was measured under an earlier calibration: they are left
+    # out of every figure here, so that a corrected rectangle does not average with a wrong one.
+    excluded: int
     figures: SpeedFigures | None  # None: nothing was measured in the period
     bins: list[SpeedBin]  # from zero up to the bar of the fastest, empty bars included
     by_hour: list[SpeedHour]  # all 24
