@@ -327,3 +327,23 @@ describe("stop signs", () => {
     expect(ctx).toBeDefined();
   });
 });
+
+describe("a vehicle's label with its speed (plan.md M6)", () => {
+  const truck = { id: 12, label: "truck", score: 0.88, speed_ms: 12.5 };
+
+  it("adds the measured speed in the units, without an about", () => {
+    expect(trackLabel(truck, false, "mph")).toBe("#12 truck 88% 28 mph");
+    expect(trackLabel(truck, true, "kmh")).toBe("truck 45 km/h");
+  });
+
+  it("is as it was for a vehicle with no speed, or when the units are not known yet", () => {
+    const plain = { id: truck.id, label: truck.label, score: truck.score };
+    expect(trackLabel(plain, false, "mph")).toBe("#12 truck 88%");
+    expect(trackLabel(truck, false)).toBe("#12 truck 88%");
+    expect(trackLabel(truck, true)).toBe("truck");
+  });
+
+  it("says a vehicle that hardly moves is almost still", () => {
+    expect(trackLabel({ ...truck, speed_ms: 0.1 }, true, "mph")).toBe("truck almost still");
+  });
+});

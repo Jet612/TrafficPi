@@ -1,10 +1,13 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { aKind, fastestText, inUnits, passedText, roughSpeed, speedPhrase, speedShort, SIZE_METRES } from "./speed";
+import { ESTIMATE_CAVEAT, MEASURED_CAVEAT, aKind, fastestText, inUnits, measuredSpeed, passedText, roughSpeed, speedPhrase, speedShort, SIZE_METRES } from "./speed";
 
 const cases = JSON.parse(readFileSync(new URL("../../../backend/tests/data/speed_cases.json", import.meta.url), "utf8")) as {
   rough: { value: number; rough: number }[];
   phrases: { speed_ms: number; units: "mph" | "kmh"; text: string }[];
+  caveats: { estimate: string; measured: string };
+  measured: { value: number; whole: number }[];
+  measured_phrases: { speed_ms: number; units: "mph" | "kmh"; text: string }[];
 };
 
 describe("a speed in words, the same as the server says it", () => {
@@ -20,13 +23,38 @@ describe("a speed in words, the same as the server says it", () => {
     expect(speedShort(speed_ms, units)).toBe(text.replace(/^about /, ""));
   });
 
-  it("never goes backwards", () => {
+  it.each(cases.measured)("rounds the measured $value to the whole $whole", ({ value, whole }) => {
+    expect(measuredSpeed(value)).toBe(whole);
+  });
+
+  it.each(cases.measured_phrases)("says a measured $speed_ms m/s in $units as $text", ({ speed_ms, units, text }) => {
+    expect(speedPhrase(speed_ms, units, true)).toBe(text);
+    expect(speedShort(speed_ms, units, true)).toBe(text);
+  });
+
+  it("keeps an estimate an about unless it is said to be measured", () => {
+    expect(speedPhrase(13.411, "mph")).toBe("about 30 mph");
+    expect(speedPhrase(13.411, "mph", false)).toBe("about 30 mph");
+    expect(speedPhrase(13.411, "mph", true)).toBe("30 mph");
+  });
+
+  it("never goes backwards, estimated or measured", () => {
+    for (let i = 1; i < 1500; i++) {
+      expect(measuredSpeed(i / 10)).toBeGreaterThanOrEqual(measuredSpeed((i - 1) / 10));
+    }
     let last = -1;
     for (let i = 0; i < 1500; i++) {
       const rough = roughSpeed(i / 10);
       expect(rough).toBeGreaterThanOrEqual(last);
       last = rough;
     }
+  });
+});
+
+describe("what a speed is worth", () => {
+  it("is said in the server's words, estimate and measured alike", () => {
+    expect(ESTIMATE_CAVEAT).toBe(cases.caveats.estimate);
+    expect(MEASURED_CAVEAT).toBe(cases.caveats.measured);
   });
 });
 
@@ -61,8 +89,14 @@ describe("what was passed", () => {
   });
 
   it("makes a headline and a note of the fastest estimate", () => {
-    const fastest = { speed_ms: 13.5, label: "car", at: Date.UTC(2026, 9, 9, 21, 42) };
+    const fastest = { speed_ms: 13.5, label: "car", at: Date.UTC(2026, 9, 9, 21, 42), calibrated: false };
     expect(fastestText(fastest, "mph", "America/New_York")).toEqual({ speed: "about 30 mph", note: "a car, Fri 9 Oct, 17:42" });
     expect(fastestText(fastest, "kmh", "America/New_York").speed).toBe("about 50 km/h");
+  });
+
+  it("says a speed measured on a calibrated road without an about, and to the whole mile", () => {
+    const measured = { speed_ms: 12.5, label: "truck", at: Date.UTC(2026, 9, 9, 21, 42), calibrated: true };
+    expect(fastestText(measured, "mph", "America/New_York")).toEqual({ speed: "28 mph", note: "a truck, Fri 9 Oct, 17:42" });
+    expect(fastestText(measured, "kmh", "America/New_York").speed).toBe("45 km/h");
   });
 });

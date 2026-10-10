@@ -46,13 +46,20 @@ export function stopOf(id: string, over: Partial<StopSignConfig> = {}): StopSign
 }
 
 export function profileOf(
-  parts: { lines?: LineConfig[]; detection?: ZoneConfig[]; exclusion?: ZoneConfig[]; stops?: StopSignConfig[] } = {},
+  parts: {
+    lines?: LineConfig[];
+    detection?: ZoneConfig[];
+    exclusion?: ZoneConfig[];
+    stops?: StopSignConfig[];
+    calibration?: Profile["calibration"];
+  } = {},
 ): Profile {
   return {
-    schema_version: 2,
+    schema_version: 3,
     lines: parts.lines ?? [],
     detection_zones: parts.detection ?? [],
     exclusion_zones: parts.exclusion ?? [],
     stop_signs: parts.stops ?? [],
+    calibration: parts.calibration ?? null,
   };
 }

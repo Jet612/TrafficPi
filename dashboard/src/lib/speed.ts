@@ -16,6 +16,17 @@ const KMH_PER_METRE_A_SECOND = 3.6;
 
 export type SpeedUnits = "mph" | "kmh";
 
+/**
+ * What a speed on a page is worth, in a sentence, for each kind of speed. The same words as the
+ * server's (backend core/speed.py); tests/data/speed_cases.json holds them for both, so that they
+ * cannot drift. When a calibration has been checked against vehicles of known speed (plan.md M6's
+ * "done when"), MEASURED_CAVEAT is where its error band goes.
+ */
+export const ESTIMATE_CAVEAT =
+  "A speed is an estimate: how fast a vehicle crossed the picture, compared with its own size. It is good to about 40% and is not a measurement.";
+export const MEASURED_CAVEAT =
+  "A speed is measured on the road as it was calibrated on the dashboard's Setup page. The calibration has not yet been checked against a vehicle of known speed, so treat the figure as unproven.";
+
 export const unitName = (units: SpeedUnits): string => (units === "mph" ? "mph" : "km/h");
 
 /** Metres a second as miles or kilometres an hour, unrounded. */
@@ -32,16 +43,27 @@ export function roughSpeed(value: number): number {
   return 5 * Math.floor(value / 5 + 0.5);
 }
 
-/** "about 30 mph", "about 50 km/h", or "almost still": a speed in metres a second, in words. */
-export function speedPhrase(metresPerSecond: number, units: SpeedUnits): string {
+/**
+ * A speed measured on a calibrated road (plan.md M6), rounded to a whole mile or kilometre an hour
+ * (halves go up). The same as backend core/speed.py `measured_speed`; both read tests/data/speed_cases.json.
+ */
+export const measuredSpeed = (value: number): number => Math.floor(value + 0.5);
+
+/**
+ * "about 30 mph" for an estimate, "30 mph" for a speed measured on a calibrated road, "about 50 km/h",
+ * or "almost still": a speed in metres a second, in words.
+ */
+export function speedPhrase(metresPerSecond: number, units: SpeedUnits, measured = false): string {
   const value = inUnits(metresPerSecond, units);
-  return value < 1 ? "almost still" : `about ${roughSpeed(value)} ${unitName(units)}`;
+  if (value < 1) return "almost still";
+  return measured ? `${measuredSpeed(value)} ${unitName(units)}` : `about ${roughSpeed(value)} ${unitName(units)}`;
 }
 
 /** "30 mph", "50 km/h", or "almost still": the same speed as `speedPhrase`, short enough for a table cell. */
-export function speedShort(metresPerSecond: number, units: SpeedUnits): string {
+export function speedShort(metresPerSecond: number, units: SpeedUnits, measured = false): string {
   const value = inUnits(metresPerSecond, units);
-  return value < 1 ? "almost still" : `${roughSpeed(value)} ${unitName(units)}`;
+  if (value < 1) return "almost still";
+  return `${measured ? measuredSpeed(value) : roughSpeed(value)} ${unitName(units)}`;
 }
 
 const ARTICLES: Record<string, string> = { car: "a car", truck: "a truck", bus: "a bus", motorcycle: "a motorcycle", bicycle: "a bicycle" };
@@ -65,7 +87,13 @@ export function passedText(ms: number, timeZone: string): string {
   return `${parts.weekday} ${parts.day} ${parts.month}, ${parts.hour}:${parts.minute}`;
 }
 
-/** The fastest estimate as a headline and a note: "about 30 mph" and "a car, Fri 9 Oct, 17:42". */
+/**
+ * The fastest speed as a headline and a note: "about 30 mph" (an estimate) or "30 mph" (measured on a
+ * calibrated road), and "a car, Fri 9 Oct, 17:42".
+ */
 export function fastestText(estimate: SpeedEstimate, units: SpeedUnits, timeZone: string): { speed: string; note: string } {
-  return { speed: speedPhrase(estimate.speed_ms, units), note: `${aKind(estimate.label)}, ${passedText(estimate.at, timeZone)}` };
+  return {
+    speed: speedPhrase(estimate.speed_ms, units, estimate.calibrated),
+    note: `${aKind(estimate.label)}, ${passedText(estimate.at, timeZone)}`,
+  };
 }

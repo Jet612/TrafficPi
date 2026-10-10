@@ -1,10 +1,12 @@
 "use client";
 
 import { useId } from "react";
-import { Ban, CircleAlert, FlipHorizontal2, Octagon, Pentagon, Plus, RotateCcw, Route, Trash2, TriangleAlert } from "lucide-react";
+import { Ban, CircleAlert, FlipHorizontal2, Octagon, Pentagon, Plus, RotateCcw, Route, Ruler, RulerDimensionLine, Trash2, TriangleAlert } from "lucide-react";
+import { CalibrationProperties, CheckProperties, type CalibrationView } from "@/components/calibration-panel";
 import { NumberField } from "@/components/number-field";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
+import { lengthText, type LengthUnit } from "@/lib/calibration";
 import { classColor, classLabel } from "@/lib/classes";
 import {
   canAddCorner,
@@ -37,7 +39,7 @@ import {
 import { cn } from "@/lib/cn";
 import type { Profile } from "@/lib/types";
 
-const KIND_ICON = { line: Route, detection: Pentagon, exclusion: Ban, stop: Octagon } as const;
+const KIND_ICON = { line: Route, detection: Pentagon, exclusion: Ban, stop: Octagon, calibration: Ruler, check: RulerDimensionLine } as const;
 
 export interface ZoneInspectorProps {
   profile: Profile;
@@ -49,10 +51,16 @@ export interface ZoneInspectorProps {
   onSettle: () => void;
   /** One undoable change. */
   onChange: (profile: Profile) => void;
+  /** What the server makes of the speed calibration, and how its lengths are shown. */
+  calibration: CalibrationView;
 }
 
 /** What an element is, in a few words: what a line counts, or how big a zone is. */
-function summary(element: Element): string {
+function summary(element: Element, unit: LengthUnit): string {
+  if (element.kind === "calibration") {
+    return `${lengthText(element.value.width_m, unit)} wide and ${lengthText(element.value.length_m, unit)} long`;
+  }
+  if (element.kind === "check") return `${lengthText(element.value.length_m, unit)} between its ends`;
   if (element.kind === "stop") {
     const classes = element.value.classes;
     return classes.length === 0 ? "no kind has to stop yet" : `${classes.map((c) => classLabel(c).toLowerCase()).join(", ")} must stop`;
@@ -64,7 +72,7 @@ function summary(element: Element): string {
   return `${element.value.points.length} corners, ${areaPercent(element.value)}% of the picture`;
 }
 
-export function ZoneInspector({ profile, selection, problems, onSelect, onLive, onSettle, onChange }: ZoneInspectorProps) {
+export function ZoneInspector({ profile, selection, problems, onSelect, onLive, onSettle, onChange, calibration }: ZoneInspectorProps) {
   const all = elements(profile);
   const selected = selection ? findElement(profile, selection) : undefined;
   const problemsOf = (ref: ElementRef) => problems.filter((problem) => sameRef(problem.ref, ref));
@@ -98,7 +106,7 @@ export function ZoneInspector({ profile, selection, problems, onSelect, onLive, 
                   <span className="min-w-0 flex-1">
                     <span className="block truncate font-medium">{displayName(profile, ref)}</span>
                     <span className="block text-ink-2">
-                      {KIND_LABEL[element.kind]}, {summary(element)}
+                      {KIND_LABEL[element.kind]}, {summary(element, calibration.unit)}
                     </span>
                     {worst && (
                       <span className="mt-1 flex items-start gap-1.5 text-ink">
@@ -126,6 +134,8 @@ export function ZoneInspector({ profile, selection, problems, onSelect, onLive, 
           onLive={onLive}
           onSettle={onSettle}
           onChange={onChange}
+          onSelect={onSelect}
+          view={calibration}
           onDeleted={() => onSelect(null)}
         />
       )}
@@ -145,6 +155,8 @@ function Selected({
   onLive,
   onSettle,
   onChange,
+  onSelect,
+  view,
   onDeleted,
 }: {
   profile: Profile;
@@ -152,6 +164,8 @@ function Selected({
   onLive: (profile: Profile) => void;
   onSettle: () => void;
   onChange: (profile: Profile) => void;
+  onSelect: (ref: ElementRef | null) => void;
+  view: CalibrationView;
   onDeleted: () => void;
 }) {
   const nameId = useId();
@@ -160,18 +174,41 @@ function Selected({
 
   return (
     <section aria-label={`${displayName(profile, ref)}: properties`} className="rounded-lg border border-edge bg-sunken p-3">
-      <Label htmlFor={nameId}>Name</Label>
-      <Input
-        id={nameId}
-        value={element.value.name}
-        maxLength={MAX_NAME_LENGTH}
-        placeholder={displayName(profile, ref)}
-        autoComplete="off"
-        onChange={(event) => onLive(renameElement(profile, ref, event.target.value))}
-        onBlur={onSettle}
-      />
+      {element.kind !== "calibration" && (
+        <>
+          <Label htmlFor={nameId}>Name</Label>
+          <Input
+            id={nameId}
+            value={element.value.name}
+            maxLength={MAX_NAME_LENGTH}
+            placeholder={displayName(profile, ref)}
+            autoComplete="off"
+            onChange={(event) => onLive(renameElement(profile, ref, event.target.value))}
+            onBlur={onSettle}
+          />
+        </>
+      )}
 
-      {element.kind === "stop" ? (
+      {element.kind === "calibration" ? (
+        <CalibrationProperties
+          profile={profile}
+          view={view}
+          onLive={onLive}
+          onSettle={onSettle}
+          onChange={onChange}
+          onSelect={onSelect}
+        />
+      ) : element.kind === "check" ? (
+        <CheckProperties
+          profile={profile}
+          view={view}
+          check={element.value}
+          onLive={onLive}
+          onSettle={onSettle}
+          onChange={onChange}
+          onSelect={onSelect}
+        />
+      ) : element.kind === "stop" ? (
         <StopSignProperties profile={profile} element={element} onLive={onLive} onSettle={onSettle} onChange={onChange} />
       ) : element.kind === "line" ? (
         <>

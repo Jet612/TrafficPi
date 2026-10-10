@@ -45,14 +45,19 @@ page.on("console", (message) => {
 // message carries that camera-drift finding instead of the vision service's own, which is how the
 // banner and the System page are looked at without moving a camera (the real check is tested in Python).
 let fakeDrift = null;
+// The newest state message that came through, which a step can read: what the vision service says about its tracks.
+let newestState = null;
 await page.routeWebSocket(/\/api\/live$/, (socket) => {
   const server = socket.connectToServer();
   socket.onMessage((message) => server.send(message));
   server.onMessage((message) => {
-    if (fakeDrift !== null && typeof message === "string") {
+    if (typeof message === "string") {
       try {
         const data = JSON.parse(message);
-        if (data.type === "state") return socket.send(JSON.stringify({ ...data, drift: fakeDrift }));
+        if (data.type === "state") {
+          newestState = data;
+          if (fakeDrift !== null) return socket.send(JSON.stringify({ ...data, drift: fakeDrift }));
+        }
       } catch {
         // not JSON: passed on as it is
       }
@@ -316,7 +321,7 @@ try {
       await saveButton().click();
       await page.getByText(/Saved as version \d+/).waitFor();
     }
-    assert.deepEqual(await stored(), { schema_version: 2, lines: [], detection_zones: [], exclusion_zones: [], stop_signs: [] });
+    assert.deepEqual(await stored(), { schema_version: 3, lines: [], detection_zones: [], exclusion_zones: [], stop_signs: [], calibration: null });
   });
 
   // The demo's vehicles drive sideways, so its line is an upright one across both lanes.
@@ -627,6 +632,123 @@ try {
       await page.getByRole("button", { name: "Discard changes" }).click();
       await page.getByText(/choose at least one kind/).first().waitFor({ state: "detached" });
     });
+
+    // The made-up street runs left and right across the picture, so its road is a horizontal band:
+    // a rectangle laid along it has its length across the picture and its width up and down. The
+    // street is flat, so the map is an even scale, and the speeds it gives are those of the drawing.
+    await step("a speed calibration is added, laid on the road, sized and tested with a known distance", async () => {
+      await openEditor();
+      await page.getByRole("button", { name: "Add speed calibration" }).click();
+      await corners().first().waitFor();
+      assert.equal(await corners().count(), 4, "the four corners of the rectangle");
+      assert.equal(await edgeDots().count(), 0, "a rectangle keeps its four corners: none can be added");
+      assert.equal(await page.getByRole("button", { name: "Add speed calibration" }).isDisabled(), true, "a camera has one road");
+      await page.getByRole("button", { name: /^Speed calibration/ }).first().waitFor();
+
+      const rectangle = [[0.15, 0.5], [0.15, 0.88], [0.85, 0.88], [0.85, 0.5]]; // corner 1 to 2 is across the road, 2 to 3 along it
+      for (const [index, [fx, fy]] of rectangle.entries()) await dragCorner(index, fx, fy);
+      const panel = page.getByRole("region", { name: "Speed calibration: properties" });
+      await panel.waitFor();
+      assert.equal(await panel.getByLabel("Name", { exact: true }).count(), 0, "the calibration has no name of its own");
+      await panel.getByLabel("Lengths in").selectOption("m");
+      const width = panel.getByLabel("Width, across the road");
+      const length = panel.getByLabel("Length, along the road");
+      await width.fill("7");
+      await length.fill("30");
+      await length.blur();
+      assert.match(await explained(width), /corner 1 to corner 2/);
+      assert.match(await explained(length), /corner 2 to corner 3/);
+
+      // the server says where speeds will be given, and the picture shades it
+      await panel.getByText(/Speeds are given only where the calibration is expected to be right to within 10%/).waitFor();
+      await canvas().getByTestId("believed-area").waitFor();
+      const shaded = await canvas().getByTestId("believed-area").locator("rect").count();
+      assert.ok(shaded > 20, `a good part of the picture is shaded (${shaded} cells)`);
+      await panel.getByLabel("Shade where speeds are given").uncheck();
+      await canvas().getByTestId("believed-area").waitFor({ state: "detached" });
+      await panel.getByLabel("Shade where speeds are given").check();
+      await canvas().getByTestId("believed-area").waitFor();
+
+      // a known distance: along the middle of the road to begin with, and exactly 15 m on this even scale
+      await panel.getByRole("button", { name: "Add a known distance" }).click();
+      const check = page.getByRole("region", { name: "Known distance 1: properties" });
+      await check.waitFor();
+      assert.equal(await check.getByLabel("Its length").inputValue(), "15", "half the rectangle's length to begin with");
+      await check.getByText(/Agrees: the map finds 15 m, the same as the 15 m you typed/).waitFor();
+      await check.getByLabel("Its length").fill("25");
+      await check.getByLabel("Its length").blur();
+      await check.getByText(/Does not agree: the map finds 15 m, 40% shorter than the 25 m you typed/).waitFor();
+      await check.getByLabel("Its length").fill("15");
+      await check.getByLabel("Its length").blur();
+      await check.getByText(/Agrees:/).waitFor();
+      await shot("speed-calibration-editor");
+
+      await saveButton().click();
+      await page.getByText(/Saved as version \d+/).waitFor();
+      const { calibration } = await stored();
+      assert.ok(calibration, "the calibration is stored");
+      assert.deepEqual([calibration.width_m, calibration.length_m], [7, 30]);
+      calibration.corners.forEach((corner, index) => {
+        near(corner[0], rectangle[index][0], 0.01, `corner ${index + 1}, x`);
+        near(corner[1], rectangle[index][1], 0.01, `corner ${index + 1}, y`);
+      });
+      assert.equal(calibration.checks.length, 1);
+      assert.deepEqual([calibration.checks[0].name, calibration.checks[0].length_m], ["Known distance 1", 15]);
+    });
+
+    await step("corners dragged into a bow tie are refused in words, and the draft can be undone", async () => {
+      await openEditor();
+      await page.getByRole("button", { name: /^Speed calibration/ }).first().click();
+      await dragCorner(1, 0.85, 0.5); // corner 2 onto corner 4's place: the sides cross
+      await page.getByText(/Needs fixing: the corners must go round the rectangle one after the other, without crossing/).waitFor();
+      await page.getByText(/This calibration cannot be used/).waitFor();
+      assert.equal(await saveButton().isEnabled(), false, "a calibration that cannot be a rectangle is refused");
+      await page.getByRole("button", { name: "Discard changes" }).click();
+      await page.getByText(/Needs fixing: the corners/).waitFor({ state: "detached" });
+    });
+
+    await step("the live view carries each vehicle's speed once the camera is calibrated", async () => {
+      await goTo("Live");
+      await eventually(
+        async () => {
+          assert.ok(newestState?.calibration, "the vision service says the camera is calibrated");
+          assert.deepEqual([newestState.calibration.width_m, newestState.calibration.length_m], [7, 30]);
+          const speeds = newestState.tracks.filter((track) => typeof track.speed_ms === "number");
+          assert.ok(speeds.length > 0, "a vehicle has a speed");
+          assert.ok(speeds.every((track) => track.speed_ms >= 0 && track.speed_ms < 20), `plausible speeds: ${speeds.map((t) => t.speed_ms)}`);
+        },
+        "vehicles are given speeds",
+        45_000,
+      );
+    });
+
+    await step("the Data page says how fast the counted vehicles went, and what that is worth", async () => {
+      const speeds = () => page.evaluate(async () => (await (await fetch("/api/stats/speeds?days=1")).json()));
+      await eventually(async () => assert.ok((await speeds()).figures?.count >= 3, "vehicles counted with a speed"), "counts get speeds", 90_000);
+      const stats = await speeds();
+      assert.equal(stats.calibrations.length, 1, "all from the one calibration");
+      assert.ok(stats.figures.fastest < 40 && stats.figures.slowest > 0, `plausible speeds: ${stats.figures.slowest} to ${stats.figures.fastest} mph`);
+      assert.ok(stats.counted >= stats.figures.count, "no more speeds than vehicles");
+
+      await goTo("Data");
+      await page.getByTestId("data-speeds").waitFor();
+      assert.match(await page.getByTestId("data-speeds-p85").innerText(), /^\d+ (mph|km\/h)$/);
+      await page.getByTestId("data-speeds-histogram").waitFor();
+      assert.match(await page.getByTestId("data-speeds").innerText(), /has not yet been checked against a vehicle of known speed/);
+      await page.getByTestId("data-speeds-by-line").waitFor();
+      await shot("data-speeds");
+    });
+
+    await step("the speed calibration can be taken away again", async () => {
+      await openEditor();
+      await page.getByRole("button", { name: /^Speed calibration/ }).first().click();
+      await page.getByRole("region", { name: "Speed calibration: properties" }).getByRole("button", { name: "Delete this speed calibration" }).click();
+      assert.equal(await corners().count(), 0, "the rectangle and its known distance are gone");
+      await saveButton().click();
+      await page.getByText(/Saved as version \d+/).waitFor();
+      assert.equal((await stored()).calibration, null);
+      assert.equal(await page.getByRole("button", { name: "Add speed calibration" }).isEnabled(), true);
+    });
   }
 
   await step("the picture can be kept, and the profile exported and imported", async () => {
@@ -639,7 +761,7 @@ try {
     const file = await download;
     assert.equal(file.suggestedFilename(), "trafficpi-profile.json");
     const exported = JSON.parse(readFileSync(await file.path(), "utf8"));
-    assert.equal(exported.schema_version, 2);
+    assert.equal(exported.schema_version, 3);
     assert.equal(exported.lines.length, 1);
     assert.equal(exported.detection_zones.length, 1);
     assert.equal(exported.exclusion_zones.length, 1);
@@ -1158,7 +1280,7 @@ try {
     const profileRoute = "**/api/profile";
     const stopsRoute = "**/api/stats/stops**";
     const trafficRoute = "**/api/stats/traffic**";
-    await page.route(profileRoute, (route) => route.fulfill(json({ version: 1, problem: null, reference_at: null, profile: { schema_version: 2, lines: [], detection_zones: [], exclusion_zones: [], stop_signs: [] } })));
+    await page.route(profileRoute, (route) => route.fulfill(json({ version: 1, problem: null, reference_at: null, profile: { schema_version: 3, lines: [], detection_zones: [], exclusion_zones: [], stop_signs: [], calibration: null } })));
     await page.route(stopsRoute, (route) => route.fulfill(json(nothing)));
     await page.route(trafficRoute, (route) => route.fulfill(json({ detail: "broken" }, 503))); // one of the refusals that the end of the test expects
     await page.reload();
@@ -1181,7 +1303,7 @@ try {
     const profileRoute = "**/api/profile";
     const summaryRoute = "**/api/stops/summary**";
     await page.route(summaryRoute, (route) => route.fulfill(json(none)));
-    await page.route(profileRoute, (route) => route.fulfill(json({ version: 1, problem: null, reference_at: null, profile: { schema_version: 2, lines: [], detection_zones: [], exclusion_zones: [], stop_signs: [] } })));
+    await page.route(profileRoute, (route) => route.fulfill(json({ version: 1, problem: null, reference_at: null, profile: { schema_version: 3, lines: [], detection_zones: [], exclusion_zones: [], stop_signs: [], calibration: null } })));
     await page.reload();
     await page.getByText("No stop sign is set up yet.").waitFor();
     await page.getByRole("link", { name: "Add one on the Setup page" }).click();

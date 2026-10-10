@@ -33,7 +33,7 @@ import {
   type OutcomeCounts,
   type Tone,
 } from "@/lib/data";
-import { fastestText, speedShort } from "@/lib/speed";
+import { ESTIMATE_CAVEAT, MEASURED_CAVEAT, fastestText, speedPhrase, speedShort } from "@/lib/speed";
 import { formatCount, hourRange } from "@/lib/format";
 import { OUTCOMES, OUTCOME_LABEL, signLabel } from "@/lib/stops";
 import type { Profile, StopOutcome, StopStats } from "@/lib/types";
@@ -57,6 +57,10 @@ export function StopStatsSection({ stats, period, profile, busy }: { stats: Stop
   const weekdays = stats.by_weekday.map((row) => ({ ...row, key: String(row.weekday), name: weekdayName(row.weekday) }));
   const busiest = peak(stats.by_hour, totalOf);
   const fastestOn = new Map(stats.by_day.map((day) => [day.date, day.fastest]));
+  // A day's fastest speed is either measured on the calibrated road or an estimate from the vehicle's
+  // size, never a mixture. Once any day is measured the column is "Fastest", and an estimate among
+  // them is marked with a ≈.
+  const anyMeasured = stats.by_day.some((day) => day.fastest?.calibrated);
   return (
     <>
       <HowDriversDid stats={stats} period={period} busy={busy} />
@@ -92,14 +96,16 @@ export function StopStatsSection({ stats, period, profile, busy }: { stats: Stop
           extraColumns={[
             { header: "Stop rate", cell: (row) => stopRateText(row.values) },
             {
-              header: "Fastest (est.)",
+              header: anyMeasured ? "Fastest" : "Fastest (est.)",
               cell: (row) => {
                 const fastest = fastestOn.get(row.id);
-                return fastest ? speedShort(fastest.speed_ms, stats.units) : "–";
+                if (!fastest) return "–";
+                const text = speedShort(fastest.speed_ms, stats.units, fastest.calibrated);
+                return anyMeasured && !fastest.calibrated ? `≈ ${text}` : text;
               },
             },
           ]}
-          summary={`Vehicles judged at the stop signs on each of ${days} days, stacked by what they did. The table also gives each day's fastest estimated speed.`}
+          summary={`Vehicles judged at the stop signs on each of ${days} days, stacked by what they did. The table also gives each day's fastest ${anyMeasured ? "speed; a day marked ≈ has only an estimate, not a measurement" : "estimated speed"}.`}
           busy={busy}
           testId="data-stops-by-day"
         />
@@ -252,7 +258,13 @@ function Highlights({ stats }: { stats: StopStats }) {
   }
   if (stats.fastest) {
     const fastest = fastestText(stats.fastest, stats.units, stats.timezone);
-    facts.push({ key: "fastest", label: "Fastest estimated speed", value: fastest.speed, note: `${fastest.note}. A rough estimate.` });
+    const measured = stats.fastest.calibrated;
+    facts.push({
+      key: "fastest",
+      label: measured ? "Fastest speed" : "Fastest estimated speed",
+      value: fastest.speed,
+      note: `${fastest.note}.${measured ? "" : " A rough estimate."}`,
+    });
   }
   const byKind = rateExtremes(stats.by_kind);
   if (byKind) {
@@ -295,7 +307,7 @@ function Highlights({ stats }: { stats: StopStats }) {
         <p className="mt-4 text-sm text-ink-3">
           An hour or a kind is compared only when at least {MIN_SAMPLE} of its vehicles could be judged, so that one out of one is not &ldquo;100%&rdquo;. A stop rate is the
           share of those vehicles that stopped.
-          {stats.fastest && " A speed is an estimate: how fast a vehicle crossed the picture, compared with its own size, good to about 40%. Each day's fastest is in the table of the day-by-day card."}
+          {stats.fastest && ` ${stats.fastest.calibrated ? MEASURED_CAVEAT : ESTIMATE_CAVEAT} Each day's fastest is in the table of the day-by-day card.`}
         </p>
       </CardBody>
     </Card>
@@ -364,11 +376,20 @@ function BreakdownTable({ title, firstHeader, rows, testId }: { title: string; f
 // --- how they stop, and the reviews --------------------------------------------------------------
 
 function HowTheyStop({ stats }: { stats: StopStats }) {
-  const { stopped_hold_s, rolling_min_speed, did_not_stop_min_speed } = stats.timing;
+  const { stopped_hold_s, rolling_min_speed, did_not_stop_min_speed, rolling_min_speed_ms, did_not_stop_min_speed_ms } = stats.timing;
+  // A speed measured on the calibrated road is used when there is one; otherwise the estimate from
+  // the vehicle's size.
+  const slowedTo = (measuredMs: number | null, sizesPerSecond: number | null): string | null =>
+    measuredMs !== null
+      ? `slowed to ${speedPhrase(measuredMs, stats.units, true)}`
+      : sizesPerSecond === null
+        ? null
+        : `slowed to ${speedText(sizesPerSecond, stats.units)}`;
+  const measured = rolling_min_speed_ms !== null || did_not_stop_min_speed_ms !== null;
   const lines: { outcome: StopOutcome; text: string | null }[] = [
     { outcome: "stopped", text: stopped_hold_s === null ? null : `stood still for ${stopped_hold_s.toFixed(1)} s` },
-    { outcome: "rolling", text: rolling_min_speed === null ? null : `slowed to ${speedText(rolling_min_speed, stats.units)}` },
-    { outcome: "did_not_stop", text: did_not_stop_min_speed === null ? null : `slowed to ${speedText(did_not_stop_min_speed, stats.units)}` },
+    { outcome: "rolling", text: slowedTo(rolling_min_speed_ms, rolling_min_speed) },
+    { outcome: "did_not_stop", text: slowedTo(did_not_stop_min_speed_ms, did_not_stop_min_speed) },
   ];
   const any = lines.some((line) => line.text !== null);
   return (
@@ -397,8 +418,9 @@ function HowTheyStop({ stats }: { stats: StopStats }) {
               })}
             </ul>
             <p className="mt-3 text-sm text-ink-3">
-              Speeds are rough: they are measured in the vehicle&rsquo;s own sizes a second (a size is the width and the height of its box in the picture, averaged), and here a
-              car&rsquo;s size is taken to be about 2.5 m. They are good to about 40%.
+              {measured
+                ? MEASURED_CAVEAT
+                : "Speeds are rough: they are measured in the vehicle’s own sizes a second (a size is the width and the height of its box in the picture, averaged), and here a car’s size is taken to be about 2.5 m. They are good to about 40%."}
             </p>
           </>
         )}

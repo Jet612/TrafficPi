@@ -12,6 +12,8 @@ import { usePersistentState } from "@/lib/hooks";
 import type { LiveSnapshot } from "@/lib/live";
 import { STILL_NOTICE, STILL_REFRESH_MS, pictureMode, stillUrl } from "@/lib/remote";
 import { useFullscreen } from "@/lib/use-fullscreen";
+import type { SpeedUnits } from "@/lib/speed";
+import { useSpeedUnits } from "@/lib/use-speed-units";
 import {
   DEFAULT_OVERLAY,
   drawOverlay,
@@ -95,6 +97,12 @@ export function LiveView() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fullscreen = useFullscreen(stageRef);
   const trails = useRef(new Map<number, Trail>());
+  // The units a vehicle's speed is written in on its label; the overlay is painted outside React, so it reads them here.
+  const unitsRef = useRef<SpeedUnits | undefined>(undefined);
+  const speedUnits = useSpeedUnits();
+  useEffect(() => {
+    unitsRef.current = speedUnits;
+  });
   const [attempt, setAttempt] = useState(0);
   const [streamFailed, setStreamFailed] = useState(false);
   const [aspect, setAspect] = useState(16 / 9);
@@ -133,6 +141,7 @@ export function LiveView() {
         lines: state?.lines ?? [],
         zones: state?.zones ?? [],
         stopSigns: state?.stop_signs ?? [],
+        units: unitsRef.current,
         // A still is seconds old: boxes drawn from the live data would sit beside the vehicles.
         tracks: current && state && !still ? state.tracks : [],
       };

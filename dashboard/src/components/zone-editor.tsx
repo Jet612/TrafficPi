@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useMemo, useReducer, useRef, useState } from "react";
-import { Ban, Camera, ChevronRight, Download, Octagon, Pentagon, Redo2, RefreshCw, Route, Undo2, Upload } from "lucide-react";
+import { Ban, Camera, ChevronRight, Download, Octagon, Pentagon, Redo2, RefreshCw, Route, Ruler, Undo2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status";
@@ -10,7 +10,11 @@ import { useStats } from "@/components/stats-provider";
 import { ZoneCanvas } from "@/components/zone-canvas";
 import { ZoneInspector } from "@/components/zone-inspector";
 import { ApiError, api, referencePictureUrl, snapshotUrl } from "@/lib/api";
-import { addLine, addStop, addZone, deleteElement, type ZoneKind } from "@/lib/editor";
+import { believedCells, defaultLengthUnit, type LengthUnit } from "@/lib/calibration";
+import { addCalibration, addLine, addStop, addZone, deleteElement, type ZoneKind } from "@/lib/editor";
+import { usePersistentState } from "@/lib/hooks";
+import { useSpeedUnits } from "@/lib/use-speed-units";
+import { useCalibrationReport } from "@/lib/use-calibration-report";
 import { formatDateTime } from "@/lib/format";
 import { canRedo, canUndo, editorReducer, initialEditorState } from "@/lib/editor-state";
 import {
@@ -51,8 +55,20 @@ export function ZoneEditor() {
   const fileInput = useRef<HTMLInputElement>(null);
   const introId = useId();
   const zone = useStats().today?.timezone ?? "UTC";
+  // Lengths are typed in the unit a person measures a road in: the one they chose, else feet for a
+  // reader of miles an hour and metres for the rest.
+  const [chosenUnit, setChosenUnit] = usePersistentState<LengthUnit | null>("trafficpi.lengthUnit", null);
+  const speedUnits = useSpeedUnits();
+  const lengthUnit = chosenUnit ?? defaultLengthUnit(speedUnits);
+  const [shade, setShade] = useState(true);
 
   const draft = state.present;
+  const report = useCalibrationReport(draft);
+  const believed = useMemo(() => {
+    const answer = "report" in report ? report.report : null;
+    if (!shade || answer === null) return null;
+    return { cells: believedCells(answer.grid, answer.limit_pct), columns: answer.grid.columns, rows: answer.grid.rows };
+  }, [report, shade]);
   const found = useMemo(() => findProblems(draft), [draft]);
   const blocked = hasErrors(found);
   const dirty = saved !== null && !sameProfile(draft, saved.profile);
@@ -106,9 +122,10 @@ export function ZoneEditor() {
       : snapshotUrl(stillAt);
 
   function add(kind: ElementKind) {
-    const added = kind === "line" ? addLine(draft) : kind === "stop" ? addStop(draft) : addZone(draft, kind as ZoneKind);
+    const added =
+      kind === "line" ? addLine(draft) : kind === "stop" ? addStop(draft) : kind === "calibration" ? addCalibration(draft) : addZone(draft, kind as ZoneKind);
     if (!added) {
-      setOutcome({ kind: "error", text: `There can be at most ${MAX_ELEMENTS} of these.` });
+      setOutcome({ kind: "error", text: kind === "calibration" ? "There is a speed calibration already." : `There can be at most ${MAX_ELEMENTS} of these.` });
       return;
     }
     setOutcome(null);
@@ -261,6 +278,7 @@ export function ZoneEditor() {
                 A <strong className="font-medium text-ink">detection zone</strong> limits where vehicles are looked for.{" "}
                 An <strong className="font-medium text-ink">exclusion zone</strong> ignores whatever is detected inside it.
                 A <strong className="font-medium text-ink">stop sign</strong> checks whether vehicles stop before its line.
+                A <strong className="font-medium text-ink">speed calibration</strong> puts the picture in metres, so that speeds can be measured.
                 Add a shape, then drag it into place on the picture.
               </p>
 
@@ -287,6 +305,10 @@ export function ZoneEditor() {
                 <Button size="sm" onClick={() => add("stop")}>
                   <Octagon className="size-4" aria-hidden="true" />
                   Add stop sign
+                </Button>
+                <Button size="sm" onClick={() => add("calibration")} disabled={draft.calibration !== null}>
+                  <Ruler className="size-4" aria-hidden="true" />
+                  Add speed calibration
                 </Button>
                 <span className="mx-1 hidden h-5 w-px bg-edge sm:block" aria-hidden="true" />
                 <div className="flex gap-2">
@@ -318,6 +340,8 @@ export function ZoneEditor() {
                     onLive={(profile) => dispatch({ type: "live", profile })}
                     onSettle={() => dispatch({ type: "settle" })}
                     onChange={(profile) => dispatch({ type: "change", profile })}
+                    unit={lengthUnit}
+                    believed={believed}
                   />
                   <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-ink-2">
                     <span>
@@ -361,6 +385,7 @@ export function ZoneEditor() {
                   onLive={(profile) => dispatch({ type: "live", profile })}
                   onSettle={() => dispatch({ type: "settle" })}
                   onChange={(profile) => dispatch({ type: "change", profile })}
+                  calibration={{ report, unit: lengthUnit, onUnit: setChosenUnit, shade, onShade: setShade }}
                 />
               </div>
 

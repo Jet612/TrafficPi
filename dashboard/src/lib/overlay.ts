@@ -1,4 +1,5 @@
 import { classColor } from "./classes";
+import { speedShort, type SpeedUnits } from "./speed";
 import type { LiveLine, LiveStopSign, LiveTrack, LiveZone } from "./types";
 
 export interface Size {
@@ -133,9 +134,11 @@ export const COMPACT_BELOW_PX = 520;
 /** A box narrower than this is too small to carry a label. */
 const MIN_LABELLED_PX = 16;
 
-/** The words on a vehicle's label: with an id and a score when there is room, else the kind. */
-export function trackLabel(track: Pick<LiveTrack, "id" | "label" | "score">, compact: boolean): string {
-  return compact ? track.label : `#${track.id} ${track.label} ${Math.round(track.score * 100)}%`;
+/** The words on a vehicle's label: with an id and a score when there is room, else the kind; then its speed, if it has one. */
+export function trackLabel(track: Pick<LiveTrack, "id" | "label" | "score" | "speed_ms">, compact: boolean, units?: SpeedUnits): string {
+  const words = compact ? track.label : `#${track.id} ${track.label} ${Math.round(track.score * 100)}%`;
+  // A speed is added when the camera is calibrated and this one can be believed: a measured speed, so no "about".
+  return track.speed_ms !== undefined && units !== undefined ? `${words} ${speedShort(track.speed_ms, units, true)}` : words;
 }
 
 /** The words on a zone's label: its own name, or what kind of zone it is. */
@@ -180,6 +183,8 @@ export interface OverlayScene {
   zones: readonly LiveZone[];
   tracks: readonly LiveTrack[];
   stopSigns?: readonly LiveStopSign[];
+  /** The units a vehicle's speed is written in on its label; none: speeds are not written. */
+  units?: SpeedUnits;
 }
 
 /**
@@ -337,7 +342,7 @@ export function paintOverlay(
       ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
       ctx.restore();
       if (options.labels && track.confirmed && rect.w >= MIN_LABELLED_PX) {
-        drawChip(ctx, trackLabel(track, compact), rect.x, Math.max(14, rect.y), color, compact);
+        drawChip(ctx, trackLabel(track, compact, scene.units), rect.x, Math.max(14, rect.y), color, compact);
       }
     }
   }

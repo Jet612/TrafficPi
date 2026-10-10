@@ -13,6 +13,7 @@ import {
   pointsOf,
   removeCorner,
 } from "@/lib/editor";
+import { lengthText, type Cell, type LengthUnit } from "@/lib/calibration";
 import { distance, toFraction, toPixels, type Point, type Size } from "@/lib/geometry";
 import { COMPACT_BELOW_PX, arrowHead, directionArrow } from "@/lib/overlay";
 import { displayName, elements, refOf, sameRef, type Element, type ElementRef, type Problem } from "@/lib/profile";
@@ -36,6 +37,13 @@ const PAPER = "#ffffff";
 /** The road before a stop line, in red: where a stop counts. */
 const STOP_FILL = "rgba(214, 48, 48, 0.16)";
 const STOP_FILL_SELECTED = "rgba(214, 48, 48, 0.28)";
+/** The speed calibration's rectangle, in teal; the known distances that test it, in amber. */
+const CALIBRATION_STROKE = "#14b8a6";
+const CALIBRATION_FILL = "rgba(20, 184, 166, 0.12)";
+const CALIBRATION_FILL_SELECTED = "rgba(20, 184, 166, 0.22)";
+const CHECK_STROKE = "#f5a524";
+/** Where a vehicle driving along the road is given a speed. */
+const BELIEVED_FILL = "rgba(70, 200, 120, 0.2)";
 
 type Gesture =
   | { kind: "corner"; ref: ElementRef; index: number; base: Profile; startedAt: Point; moved: boolean }
@@ -46,6 +54,10 @@ const cornerKey = (ref: ElementRef, index: number) => `${ref.kind}:${ref.id}:${i
 type ZoneElement = Extract<Element, { kind: "detection" | "exclusion" }>;
 type LineElement = Extract<Element, { kind: "line" }>;
 type StopElement = Extract<Element, { kind: "stop" }>;
+type CalibrationElement = Extract<Element, { kind: "calibration" }>;
+type CheckElement = Extract<Element, { kind: "check" }>;
+const isCalibration = (element: Element): element is CalibrationElement => element.kind === "calibration";
+const isCheck = (element: Element): element is CheckElement => element.kind === "check";
 const isZone = (element: Element): element is ZoneElement => element.kind === "detection" || element.kind === "exclusion";
 const isLine = (element: Element): element is LineElement => element.kind === "line";
 const isStop = (element: Element): element is StopElement => element.kind === "stop";
@@ -68,6 +80,10 @@ export interface ZoneCanvasProps {
   onSettle: () => void;
   /** One undoable change. */
   onChange: (profile: Profile) => void;
+  /** The unit the calibration's lengths are written in on the picture. */
+  unit: LengthUnit;
+  /** The cells of the picture where a vehicle driving along the road is given a speed, and the grid they are of (columns and rows); null: none shown. */
+  believed: { cells: readonly Cell[]; columns: number; rows: number } | null;
 }
 
 /**
@@ -199,6 +215,8 @@ export function ZoneCanvas(props: ZoneCanvasProps) {
   const zones = all.filter(isZone);
   const stops = all.filter(isStop);
   const lines = all.filter(isLine);
+  const calibrations = all.filter(isCalibration);
+  const checks = all.filter(isCheck);
   const selected = selection ? all.find((element) => sameRef(refOf(element), selection)) : undefined;
   const hasError = (ref: ElementRef) => problems.some((problem) => problem.level === "error" && sameRef(problem.ref, ref));
   const px = (point: Point): Point => toPixels(point, size);
@@ -267,6 +285,21 @@ export function ZoneCanvas(props: ZoneCanvasProps) {
             }}
           />
 
+          {props.believed && props.believed.cells.length > 0 && (
+            <g data-testid="believed-area" pointerEvents="none">
+              {props.believed.cells.map((cell) => (
+                <rect
+                  key={`${cell.column}:${cell.row}`}
+                  x={(cell.column * size.width) / props.believed!.columns}
+                  y={(cell.row * size.height) / props.believed!.rows}
+                  width={size.width / props.believed!.columns + 0.5}
+                  height={size.height / props.believed!.rows + 0.5}
+                  fill={BELIEVED_FILL}
+                />
+              ))}
+            </g>
+          )}
+
           {zones.map((element) => {
             const ref = refOf(element);
             const zone = element.value;
@@ -300,6 +333,63 @@ export function ZoneCanvas(props: ZoneCanvasProps) {
                   <Label x={left + 5} y={top + 16}>
                     {element.kind === "exclusion" ? `Ignored: ${displayName(profile, ref)}` : displayName(profile, ref)}
                   </Label>
+                )}
+              </g>
+            );
+          })}
+
+          {calibrations.map((element) => {
+            const ref = refOf(element);
+            const calibration = element.value;
+            const corners = calibration.corners.map(px);
+            const outline = corners.map(([x, y]) => `${x},${y}`).join(" ");
+            const isSelected = sameRef(selection, ref);
+            const bad = hasError(ref);
+            const middleOf = (i: number): Point => {
+              const from = corners[i]!;
+              const to = corners[(i + 1) % corners.length]!;
+              return [(from[0] + to[0]) / 2, (from[1] + to[1]) / 2];
+            };
+            const [widthAt, lengthAt] = [middleOf(0), middleOf(1)];
+            const left = Math.min(...corners.map((c) => c[0]));
+            const top = Math.min(...corners.map((c) => c[1]));
+            return (
+              <g key="calibration" data-element="calibration:calibration">
+                <polygon
+                  points={outline}
+                  fill={isSelected ? CALIBRATION_FILL_SELECTED : CALIBRATION_FILL}
+                  stroke={INK}
+                  strokeWidth={isSelected ? 5.5 : 4}
+                  strokeLinejoin="round"
+                  style={{ cursor: "move", touchAction: "none" }}
+                  onPointerDown={(event) => pressBody(event, ref)}
+                />
+                <polygon
+                  points={outline}
+                  fill="none"
+                  stroke={bad ? "var(--critical)" : CALIBRATION_STROKE}
+                  strokeWidth={isSelected ? 3 : 2}
+                  strokeDasharray="7 5"
+                  strokeLinejoin="round"
+                  pointerEvents="none"
+                />
+                {corners.map(([x, y], index) => (
+                  <Label key={`number-${index}`} x={x + 8} y={y - 8}>
+                    {index + 1}
+                  </Label>
+                ))}
+                {(!compact || isSelected) && (
+                  <>
+                    <Label x={widthAt[0] + 4} y={widthAt[1] + 16}>
+                      {lengthText(calibration.width_m, props.unit)}
+                    </Label>
+                    <Label x={lengthAt[0] + 6} y={lengthAt[1]}>
+                      {lengthText(calibration.length_m, props.unit)}
+                    </Label>
+                    <Label x={left + 5} y={top - 8}>
+                      {displayName(profile, ref)}
+                    </Label>
+                  </>
                 )}
               </g>
             );
@@ -408,6 +498,45 @@ export function ZoneCanvas(props: ZoneCanvasProps) {
             );
           })}
 
+          {checks.map((element) => {
+            const ref = refOf(element);
+            const check = element.value;
+            const a = px(check.a);
+            const b = px(check.b);
+            const path = `M${a[0]} ${a[1]} L${b[0]} ${b[1]}`;
+            const isSelected = sameRef(selection, ref);
+            const bad = hasError(ref);
+            return (
+              <g key={`check:${check.id}`} data-element={`check:${check.id}`}>
+                <line
+                  x1={a[0]}
+                  y1={a[1]}
+                  x2={b[0]}
+                  y2={b[1]}
+                  stroke="transparent"
+                  strokeWidth={22}
+                  style={{ cursor: "move", touchAction: "none" }}
+                  onPointerDown={(event) => pressBody(event, ref)}
+                />
+                <path d={path} fill="none" stroke={INK} strokeWidth={isSelected ? 6.5 : 5} strokeLinecap="round" pointerEvents="none" />
+                <path
+                  d={path}
+                  fill="none"
+                  stroke={bad ? "var(--critical)" : CHECK_STROKE}
+                  strokeWidth={isSelected ? 3.5 : 2.5}
+                  strokeLinecap="round"
+                  strokeDasharray="2 6"
+                  pointerEvents="none"
+                />
+                {(!compact || isSelected) && (
+                  <Label x={Math.min(a[0], b[0]) + 4} y={Math.min(a[1], b[1]) - 8}>
+                    {lengthText(check.length_m, props.unit)}
+                  </Label>
+                )}
+              </g>
+            );
+          })}
+
           {selected && (
             <Handles
               element={selected}
@@ -493,9 +622,11 @@ function Handles({
         const [x, y] = px(point);
         const removable = canRemoveCorner(profile, ref, index);
         const label =
-          index >= corners
-            ? `${name}, ${element.kind === "stop" ? "stop line " : ""}end ${(index - corners) === 0 ? "A" : "B"}. Arrow keys move it.`
-            : `${name}, corner ${index + 1} of ${corners}. Arrow keys move it${removable ? ", Delete removes it" : ""}.`;
+          element.kind === "calibration"
+            ? `${name}, corner ${index + 1} of ${points.length}. Arrow keys move it.`
+            : index >= corners
+              ? `${name}, ${element.kind === "stop" ? "stop line " : ""}end ${(index - corners) === 0 ? "A" : "B"}. Arrow keys move it.`
+              : `${name}, corner ${index + 1} of ${corners}. Arrow keys move it${removable ? ", Delete removes it" : ""}.`;
         return (
           <g
             key={`corner-${index}`}

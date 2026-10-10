@@ -38,6 +38,21 @@ describe("parseLiveMessage", () => {
     expect(message.system.throttled_since_boot).toEqual(["throttling occurred"]);
   });
 
+  it("reads a vehicle's speed when the camera is calibrated, and none when it is not or the speed is odd", () => {
+    const withSpeeds = {
+      ...state,
+      tracks: [
+        { ...state.tracks[0]!, speed_ms: 11.2 },
+        { ...state.tracks[0]!, id: 5 },
+        { ...state.tracks[0]!, id: 6, speed_ms: -1 },
+        { ...state.tracks[0]!, id: 7, speed_ms: "fast" },
+      ],
+    };
+    const message = parseLiveMessage(JSON.stringify(withSpeeds));
+    if (message?.type !== "state") throw new Error("expected a state");
+    expect(message.tracks.map((t) => t.speed_ms)).toEqual([11.2, undefined, undefined, undefined]);
+  });
+
   it("reads the drift check's finding", () => {
     const message = parseLiveMessage(JSON.stringify(state));
     if (message?.type !== "state") throw new Error("expected a state");

@@ -3,6 +3,16 @@
  * new one, or the very same object when nothing would change (so a no-op is cheap to spot and never
  * becomes an undo step). Points are fractions of the picture and always stay inside it.
  */
+import {
+  CALIBRATION_ID,
+  MAX_LENGTH_M,
+  MAX_WIDTH_M,
+  MIN_CHECK_M,
+  MIN_LENGTH_M,
+  MIN_WIDTH_M,
+  newCalibration,
+  newCheck,
+} from "./calibration";
 import { boundsOf, clamp01, clampPoint, type Point } from "./geometry";
 import {
   COUNTABLE_CLASSES,
@@ -20,10 +30,13 @@ import {
   type ElementRef,
   type StopNumber,
 } from "./profile";
-import type { LineConfig, Profile, StopSignConfig, ZoneConfig } from "./types";
+import type { CalibrationConfig, CheckConfig, LineConfig, Profile, StopSignConfig, ZoneConfig } from "./types";
 
 /** The kinds of element that are just an outline. */
 export type ZoneKind = "detection" | "exclusion";
+
+/** The kinds of element that are an outline whose corners can be added and taken away. */
+const isOutline = (kind: ElementRef["kind"]): kind is ZoneKind | "stop" => kind === "detection" || kind === "exclusion" || kind === "stop";
 
 /** A zone has at least three corners; fewer is a line. */
 export const MIN_CORNERS = 3;
@@ -65,11 +78,35 @@ function mapStop(profile: Profile, id: string, change: (sign: StopSignConfig) =>
   return { ...profile, stop_signs: profile.stop_signs.map((sign, i) => (i === index ? next : sign)) };
 }
 
+function mapCalibration(profile: Profile, change: (calibration: CalibrationConfig) => CalibrationConfig): Profile {
+  const current = profile.calibration;
+  if (current === null) return profile;
+  const next = change(current);
+  return next === current ? profile : { ...profile, calibration: next };
+}
+
+function mapCheck(profile: Profile, id: string, change: (check: CheckConfig) => CheckConfig): Profile {
+  return mapCalibration(profile, (calibration) => {
+    const index = calibration.checks.findIndex((check) => check.id === id);
+    if (index === -1) return calibration;
+    const current = calibration.checks[index]!;
+    const next = change(current);
+    if (next === current) return calibration;
+    return { ...calibration, checks: calibration.checks.map((check, i) => (i === index ? next : check)) };
+  });
+}
+
 /**
- * The points of an element, whatever its kind: the two ends of a line, the corners of a zone, or
- * for a stop sign the corners of its approach zone followed by the two ends of its stop line.
+ * The points of an element, whatever its kind: the two ends of a line or of a known distance, the
+ * corners of a zone or of the speed calibration's rectangle, or for a stop sign the corners of its
+ * approach zone followed by the two ends of its stop line.
  */
 export function pointsOf(profile: Profile, ref: ElementRef): Point[] {
+  if (ref.kind === "calibration") return profile.calibration ? [...profile.calibration.corners] : [];
+  if (ref.kind === "check") {
+    const check = profile.calibration?.checks.find((candidate) => candidate.id === ref.id);
+    return check ? [check.a, check.b] : [];
+  }
   if (ref.kind === "line") {
     const line = profile.lines.find((candidate) => candidate.id === ref.id);
     return line ? [line.a, line.b] : [];
@@ -82,11 +119,12 @@ export function pointsOf(profile: Profile, ref: ElementRef): Point[] {
 }
 
 /**
- * How many of an element's first points are the corners of an outline: all of a zone's, none of a
- * line's, and a stop sign's approach zone's (its last two points are the ends of the stop line).
+ * How many of an element's first points are the corners of an outline that can grow and shrink: all
+ * of a zone's, none of a line's, and a stop sign's approach zone's (its last two points are the
+ * ends of the stop line). The four corners of the calibration's rectangle are always four.
  */
 export function cornerCount(profile: Profile, ref: ElementRef): number {
-  if (ref.kind === "line") return 0;
+  if (ref.kind === "line" || ref.kind === "calibration" || ref.kind === "check") return 0;
   if (ref.kind === "stop") return profile.stop_signs.find((sign) => sign.id === ref.id)?.approach.length ?? 0;
   return pointsOf(profile, ref).length;
 }
@@ -184,6 +222,20 @@ export function addZone(profile: Profile, kind: ZoneKind, random?: Random): Adde
  */
 export function movePoint(profile: Profile, ref: ElementRef, index: number, to: Point): Profile {
   const target = clampPoint(to);
+  if (ref.kind === "calibration") {
+    return mapCalibration(profile, (calibration) => {
+      const current = calibration.corners[index];
+      if (current === undefined || samePoint(current, target)) return calibration;
+      return { ...calibration, corners: calibration.corners.map((p, i) => (i === index ? target : p)) };
+    });
+  }
+  if (ref.kind === "check") {
+    return mapCheck(profile, ref.id, (check) => {
+      if (index !== 0 && index !== 1) return check;
+      if (samePoint(index === 0 ? check.a : check.b, target)) return check;
+      return index === 0 ? { ...check, a: target } : { ...check, b: target };
+    });
+  }
   if (ref.kind === "stop") {
     return mapStop(profile, ref.id, (sign) => {
       const corners = sign.approach.length;
@@ -224,6 +276,8 @@ export function moveElement(profile: Profile, ref: ElementRef, dx: number, dy: n
   const sy = Math.min(Math.max(dy, -y0), 1 - y1);
   if (sx === 0 && sy === 0) return profile;
   const shift = (p: Point): Point => [clamp01(p[0] + sx), clamp01(p[1] + sy)];
+  if (ref.kind === "calibration") return mapCalibration(profile, (calibration) => ({ ...calibration, corners: calibration.corners.map(shift) }));
+  if (ref.kind === "check") return mapCheck(profile, ref.id, (check) => ({ ...check, a: shift(check.a), b: shift(check.b) }));
   if (ref.kind === "stop") {
     return mapStop(profile, ref.id, (sign) => ({ ...sign, approach: sign.approach.map(shift), a: shift(sign.a), b: shift(sign.b) }));
   }
@@ -244,7 +298,7 @@ export const canRemoveCorner = (profile: Profile, ref: ElementRef, index?: numbe
 
 /** Add a corner to a zone, after corner `afterIndex` (so it becomes corner `afterIndex + 1`). */
 export function insertCorner(profile: Profile, ref: ElementRef, afterIndex: number, at: Point): Profile {
-  if (ref.kind === "line" || !canAddCorner(profile, ref)) return profile;
+  if (!isOutline(ref.kind) || !canAddCorner(profile, ref)) return profile;
   const grow = (points: [number, number][]): [number, number][] | null => {
     if (afterIndex < 0 || afterIndex >= points.length) return null;
     const index = afterIndex + 1;
@@ -267,7 +321,7 @@ export function insertCorner(profile: Profile, ref: ElementRef, afterIndex: numb
  * without a pointer. Null when the zone cannot take another. The new corner's index comes with it.
  */
 export function splitLongestEdge(profile: Profile, ref: ElementRef): { profile: Profile; index: number } | null {
-  if (ref.kind === "line" || !canAddCorner(profile, ref)) return null;
+  if (!isOutline(ref.kind) || !canAddCorner(profile, ref)) return null;
   const points = pointsOf(profile, ref).slice(0, cornerCount(profile, ref));
   let longest = 0;
   let longestLength = -1;
@@ -284,7 +338,7 @@ export function splitLongestEdge(profile: Profile, ref: ElementRef): { profile: 
 
 /** Take a corner out of a zone. A zone keeps at least three. */
 export function removeCorner(profile: Profile, ref: ElementRef, index: number): Profile {
-  if (ref.kind === "line" || !canRemoveCorner(profile, ref, index)) return profile;
+  if (!isOutline(ref.kind) || !canRemoveCorner(profile, ref, index)) return profile;
   if (ref.kind === "stop") {
     return mapStop(profile, ref.id, (sign) => ({ ...sign, approach: sign.approach.filter((_, i) => i !== index) }));
   }
@@ -302,6 +356,8 @@ export function edgeMiddle(points: readonly Point[], index: number): Point {
 
 export function renameElement(profile: Profile, ref: ElementRef, name: string): Profile {
   const next = name.slice(0, MAX_NAME_LENGTH);
+  if (ref.kind === "calibration") return profile; // there is one, and it has no name of its own
+  if (ref.kind === "check") return mapCheck(profile, ref.id, (check) => (check.name === next ? check : { ...check, name: next }));
   if (ref.kind === "stop") return mapStop(profile, ref.id, (sign) => (sign.name === next ? sign : { ...sign, name: next }));
   if (ref.kind === "line") return mapLine(profile, ref.id, (line) => (line.name === next ? line : { ...line, name: next }));
   return mapZone(profile, ref.kind, ref.id, (zone) => (zone.name === next ? zone : { ...zone, name: next }));
@@ -360,7 +416,52 @@ export function resetStopNumbers(profile: Profile, id: string): Profile {
   );
 }
 
+// --- the speed calibration (plan.md M6) --------------------------------------------------------
+
+/**
+ * A speed calibration: a rectangle laid on the road in the picture, with a width and a length for
+ * the owner to correct. A profile has at most one; null when it already has.
+ */
+export function addCalibration(profile: Profile): Added | null {
+  if (profile.calibration !== null) return null;
+  return { profile: { ...profile, calibration: newCalibration() }, ref: { kind: "calibration", id: CALIBRATION_ID } };
+}
+
+/** The width (across the road) or the length (along it) of the calibration's rectangle, in metres. One outside what the server takes is not applied. */
+export function setCalibrationSize(profile: Profile, field: "width_m" | "length_m", value: number): Profile {
+  const [min, max] = field === "width_m" ? [MIN_WIDTH_M, MAX_WIDTH_M] : [MIN_LENGTH_M, MAX_LENGTH_M];
+  if (!Number.isFinite(value) || value < min || value > max) return profile;
+  const rounded = Math.round(value * 1000) / 1000;
+  return mapCalibration(profile, (calibration) => (calibration[field] === rounded ? calibration : { ...calibration, [field]: rounded }));
+}
+
+/** A known distance to test the calibration with, along the road to begin with. Null with no calibration, or when there are as many as can be held. */
+export function addCheck(profile: Profile, random?: Random): Added | null {
+  const { calibration } = profile;
+  if (calibration === null || isFull(profile, "check")) return null;
+  const check = newCheck(newId(profile, "check", random), suggestName(profile, "check"), calibration);
+  return {
+    profile: { ...profile, calibration: { ...calibration, checks: [...calibration.checks, check] } },
+    ref: { kind: "check", id: check.id },
+  };
+}
+
+/** How long a known distance is, in metres. One outside what the server takes is not applied. */
+export function setCheckLength(profile: Profile, id: string, value: number): Profile {
+  if (!Number.isFinite(value) || value < MIN_CHECK_M || value > MAX_LENGTH_M) return profile;
+  const rounded = Math.round(value * 1000) / 1000;
+  return mapCheck(profile, id, (check) => (check.length_m === rounded ? check : { ...check, length_m: rounded }));
+}
+
 export function deleteElement(profile: Profile, ref: ElementRef): Profile {
+  if (ref.kind === "calibration") return profile.calibration === null ? profile : { ...profile, calibration: null };
+  if (ref.kind === "check") {
+    return mapCalibration(profile, (calibration) =>
+      calibration.checks.some((check) => check.id === ref.id)
+        ? { ...calibration, checks: calibration.checks.filter((check) => check.id !== ref.id) }
+        : calibration,
+    );
+  }
   if (ref.kind === "stop") {
     return profile.stop_signs.some((sign) => sign.id === ref.id)
       ? { ...profile, stop_signs: profile.stop_signs.filter((sign) => sign.id !== ref.id) }

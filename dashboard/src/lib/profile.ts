@@ -3,11 +3,18 @@
  * be said about them without asking the server. The shape comes from the API (generated types);
  * the server stays the judge of what can be saved, and `problems` only gives early, readable notice.
  */
+import { CALIBRATION_ID, CALIBRATION_NAME, MAX_CHECKS, calibrationProblems, checkProblems } from "./calibration";
 import { CLASS_ORDER } from "./classes";
 import { MIN_ZONE_AREA, centreOf, distanceToPolygon, outlineProblem, pointInPolygon, polygonArea, sideOfLine, type Point } from "./geometry";
-import type { LineConfig, Profile, StopSignConfig, ZoneConfig } from "./types";
+import type { CalibrationConfig, CheckConfig, LineConfig, Profile, StopSignConfig, ZoneConfig } from "./types";
 
-export type ElementKind = "line" | "detection" | "exclusion" | "stop";
+export type ElementKind = "line" | "detection" | "exclusion" | "stop" | "calibration" | "check";
+
+/**
+ * The speed calibration as an element of the editor: its configuration, with the id and the name the
+ * editor selects and lists it by (a profile has at most one, and it has neither itself).
+ */
+export type CalibrationElement = CalibrationConfig & { id: string; name: string };
 
 export interface ElementRef {
   kind: ElementKind;
@@ -17,9 +24,11 @@ export interface ElementRef {
 export type Element =
   | { kind: "line"; value: LineConfig }
   | { kind: "detection" | "exclusion"; value: ZoneConfig }
-  | { kind: "stop"; value: StopSignConfig };
+  | { kind: "stop"; value: StopSignConfig }
+  | { kind: "calibration"; value: CalibrationElement }
+  | { kind: "check"; value: CheckConfig };
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 /** The server accepts this many lines, and this many zones of each kind. */
 export const MAX_ELEMENTS = 32;
 export const MAX_POINTS = 32;
@@ -53,22 +62,30 @@ export const KIND_LABEL: Record<ElementKind, string> = {
   detection: "Detection zone",
   exclusion: "Exclusion zone",
   stop: "Stop sign",
+  calibration: "Speed calibration",
+  check: "Known distance",
 };
 
 export function emptyProfile(): Profile {
-  return { schema_version: SCHEMA_VERSION, lines: [], detection_zones: [], exclusion_zones: [], stop_signs: [] };
+  return { schema_version: SCHEMA_VERSION, lines: [], detection_zones: [], exclusion_zones: [], stop_signs: [], calibration: null };
 }
 
 export const sameRef = (a: ElementRef | null | undefined, b: ElementRef | null | undefined): boolean =>
   a === b || (!!a && !!b && a.kind === b.kind && a.id === b.id);
 
-/** Every element, zones first (they sit underneath), then stop signs, then lines. This is also the drawing order. */
+/**
+ * Every element, zones first (they sit underneath), then the speed calibration, the stop signs, the
+ * lines, and the known distances that test the calibration. This is also the drawing order.
+ */
 export function elements(profile: Profile): Element[] {
+  const { calibration } = profile;
   return [
     ...profile.detection_zones.map((value): Element => ({ kind: "detection", value })),
     ...profile.exclusion_zones.map((value): Element => ({ kind: "exclusion", value })),
+    ...(calibration ? [{ kind: "calibration", value: { ...calibration, id: CALIBRATION_ID, name: CALIBRATION_NAME } } as Element] : []),
     ...profile.stop_signs.map((value): Element => ({ kind: "stop", value })),
     ...profile.lines.map((value): Element => ({ kind: "line", value })),
+    ...(calibration?.checks ?? []).map((value): Element => ({ kind: "check", value })),
   ];
 }
 
@@ -100,7 +117,7 @@ export function suggestName(profile: Profile, kind: ElementKind): string {
   return `${prefix}${Math.max(highest, count) + 1}`;
 }
 
-const ID_PREFIX: Record<ElementKind, string> = { line: "line", detection: "area", exclusion: "ignore", stop: "stop" };
+const ID_PREFIX: Record<ElementKind, string> = { line: "line", detection: "area", exclusion: "ignore", stop: "stop", calibration: "calibration", check: "check" };
 
 function randomHex(length: number): string {
   const bytes = new Uint8Array(Math.ceil(length / 2));
@@ -126,7 +143,19 @@ export function countOf(profile: Profile, kind: ElementKind): number {
   return elements(profile).filter((element) => element.kind === kind).length;
 }
 
-export const isFull = (profile: Profile, kind: ElementKind): boolean => countOf(profile, kind) >= MAX_ELEMENTS;
+/** How many of a kind a profile can hold: the server's limits. */
+const LIMIT: Record<ElementKind, number> = {
+  line: MAX_ELEMENTS,
+  detection: MAX_ELEMENTS,
+  exclusion: MAX_ELEMENTS,
+  stop: MAX_ELEMENTS,
+  calibration: 1,
+  check: MAX_CHECKS,
+};
+
+export const limitOf = (kind: ElementKind): number => LIMIT[kind];
+
+export const isFull = (profile: Profile, kind: ElementKind): boolean => countOf(profile, kind) >= LIMIT[kind];
 
 // --- problems ------------------------------------------------------------------------------------
 
@@ -164,6 +193,17 @@ export function problems(profile: Profile): Problem[] {
 
   for (const sign of profile.stop_signs) {
     found.push(...stopSignProblems(profile, sign, name("stop", sign.id)));
+  }
+  if (profile.calibration) {
+    const ref: ElementRef = { kind: "calibration", id: CALIBRATION_ID };
+    for (const message of calibrationProblems(profile.calibration)) {
+      found.push({ level: "error", ref, message: `${name("calibration", CALIBRATION_ID)}: ${message}` });
+    }
+    for (const check of profile.calibration.checks) {
+      for (const message of checkProblems(check)) {
+        found.push({ level: "error", ref: { kind: "check", id: check.id }, message: `${name("check", check.id)}: ${message}` });
+      }
+    }
   }
 
   // A line only counts what the pipeline looks at: inside a detection zone (if there are any), and

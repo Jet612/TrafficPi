@@ -99,6 +99,385 @@
         "title": "BackupInfo",
         "type": "object"
       },
+      "CalibrationAnswer": {
+        "properties": {
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Problem"
+          },
+          "report": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CalibrationReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "ok",
+          "problem",
+          "report"
+        ],
+        "title": "CalibrationAnswer",
+        "type": "object"
+      },
+      "CalibrationCheckResult": {
+        "description": "What the calibrated map finds for a distance the owner knows.",
+        "properties": {
+          "agrees": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agrees"
+          },
+          "entered_m": {
+            "title": "Entered M",
+            "type": "number"
+          },
+          "error_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Pct"
+          },
+          "expected_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Pct"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "measured_m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Measured M"
+          }
+        },
+        "required": [
+          "id",
+          "entered_m",
+          "measured_m",
+          "error_pct",
+          "expected_pct",
+          "agrees"
+        ],
+        "title": "CalibrationCheckResult",
+        "type": "object"
+      },
+      "CalibrationConfig": {
+        "additionalProperties": false,
+        "description": "Four points of the picture that are the corners of a rectangle on the road, and its size.\n\nThe corners go round the rectangle one after the other, either way. The side from the first\ncorner to the second is ``width_m`` long (across the road) and the side from the second to the\nthird is ``length_m`` (along it). With that the picture can be put in metres (plan.md M6, D44):\nthe speed of a vehicle follows from where it was on the road and when. It is only as good as\nthe rectangle is big, flat and well measured; the dashboard says where speeds are believed.",
+        "properties": {
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/GroundCheckConfig"
+            },
+            "maxItems": 8,
+            "title": "Checks",
+            "type": "array"
+          },
+          "corners": {
+            "items": {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            "maxItems": 4,
+            "minItems": 4,
+            "title": "Corners",
+            "type": "array"
+          },
+          "length_m": {
+            "maximum": 500.0,
+            "minimum": 1.0,
+            "title": "Length M",
+            "type": "number"
+          },
+          "width_m": {
+            "maximum": 100.0,
+            "minimum": 0.5,
+            "title": "Width M",
+            "type": "number"
+          }
+        },
+        "required": [
+          "corners",
+          "width_m",
+          "length_m",
+          "checks"
+        ],
+        "title": "CalibrationConfig",
+        "type": "object"
+      },
+      "CalibrationGrid": {
+        "description": "How far a distance can be believed over the picture, in %, row by row from the top.",
+        "properties": {
+          "across_pct": {
+            "items": {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            "title": "Across Pct",
+            "type": "array"
+          },
+          "along_pct": {
+            "items": {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            "title": "Along Pct",
+            "type": "array"
+          },
+          "columns": {
+            "title": "Columns",
+            "type": "integer"
+          },
+          "rows": {
+            "title": "Rows",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "columns",
+          "rows",
+          "along_pct",
+          "across_pct"
+        ],
+        "title": "CalibrationGrid",
+        "type": "object"
+      },
+      "CalibrationProbe": {
+        "description": "A place in the picture to say what the calibration is at (a stop line, a counting line).",
+        "properties": {
+          "id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "point": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Point",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "point"
+        ],
+        "title": "CalibrationProbe",
+        "type": "object"
+      },
+      "CalibrationProbeResult": {
+        "properties": {
+          "believed": {
+            "title": "Believed",
+            "type": "boolean"
+          },
+          "error_across_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Across Pct"
+          },
+          "error_along_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Along Pct"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "metres_per_pixel_across": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metres Per Pixel Across"
+          },
+          "metres_per_pixel_along": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metres Per Pixel Along"
+          }
+        },
+        "required": [
+          "id",
+          "metres_per_pixel_along",
+          "metres_per_pixel_across",
+          "error_along_pct",
+          "error_across_pct",
+          "believed"
+        ],
+        "title": "CalibrationProbeResult",
+        "type": "object"
+      },
+      "CalibrationReport": {
+        "properties": {
+          "centre_error_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Centre Error Pct"
+          },
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/CalibrationCheckResult"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "grid": {
+            "$ref": "#/components/schemas/CalibrationGrid"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "limit_pct": {
+            "title": "Limit Pct",
+            "type": "number"
+          },
+          "probes": {
+            "items": {
+              "$ref": "#/components/schemas/CalibrationProbeResult"
+            },
+            "title": "Probes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "limit_pct",
+          "centre_error_pct",
+          "checks",
+          "probes",
+          "grid"
+        ],
+        "title": "CalibrationReport",
+        "type": "object"
+      },
+      "CalibrationRequest": {
+        "description": "A calibration that may not be saved yet, and places to ask about.",
+        "properties": {
+          "calibration": {
+            "title": "Calibration"
+          },
+          "probes": {
+            "items": {
+              "$ref": "#/components/schemas/CalibrationProbe"
+            },
+            "maxItems": 64,
+            "title": "Probes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "calibration"
+        ],
+        "title": "CalibrationRequest",
+        "type": "object"
+      },
       "CountingLineConfig": {
         "additionalProperties": false,
         "description": "A line that vehicles are counted crossing.\n\nThe direction is that of the line itself, from ``a`` to ``b``: a vehicle that crosses from its\nleft to its right (on screen, with y pointing down) counts as forward, the other way as\nreverse. ``classes`` limits what is counted (null: every kind the detector reports). The\ntuning members are left null unless the defaults misbehave: ``point`` is the part of the box\nthat is tested, ``margin`` a fixed dead band around the line and ``persistence`` how many\nframes on the other side make a crossing (see ``CountingLine``).",
@@ -379,6 +758,66 @@
           "direction"
         ],
         "title": "EventOut",
+        "type": "object"
+      },
+      "GroundCheckConfig": {
+        "additionalProperties": false,
+        "description": "A distance on the road that is known, drawn between two points of the picture.\n\nIt does not make the calibration, it tests it: the dashboard says how long the calibrated map\nfinds the distance, and how far that is from ``length_m``. A check that is wrong by much says\nthat a corner, a length, or the check itself was measured badly. Put them where speeds will be\nmeasured, and not only in the rectangle (the map is only sure of what it was made from).",
+        "properties": {
+          "a": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "A",
+            "type": "array"
+          },
+          "b": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "B",
+            "type": "array"
+          },
+          "id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "length_m": {
+            "maximum": 500.0,
+            "minimum": 0.5,
+            "title": "Length M",
+            "type": "number"
+          },
+          "name": {
+            "maxLength": 80,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "a",
+          "b",
+          "length_m"
+        ],
+        "title": "GroundCheckConfig",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -1155,6 +1594,16 @@
         "additionalProperties": false,
         "description": "Everything configured for one camera.\n\nDetections are ignored unless they are inside a detection zone (when there are any; with none\nthe whole picture counts) and also when they are inside an exclusion zone, which wins.",
         "properties": {
+          "calibration": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CalibrationConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "detection_zones": {
             "items": {
               "$ref": "#/components/schemas/ZoneConfig"
@@ -1197,7 +1646,8 @@
           "lines",
           "detection_zones",
           "exclusion_zones",
-          "stop_signs"
+          "stop_signs",
+          "calibration"
         ],
         "title": "Profile",
         "type": "object"
@@ -1501,12 +1951,86 @@
         "title": "SignOutcomes",
         "type": "object"
       },
+      "SpeedBin": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "high": {
+            "title": "High",
+            "type": "number"
+          },
+          "low": {
+            "title": "Low",
+            "type": "number"
+          }
+        },
+        "required": [
+          "low",
+          "high",
+          "count"
+        ],
+        "title": "SpeedBin",
+        "type": "object"
+      },
+      "SpeedDay": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "mean": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mean"
+          },
+          "p85": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P85"
+          },
+          "t": {
+            "title": "T",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count",
+          "mean",
+          "p85",
+          "date",
+          "t"
+        ],
+        "title": "SpeedDay",
+        "type": "object"
+      },
       "SpeedEstimate": {
-        "description": "The fastest estimated speed in some time: an estimate, not a measurement (plan.md D41).",
+        "description": "The fastest speed in some time. Without a calibration it is an estimate from the vehicle's\nown size, good to about 40% (plan.md D41); with one (``calibrated``) it was measured in metres\non the road, and a calibrated speed always beats an estimate, whatever their sizes (M6).",
         "properties": {
           "at": {
             "title": "At",
             "type": "integer"
+          },
+          "calibrated": {
+            "title": "Calibrated",
+            "type": "boolean"
           },
           "label": {
             "title": "Label",
@@ -1520,9 +2044,268 @@
         "required": [
           "speed_ms",
           "label",
-          "at"
+          "at",
+          "calibrated"
         ],
         "title": "SpeedEstimate",
+        "type": "object"
+      },
+      "SpeedFigures": {
+        "description": "What can be said of some speeds, in the units shown and to a tenth of one.",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "fastest": {
+            "title": "Fastest",
+            "type": "number"
+          },
+          "mean": {
+            "title": "Mean",
+            "type": "number"
+          },
+          "median": {
+            "title": "Median",
+            "type": "number"
+          },
+          "p85": {
+            "title": "P85",
+            "type": "number"
+          },
+          "slowest": {
+            "title": "Slowest",
+            "type": "number"
+          }
+        },
+        "required": [
+          "count",
+          "mean",
+          "median",
+          "p85",
+          "fastest",
+          "slowest"
+        ],
+        "title": "SpeedFigures",
+        "type": "object"
+      },
+      "SpeedHour": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "hour": {
+            "title": "Hour",
+            "type": "integer"
+          },
+          "mean": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mean"
+          },
+          "p85": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P85"
+          }
+        },
+        "required": [
+          "count",
+          "mean",
+          "p85",
+          "hour"
+        ],
+        "title": "SpeedHour",
+        "type": "object"
+      },
+      "SpeedKind": {
+        "properties": {
+          "figures": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SpeedFigures"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "figures"
+        ],
+        "title": "SpeedKind",
+        "type": "object"
+      },
+      "SpeedLine": {
+        "properties": {
+          "counted": {
+            "title": "Counted",
+            "type": "integer"
+          },
+          "figures": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SpeedFigures"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "line": {
+            "title": "Line",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "line",
+          "name",
+          "counted",
+          "figures"
+        ],
+        "title": "SpeedLine",
+        "type": "object"
+      },
+      "SpeedStats": {
+        "description": "How fast the vehicles counted at the counting lines were going (plan.md M6). A speed is\ngiven only for a vehicle seen for long enough and in a part of the picture the calibration\ncan be believed, so ``counted`` is more than ``figures.count`` and the difference is shown.",
+        "properties": {
+          "all_time": {
+            "title": "All Time",
+            "type": "boolean"
+          },
+          "bins": {
+            "items": {
+              "$ref": "#/components/schemas/SpeedBin"
+            },
+            "title": "Bins",
+            "type": "array"
+          },
+          "by_day": {
+            "items": {
+              "$ref": "#/components/schemas/SpeedDay"
+            },
+            "title": "By Day",
+            "type": "array"
+          },
+          "by_hour": {
+            "items": {
+              "$ref": "#/components/schemas/SpeedHour"
+            },
+            "title": "By Hour",
+            "type": "array"
+          },
+          "by_kind": {
+            "items": {
+              "$ref": "#/components/schemas/SpeedKind"
+            },
+            "title": "By Kind",
+            "type": "array"
+          },
+          "by_line": {
+            "items": {
+              "$ref": "#/components/schemas/SpeedLine"
+            },
+            "title": "By Line",
+            "type": "array"
+          },
+          "calibrations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Calibrations",
+            "type": "array"
+          },
+          "counted": {
+            "title": "Counted",
+            "type": "integer"
+          },
+          "days": {
+            "title": "Days",
+            "type": "integer"
+          },
+          "figures": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SpeedFigures"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "from_ms": {
+            "title": "From Ms",
+            "type": "integer"
+          },
+          "line": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Line"
+          },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          },
+          "to_ms": {
+            "title": "To Ms",
+            "type": "integer"
+          },
+          "units": {
+            "enum": [
+              "mph",
+              "kmh"
+            ],
+            "title": "Units",
+            "type": "string"
+          }
+        },
+        "required": [
+          "timezone",
+          "units",
+          "from_ms",
+          "to_ms",
+          "days",
+          "all_time",
+          "line",
+          "counted",
+          "calibrations",
+          "figures",
+          "bins",
+          "by_hour",
+          "by_day",
+          "by_line",
+          "by_kind"
+        ],
+        "title": "SpeedStats",
         "type": "object"
       },
       "StatusResponse": {
@@ -1900,9 +2683,42 @@
             ],
             "title": "Label"
           },
+          "line_speed_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Line Speed Ms"
+          },
+          "max_speed_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Speed Ms"
+          },
           "min_speed": {
             "title": "Min Speed",
             "type": "number"
+          },
+          "min_speed_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Speed Ms"
           },
           "observed_s": {
             "title": "Observed S",
@@ -1973,6 +2789,9 @@
           "hold_s",
           "min_speed",
           "observed_s",
+          "min_speed_ms",
+          "max_speed_ms",
+          "line_speed_ms",
           "review",
           "reviewed_at",
           "snapshot_url",
@@ -2287,6 +3106,17 @@
             ],
             "title": "Did Not Stop Min Speed"
           },
+          "did_not_stop_min_speed_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Did Not Stop Min Speed Ms"
+          },
           "rolling_min_speed": {
             "anyOf": [
               {
@@ -2297,6 +3127,17 @@
               }
             ],
             "title": "Rolling Min Speed"
+          },
+          "rolling_min_speed_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rolling Min Speed Ms"
           },
           "stopped_hold_s": {
             "anyOf": [
@@ -2313,7 +3154,9 @@
         "required": [
           "stopped_hold_s",
           "rolling_min_speed",
-          "did_not_stop_min_speed"
+          "did_not_stop_min_speed",
+          "rolling_min_speed_ms",
+          "did_not_stop_min_speed_ms"
         ],
         "title": "StopTiming",
         "type": "object"
@@ -3147,6 +3990,44 @@
         "summary": "Auth State"
       }
     },
+    "/api/calibration/report": {
+      "post": {
+        "operationId": "report_api_calibration_report_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CalibrationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalibrationAnswer"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Report"
+      }
+    },
     "/api/events": {
       "get": {
         "operationId": "events_api_events_get",
@@ -3771,6 +4652,66 @@
           }
         },
         "summary": "Stats Series"
+      }
+    },
+    "/api/stats/speeds": {
+      "get": {
+        "description": "How fast the vehicles counted over the last ``days`` local days (today included) were\ngoing, in the units that are set; ``days=0`` is everything since the first count.",
+        "operationId": "stats_speeds_api_stats_speeds_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 7,
+              "maximum": 366,
+              "minimum": 0,
+              "title": "Days",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "line",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Line"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpeedStats"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stats Speeds"
       }
     },
     "/api/stats/stops": {

@@ -27,6 +27,14 @@ export type Profile = Schemas["Profile"];
 export type LineConfig = Schemas["CountingLineConfig"];
 export type ZoneConfig = Schemas["ZoneConfig"];
 export type StopSignConfig = Schemas["StopSignConfig"];
+/** The speed calibration: a rectangle on the road with its size, and known distances that test it (plan.md D44). */
+export type CalibrationConfig = NonNullable<Profile["calibration"]>;
+export type CheckConfig = CalibrationConfig["checks"][number];
+export type CalibrationAnswer = Schemas["CalibrationAnswer"];
+export type CalibrationReport = Schemas["CalibrationReport"];
+export type CalibrationProbe = Schemas["CalibrationProbe"];
+export type CalibrationGrid = Schemas["CalibrationGrid"];
+export type SpeedStats = Schemas["SpeedStats"];
 export type SystemMetrics = Schemas["SystemMetrics"];
 export type VisionStatus = Schemas["VisionStatus"];
 export type TrailDay = Schemas["TrailDay"];
@@ -68,6 +76,8 @@ export interface LiveTrack {
   box: [number, number, number, number]; // x0, y0, x1, y1
   velocity: [number, number];
   confirmed: boolean;
+  /** How fast it is going in metres a second over the last second, when the camera is calibrated and the speed can be believed (plan.md M6). */
+  speed_ms?: number;
 }
 
 export interface LiveLine {
@@ -152,6 +162,7 @@ function parseTrack(value: unknown): LiveTrack | null {
     box,
     velocity: pair(value.velocity) ?? [0, 0],
     confirmed: value.confirmed === true,
+    ...(isNumber(value.speed_ms) && value.speed_ms >= 0 ? { speed_ms: value.speed_ms } : {}),
   };
 }
 

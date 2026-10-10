@@ -1,5 +1,8 @@
 import type {
   AuthState,
+  CalibrationAnswer,
+  CalibrationProbe,
+  CalibrationConfig,
   EventOut,
   MailPreview,
   MailSchedule,
@@ -14,6 +17,7 @@ import type {
   ReviewState,
   SeriesPoint,
   Settings,
+  SpeedStats,
   StatusResponse,
   StopHoursConfig,
   StopHoursSaved,
@@ -164,6 +168,16 @@ export const api = {
   saveProfile: (profile: Profile) => request<ProfileSaved>("PUT", "/api/profile", profile),
   /** Whether a document (a file being imported) is a usable profile; nothing is saved. */
   checkProfile: (document: unknown) => request<ProfileCheck>("POST", "/api/profile/check", document),
+  /**
+   * What a calibration that is not saved yet means (plan.md M6): how long the map finds each known
+   * distance, how many metres a pixel is at each probe, and where speeds will be given. A calibration
+   * that makes no sense is answered with the reason, not with an error.
+   */
+  calibrationReport: (calibration: CalibrationConfig, probes: CalibrationProbe[], signal?: AbortSignal) =>
+    request<CalibrationAnswer>("POST", "/api/calibration/report", { calibration, probes }, signal),
+  /** How fast the vehicles counted over the last `days` local days were going (0: since the first count), at one counting line if named. */
+  speedStats: (days: number, line?: string, signal?: AbortSignal) =>
+    request<SpeedStats>("GET", `/api/stats/speeds?days=${days}${line === undefined ? "" : `&line=${encodeURIComponent(line)}`}`, undefined, signal),
   /** Keep the camera's current view as the picture the lines and zones are drawn on. */
   captureReference: () => request<ReferenceSaved>("POST", "/api/profile/reference"),
   settings: (signal?: AbortSignal) => request<Settings>("GET", "/api/settings", undefined, signal),

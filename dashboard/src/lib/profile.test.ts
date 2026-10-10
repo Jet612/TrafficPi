@@ -26,7 +26,7 @@ describe("the elements of a profile", () => {
   });
 
   it("starts from an empty profile of the current schema", () => {
-    expect(emptyProfile()).toEqual({ schema_version: 2, lines: [], detection_zones: [], exclusion_zones: [], stop_signs: [] });
+    expect(emptyProfile()).toEqual({ schema_version: 3, lines: [], detection_zones: [], exclusion_zones: [], stop_signs: [], calibration: null });
   });
 
   it("puts stop signs between the zones and the lines", () => {
@@ -203,7 +203,8 @@ describe("small helpers", () => {
       lines: [{ persistence: null, margin: null, point: "ground", classes: ["car", "truck", "bus", "motorcycle"], b: [0.8, 0.5], a: [0.2, 0.5], name: "", id: "l1" }],
       detection_zones: [],
       stop_signs: [],
-      schema_version: 2,
+      calibration: null,
+      schema_version: 3,
     } as unknown as Parameters<typeof sameProfile>[0];
     expect(sameProfile(profileOf({ lines: [lineOf("l1")] }), reordered)).toBe(true);
     // The order of a list is part of what it says, though.

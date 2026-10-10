@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { SpeedStatsSection } from "@/components/speed-stats";
 import { StopHoursNote } from "@/components/stop-hours-note";
 import { StopStatsSection } from "@/components/stop-stats";
 import { TrafficStatsSection } from "@/components/traffic-stats";
@@ -30,9 +31,12 @@ export function DataPage() {
   const stops = useRequest(stopsKey, (signal) => api.stopStats(days, sign === "all" ? undefined : sign, signal), { refreshMs: REFRESH_MS });
   const trafficKey = `data-traffic:${days}`;
   const traffic = useRequest(trafficKey, (signal) => api.trafficStats(days, signal), { refreshMs: REFRESH_MS });
+  const speedsKey = `data-speeds:${days}`;
+  const speeds = useRequest(speedsKey, (signal) => api.speedStats(days, undefined, signal), { refreshMs: REFRESH_MS });
 
   const stopsBusy = stops.data !== null && stops.answeredKey !== stopsKey;
   const trafficBusy = traffic.data !== null && traffic.answeredKey !== trafficKey;
+  const speedsBusy = speeds.data !== null && speeds.answeredKey !== speedsKey;
   const noSigns = profile.data !== null && signs.length === 0 && stops.data !== null && totalOf(stops.data.totals) === 0 && stops.data.review.false_alarms === 0;
 
   return (
@@ -95,6 +99,17 @@ export function DataPage() {
           <TrafficStatsSection stats={traffic.data} busy={trafficBusy} />
         ) : (
           <Loading what="The traffic numbers" failed={traffic.error !== null} retry={traffic.refresh} />
+        )}
+      </section>
+
+      <section aria-labelledby="data-speeds-heading" className="grid gap-4">
+        <h2 id="data-speeds-heading" className="text-base font-semibold text-ink">
+          Speeds
+        </h2>
+        {speeds.data !== null ? (
+          <SpeedStatsSection stats={speeds.data} busy={speedsBusy} />
+        ) : (
+          <Loading what="The speeds" failed={speeds.error !== null} retry={speeds.refresh} />
         )}
       </section>
     </div>

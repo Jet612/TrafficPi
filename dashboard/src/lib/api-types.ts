@@ -72,6 +72,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/calibration/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Report */
+        post: operations["report_api_calibration_report_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/events": {
         parameters: {
             query?: never;
@@ -362,6 +379,27 @@ export interface paths {
         };
         /** Stats Series */
         get: operations["stats_series_api_stats_series_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/stats/speeds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stats Speeds
+         * @description How fast the vehicles counted over the last ``days`` local days (today included) were
+         *     going, in the units that are set; ``days=0`` is everything since the first count.
+         */
+        get: operations["stats_speeds_api_stats_speeds_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -672,6 +710,121 @@ export interface components {
             /** Size Mb */
             size_mb: number;
         };
+        /** CalibrationAnswer */
+        CalibrationAnswer: {
+            /** Ok */
+            ok: boolean;
+            /** Problem */
+            problem: string | null;
+            report: components["schemas"]["CalibrationReport"] | null;
+        };
+        /**
+         * CalibrationCheckResult
+         * @description What the calibrated map finds for a distance the owner knows.
+         */
+        CalibrationCheckResult: {
+            /** Agrees */
+            agrees: boolean | null;
+            /** Entered M */
+            entered_m: number;
+            /** Error Pct */
+            error_pct: number | null;
+            /** Expected Pct */
+            expected_pct: number | null;
+            /** Id */
+            id: string;
+            /** Measured M */
+            measured_m: number | null;
+        };
+        /**
+         * CalibrationConfig
+         * @description Four points of the picture that are the corners of a rectangle on the road, and its size.
+         *
+         *     The corners go round the rectangle one after the other, either way. The side from the first
+         *     corner to the second is ``width_m`` long (across the road) and the side from the second to the
+         *     third is ``length_m`` (along it). With that the picture can be put in metres (plan.md M6, D44):
+         *     the speed of a vehicle follows from where it was on the road and when. It is only as good as
+         *     the rectangle is big, flat and well measured; the dashboard says where speeds are believed.
+         */
+        CalibrationConfig: {
+            /** Checks */
+            checks: components["schemas"]["GroundCheckConfig"][];
+            /** Corners */
+            corners: [
+                number,
+                number
+            ][];
+            /** Length M */
+            length_m: number;
+            /** Width M */
+            width_m: number;
+        };
+        /**
+         * CalibrationGrid
+         * @description How far a distance can be believed over the picture, in %, row by row from the top.
+         */
+        CalibrationGrid: {
+            /** Across Pct */
+            across_pct: (number | null)[][];
+            /** Along Pct */
+            along_pct: (number | null)[][];
+            /** Columns */
+            columns: number;
+            /** Rows */
+            rows: number;
+        };
+        /**
+         * CalibrationProbe
+         * @description A place in the picture to say what the calibration is at (a stop line, a counting line).
+         */
+        CalibrationProbe: {
+            /** Id */
+            id: string;
+            /** Point */
+            point: [
+                number,
+                number
+            ];
+        };
+        /** CalibrationProbeResult */
+        CalibrationProbeResult: {
+            /** Believed */
+            believed: boolean;
+            /** Error Across Pct */
+            error_across_pct: number | null;
+            /** Error Along Pct */
+            error_along_pct: number | null;
+            /** Id */
+            id: string;
+            /** Metres Per Pixel Across */
+            metres_per_pixel_across: number | null;
+            /** Metres Per Pixel Along */
+            metres_per_pixel_along: number | null;
+        };
+        /** CalibrationReport */
+        CalibrationReport: {
+            /** Centre Error Pct */
+            centre_error_pct: number | null;
+            /** Checks */
+            checks: components["schemas"]["CalibrationCheckResult"][];
+            grid: components["schemas"]["CalibrationGrid"];
+            /** Id */
+            id: string;
+            /** Limit Pct */
+            limit_pct: number;
+            /** Probes */
+            probes: components["schemas"]["CalibrationProbeResult"][];
+        };
+        /**
+         * CalibrationRequest
+         * @description A calibration that may not be saved yet, and places to ask about.
+         */
+        CalibrationRequest: {
+            /** Calibration */
+            calibration: unknown;
+            /** Probes */
+            probes?: components["schemas"]["CalibrationProbe"][];
+        };
         /**
          * CountingLineConfig
          * @description A line that vehicles are counted crossing.
@@ -767,6 +920,33 @@ export interface components {
             track: number | null;
             /** Type */
             type: string;
+        };
+        /**
+         * GroundCheckConfig
+         * @description A distance on the road that is known, drawn between two points of the picture.
+         *
+         *     It does not make the calibration, it tests it: the dashboard says how long the calibrated map
+         *     finds the distance, and how far that is from ``length_m``. A check that is wrong by much says
+         *     that a corner, a length, or the check itself was measured badly. Put them where speeds will be
+         *     measured, and not only in the rectangle (the map is only sure of what it was made from).
+         */
+        GroundCheckConfig: {
+            /** A */
+            a: [
+                number,
+                number
+            ];
+            /** B */
+            b: [
+                number,
+                number
+            ];
+            /** Id */
+            id: string;
+            /** Length M */
+            length_m: number;
+            /** Name */
+            name: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -1065,6 +1245,7 @@ export interface components {
          *     the whole picture counts) and also when they are inside an exclusion zone, which wins.
          */
         Profile: {
+            calibration: components["schemas"]["CalibrationConfig"] | null;
             /** Detection Zones */
             detection_zones: components["schemas"]["ZoneConfig"][];
             /** Exclusion Zones */
@@ -1184,17 +1365,128 @@ export interface components {
             /** Stopped */
             stopped: number;
         };
+        /** SpeedBin */
+        SpeedBin: {
+            /** Count */
+            count: number;
+            /** High */
+            high: number;
+            /** Low */
+            low: number;
+        };
+        /** SpeedDay */
+        SpeedDay: {
+            /** Count */
+            count: number;
+            /** Date */
+            date: string;
+            /** Mean */
+            mean: number | null;
+            /** P85 */
+            p85: number | null;
+            /** T */
+            t: number;
+        };
         /**
          * SpeedEstimate
-         * @description The fastest estimated speed in some time: an estimate, not a measurement (plan.md D41).
+         * @description The fastest speed in some time. Without a calibration it is an estimate from the vehicle's
+         *     own size, good to about 40% (plan.md D41); with one (``calibrated``) it was measured in metres
+         *     on the road, and a calibrated speed always beats an estimate, whatever their sizes (M6).
          */
         SpeedEstimate: {
             /** At */
             at: number;
+            /** Calibrated */
+            calibrated: boolean;
             /** Label */
             label: string;
             /** Speed Ms */
             speed_ms: number;
+        };
+        /**
+         * SpeedFigures
+         * @description What can be said of some speeds, in the units shown and to a tenth of one.
+         */
+        SpeedFigures: {
+            /** Count */
+            count: number;
+            /** Fastest */
+            fastest: number;
+            /** Mean */
+            mean: number;
+            /** Median */
+            median: number;
+            /** P85 */
+            p85: number;
+            /** Slowest */
+            slowest: number;
+        };
+        /** SpeedHour */
+        SpeedHour: {
+            /** Count */
+            count: number;
+            /** Hour */
+            hour: number;
+            /** Mean */
+            mean: number | null;
+            /** P85 */
+            p85: number | null;
+        };
+        /** SpeedKind */
+        SpeedKind: {
+            figures: components["schemas"]["SpeedFigures"] | null;
+            /** Label */
+            label: string;
+        };
+        /** SpeedLine */
+        SpeedLine: {
+            /** Counted */
+            counted: number;
+            figures: components["schemas"]["SpeedFigures"] | null;
+            /** Line */
+            line: string;
+            /** Name */
+            name: string;
+        };
+        /**
+         * SpeedStats
+         * @description How fast the vehicles counted at the counting lines were going (plan.md M6). A speed is
+         *     given only for a vehicle seen for long enough and in a part of the picture the calibration
+         *     can be believed, so ``counted`` is more than ``figures.count`` and the difference is shown.
+         */
+        SpeedStats: {
+            /** All Time */
+            all_time: boolean;
+            /** Bins */
+            bins: components["schemas"]["SpeedBin"][];
+            /** By Day */
+            by_day: components["schemas"]["SpeedDay"][];
+            /** By Hour */
+            by_hour: components["schemas"]["SpeedHour"][];
+            /** By Kind */
+            by_kind: components["schemas"]["SpeedKind"][];
+            /** By Line */
+            by_line: components["schemas"]["SpeedLine"][];
+            /** Calibrations */
+            calibrations: string[];
+            /** Counted */
+            counted: number;
+            /** Days */
+            days: number;
+            figures: components["schemas"]["SpeedFigures"] | null;
+            /** From Ms */
+            from_ms: number;
+            /** Line */
+            line: string | null;
+            /** Timezone */
+            timezone: string;
+            /** To Ms */
+            to_ms: number;
+            /**
+             * Units
+             * @enum {string}
+             */
+            units: "mph" | "kmh";
         };
         /** StatusResponse */
         StatusResponse: {
@@ -1315,8 +1607,14 @@ export interface components {
             id: number;
             /** Label */
             label: string | null;
+            /** Line Speed Ms */
+            line_speed_ms: number | null;
+            /** Max Speed Ms */
+            max_speed_ms: number | null;
             /** Min Speed */
             min_speed: number;
+            /** Min Speed Ms */
+            min_speed_ms: number | null;
             /** Observed S */
             observed_s: number;
             /**
@@ -1446,8 +1744,12 @@ export interface components {
         StopTiming: {
             /** Did Not Stop Min Speed */
             did_not_stop_min_speed: number | null;
+            /** Did Not Stop Min Speed Ms */
+            did_not_stop_min_speed_ms: number | null;
             /** Rolling Min Speed */
             rolling_min_speed: number | null;
+            /** Rolling Min Speed Ms */
+            rolling_min_speed_ms: number | null;
             /** Stopped Hold S */
             stopped_hold_s: number | null;
         };
@@ -1817,6 +2119,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AuthState"];
+                };
+            };
+        };
+    };
+    report_api_calibration_report_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CalibrationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalibrationAnswer"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -2336,6 +2671,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SeriesPoint"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stats_speeds_api_stats_speeds_get: {
+        parameters: {
+            query?: {
+                days?: number;
+                line?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpeedStats"];
                 };
             };
             /** @description Validation Error */
