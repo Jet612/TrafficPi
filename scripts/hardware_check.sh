@@ -44,6 +44,9 @@ for number in "$memtest_mb" "$baseline_s" "$seconds"; do
   if [[ ! "$number" =~ ^[0-9]+$ ]]; then echo "a number is wanted, not '$number'" >&2; exit 2; fi
 done
 if [[ -n "$clip" && ! -f "$clip/clip.mp4" ]]; then echo "no clip.mp4 in $clip" >&2; exit 2; fi
+# the script changes into backend/ below, so a path given relative to where it was started must be made whole now
+if [[ -n "$clip" ]]; then clip="$(realpath "$clip")"; fi
+log="$(realpath -m "$log")"
 
 exec > >(tee -a "$log") 2>&1
 export HAILORT_LOGGER_PATH=NONE  # HailoRT would otherwise write hailort.log into the current directory

@@ -8,14 +8,19 @@ TrafficPi is an open-source traffic monitoring system that uses computer vision 
 
 *The dashboard on the made-up street that the tests and screenshots use ([docs/dev-setup.md](docs/dev-setup.md)). Nothing in the pictures is a real road.*
 
+| | |
+|---|---|
+| ![The Review page: the passes at a stop sign that need a look, each with its picture and clip, a review button and an undo](docs/images/review.png) | ![The Trails card on the Data page: a day by the hour as stacked bars, and the path every vehicle took over the camera picture](docs/images/trails.png) |
+| *The Review page: the stop-sign passes that need a look, each with its picture and clip.* | *The Data page's Trails card: a day by the hour, and the path every vehicle took.* |
+
 ## At a glance
 
 - **Edge AI on a Raspberry Pi 5.** A Hailo-8L accelerator detects vehicles at about 30 frames a second; a tracker of my own (ByteTrack-style) follows them; everything runs on the device and no video goes to a cloud service.
 - **A rule engine you configure by drawing.** Counting lines, stop signs (approach zone and stop line), detection and exclusion zones, and a speed calibration are drawn on the camera picture in the browser and saved as a versioned profile, with undo and no code.
 - **Stop-sign monitoring with evidence.** Each pass is judged as stopped, rolled through, did not stop, or unclear; those that need a look get a picture and a short clip and a review step.
-- **Analytics.** Stop rates by hour, day, kind of vehicle and sign; traffic counts; the path every vehicle took, drawn as paths or a heat map; an optional daily e-mail report.
+- **Analytics.** Stop rates by hour, day, kind of vehicle and sign; traffic counts; the path every vehicle took, drawn as paths or a heat map; CSV downloads of the counts and the passes; an optional daily e-mail report.
 - **Built to run unattended.** systemd services with a watchdog (it has restarted a hung camera loop on its own), a health history, nightly backups, a security pass on the API, and a remote-access guide.
-- **Tested.** Over 800 backend tests and over 700 dashboard tests, a browser test that drives every page, and CI on GitHub that runs on every push.
+- **Tested, and measured on a real street.** Over 2,000 backend tests and over 700 dashboard tests, a browser test that drives every page, and CI on GitHub that runs on every push. A 12-minute daylight recording of the real intersection was checked frame by frame: every count was a real vehicle, 22 of the 23 vehicles that crossed the picture were counted, and the rule agreed with the eye on 9 of 10 passes at the stop sign ([docs/accuracy.md](docs/accuracy.md), with what that does not show).
 
 ```mermaid
 flowchart LR
@@ -231,7 +236,7 @@ Where recording is enabled, supported events may include snapshots or short vide
 
 ### Trails
 
-TrafficPi will save the path every moving vehicle takes through the picture: a few hundred bytes of points, with no video, no face and no number plate. The History page will show a day, or any hours of it, as paths or as a heat map drawn over the camera picture, filtered by kind of vehicle, with the counting lines and zones on top. It will play a day hour by hour and save the picture. It shows how the road is really used, and whether the lines and zones fit it. Trails are kept for a year unless you choose otherwise.
+TrafficPi will save the path every moving vehicle takes through the picture: a few hundred bytes of points, with no video, no face and no number plate. The Data page's Trails card will show a day, or any hours of it, as paths or as a heat map drawn over the camera picture, filtered by kind of vehicle, with the counting lines and zones on top. It will play a day hour by hour and save the picture. It shows how the road is really used, and whether the lines and zones fit it. Trails are kept for a year unless you choose otherwise.
 
 ### Camera Management
 
