@@ -26,6 +26,10 @@ DEFAULT_DID_NOT_STOP_CLIP_HOURS = 48
 MAX_KEEP_DAYS = 3650  # a limit on typing, not a recommendation
 MAX_CLIP_HOURS = MAX_KEEP_DAYS * 24
 MIN_MAX_MB = 50
+# While less than this is free on the disk no picture or clip is written, and the oldest are deleted
+# until there is room again (plan.md D64): the database is on the same card, and a full disk would
+# stop the counting. A fixed floor, not a setting: nobody wants the counting to stop to keep a clip.
+MIN_FREE_BYTES = 1_000_000_000
 MAX_MAX_MB = 1_000_000  # a terabyte
 
 

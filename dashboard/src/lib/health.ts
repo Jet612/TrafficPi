@@ -2,7 +2,7 @@ import { dayText, formatCount, formatDateTime, shortDayText, yearIn } from "./fo
 import { temperatureSeverity } from "./severity";
 import type { HealthEpisode, HealthSummary, SystemHistory } from "./types";
 
-/** The stretches of the machine's past that the History card can show (the server keeps 30 days). */
+/** The stretches of the machine's past that the health card on the System page can show (the server keeps 30 days). */
 export type HealthPeriod = "hour" | "6hours" | "day" | "week" | "month";
 
 export const HEALTH_PERIODS: readonly { value: HealthPeriod; label: string; hours: number }[] = [

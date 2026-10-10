@@ -22,7 +22,7 @@ import numpy as np
 from trafficpi.core.clock import WallClock, resolve_timezone
 from trafficpi.core.coco import PERSON_CLASS_ID
 from trafficpi.core.detection_settings import DETECT_PEOPLE_KEY, people_wanted
-from trafficpi.core.evidence_settings import EvidenceSettings
+from trafficpi.core.evidence_settings import MIN_FREE_BYTES, EvidenceSettings
 from trafficpi.core.paths import evidence_dir, reference_file
 from trafficpi.core.profile import Profile, ProfileError, empty_profile, parse_profile
 from trafficpi.core.speed import pass_speeds_phrase
@@ -369,6 +369,9 @@ class VisionService:
         self._evidence_waiting: list[EvidenceFiles] = []  # written, not yet noted in the database
         self.evidence_written = 0  # events whose picture or clip was written and noted since start
         self._dropped_by_finished = 0  # frames that finished recorders had no room for
+        self._skipped_by_finished = (
+            0  # passes that finished recorders left without evidence (no room)
+        )
         self._next_evidence_cleanup = 0.0  # time.monotonic()
         self._stop_signs: dict[str, StopSign] = {}
         self._drift = drift  # None until the service runs, and always without a data directory
@@ -807,6 +810,7 @@ class VisionService:
         recorder.close()
         self._note_evidence()
         self._dropped_by_finished += recorder.frames_dropped
+        self._skipped_by_finished += recorder.skipped_for_space
         self._evidence = None
 
     @property
@@ -819,6 +823,22 @@ class VisionService:
         """Frames the recorder had no room for since start: a gap in a clip, if there were any."""
         live = self._evidence.frames_dropped if self._evidence is not None else 0
         return self._dropped_by_finished + live
+
+    @property
+    def evidence_skipped_for_space(self) -> int:
+        """Passes since start that got no picture or clip because the disk had less free than the
+        floor (plan.md D64): 0 when all is well."""
+        live = self._evidence.skipped_for_space if self._evidence is not None else 0
+        return self._skipped_by_finished + live
+
+    def disk_free_mb(self) -> int | None:
+        """How much is free on the disk of the data directory, in megabytes (None if not known)."""
+        if self._data_dir is None:
+            return None
+        try:
+            return evidence_module.free_bytes(self._data_dir) // 1_000_000
+        except OSError:
+            return None
 
     def _clean_up_evidence(self) -> None:
         """Delete evidence that is too old, and the oldest of it if there is too much.
@@ -839,12 +859,21 @@ class VisionService:
                     "did_not_stop": settings.did_not_stop_clip_hours,
                 },
                 outcomes_of=self.store.stop_outcomes,
+                min_free_bytes=MIN_FREE_BYTES,
             )
         except Exception:
             log.exception("could not delete old evidence")
             return
         if files:
             log.info("deleted %d old evidence file(s), %.1f MB", files, freed / 1e6)
+        free_mb = self.disk_free_mb()
+        if free_mb is not None and free_mb * 1_000_000 < MIN_FREE_BYTES:
+            log.warning(
+                "the disk has %d MB free, under the %d MB that is kept free: the oldest evidence "
+                "was deleted and none is written until there is room",
+                free_mb,
+                MIN_FREE_BYTES // 1_000_000,
+            )
 
     # --- when stop signs are judged (plan.md D42) --------------------------------------------
 

@@ -178,7 +178,7 @@ function HoursForm({ state, apply }: { state: StopHoursState; apply: (next: Stop
     >
       <HowItWorks>
         <p>
-          Outside the hours a pass is not judged at all: no row in the history, no picture, no clip, nothing on the Data page or in the daily email. Vehicles are still counted at the
+          Outside the hours a pass is not judged at all: no row in the Review list, no picture, no clip, nothing on the Data page or in the daily email. Vehicles are still counted at the
           counting lines and their trails still saved.
         </p>
         <p>Switch on one limit or both (a pass must then be inside both); with both off, every pass is judged at every hour.</p>

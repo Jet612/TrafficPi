@@ -315,7 +315,7 @@ export function StopsCard() {
                   ))}
                 </ol>
                 <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-ink-2">
-                  <span>{total === null ? `Showing ${rows.length}` : `Showing ${rows.length} of ${formatCount(total)}`}</span>
+                  <span>{total === null ? `Showing ${rows.length}` : `Showing ${rows.length} of ${formatCount(Math.max(total, rows.length))}`}</span>
                   {rows.length >= limit && (
                     <Button size="sm" onClick={() => setLimit((current) => current + PAGE)}>
                       Show more

@@ -600,3 +600,36 @@ def test_the_recorder_is_stopped_when_the_service_is(
 ) -> None:
     run(car_driving(ROLLING_STOP) + AFTER, store, tmp_path, recorder)
     assert not recorder._thread.is_alive()
+
+
+# --- the disk floor (plan.md D64) ---------------------------------------------------------------
+
+
+def test_a_pass_gets_no_evidence_while_the_disk_is_too_full_and_is_still_judged_and_counted(
+    store: Store, tmp_path: Path, encoder: FakeEncoder
+) -> None:
+    recorder = Recorded(
+        tmp_path,
+        encoder=encoder,
+        max_waiting=2_000,
+        min_free_bytes=10**18,  # more than any disk
+    )
+    try:
+        service = run(car_driving(ROLLING_STOP) + AFTER, store, tmp_path, recorder)
+    finally:
+        recorder.close()
+    (event,) = stops(store)  # the Data page and the email count it
+    assert (event.details or {})["outcome"] == "rolling"
+    assert event.evidence_path is None and "clip" not in (event.details or {})
+    assert encoder.calls == 0 and not (tmp_path / "evidence").exists()
+    assert service.evidence_written == 0 and service.evidence_skipped_for_space == 1
+
+
+def test_the_service_says_how_much_is_free_on_the_disk_of_its_data_directory(
+    store: Store, tmp_path: Path, recorder: Recorded
+) -> None:
+    service = run(car_driving(FULL_STOP) + AFTER, store, tmp_path, recorder)
+    free = service.disk_free_mb()
+    assert free is not None and free > 0
+    without = run(car_driving(FULL_STOP) + AFTER, store, tmp_path, recorder, data_dir=False)
+    assert without.disk_free_mb() is None

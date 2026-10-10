@@ -44,6 +44,7 @@ def test_health_and_state(service: VisionService) -> None:
     assert health["trails_recorded"] == 1  # the car that drove through was saved when the run ended
     assert (health["evidence_written"], health["evidence_waiting"]) == (0, 0)
     assert health["evidence_frames_dropped"] == 0
+    assert health["evidence_skipped_for_space"] == 0 and health["disk_free_mb"] is None
     assert health["stops_skipped"] == 0  # no hours are set, so no pass was turned away
     assert health["drift"] is None  # the service has no data directory, so it keeps no check
     state = client.get("/state").json()

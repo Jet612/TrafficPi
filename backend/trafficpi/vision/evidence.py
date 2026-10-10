@@ -32,6 +32,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from trafficpi.core.evidence_settings import MIN_FREE_BYTES
 from trafficpi.core.paths import evidence_dir
 from trafficpi.vision.annotate import draw
 from trafficpi.vision.engine import CountTotals
@@ -52,6 +53,17 @@ STALE_PART_S = 600.0  # a half-written file this old is a leftover
 
 # Frames in, a clip out: True if it was written. Replaceable, so that tests need no encoder.
 ClipEncoder = Callable[[Iterable[np.ndarray], float, Path], bool]
+
+SPACE_WARNING_EVERY_S = 3600.0  # the log says once an hour that the disk is too full for evidence
+
+
+def free_bytes(path: Path) -> int:
+    """How many bytes are free on the disk that holds ``path`` (or the nearest folder above it that
+    exists: the evidence folder is made when the first evidence is written)."""
+    probe = path
+    while not probe.exists() and probe != probe.parent:
+        probe = probe.parent
+    return shutil.disk_usage(probe).free
 
 
 # --- the frames in memory -------------------------------------------------------------------------
@@ -127,6 +139,8 @@ class EvidenceRecorder:
         ring_seconds: float = RING_SECONDS,
         max_waiting: int = MAX_WAITING_FRAMES,
         monotonic: Callable[[], float] = time.monotonic,
+        min_free_bytes: int = MIN_FREE_BYTES,
+        free_of: Callable[[Path], int] = free_bytes,
     ) -> None:
         self.data_dir = data_dir
         self.folder = evidence_dir(data_dir)
@@ -148,6 +162,10 @@ class EvidenceRecorder:
         self._closing = False
         self.frames_dropped = 0
         self.written = 0
+        self.skipped_for_space = 0  # passes that got no evidence because the disk was too full
+        self._min_free = min_free_bytes
+        self._free_of = free_of
+        self._space_warned_at = -math.inf
         self._thread = threading.Thread(target=self._work, name="evidence", daemon=True)
         if threaded:
             self._thread.start()
@@ -234,17 +252,46 @@ class EvidenceRecorder:
             seen_enough = newest is not None and newest >= job.at_ns + self._after_ns
             if not (seen_enough or final or now >= job.deadline):
                 continue
-            try:
-                files = self._write(job)
-            except (
-                Exception
-            ):  # a folder that cannot be made, a full disk: the job is not tried again
-                log.exception("evidence: could not write the evidence of event %d", job.event_id)
+            if self._too_full():
                 files = EvidenceFiles(job.event_id, None, None)
+            else:
+                try:
+                    files = self._write(job)
+                except (
+                    Exception
+                ):  # a folder that cannot be made, a full disk: the job is not tried again
+                    log.exception(
+                        "evidence: could not write the evidence of event %d", job.event_id
+                    )
+                    files = EvidenceFiles(job.event_id, None, None)
             with self._lock:
                 if job in self._jobs:
                     self._jobs.remove(job)
                 self._finished.append(files)
+
+    def _too_full(self) -> bool:
+        """Whether the disk has less free than the floor: then nothing is written, so that the
+        database on the same card is never starved of room (plan.md D64)."""
+        if self._min_free <= 0:
+            return False
+        try:
+            free = self._free_of(self.folder)
+        except OSError:
+            return False  # not knowing is not a reason to keep evidence from anyone
+        if free >= self._min_free:
+            return False
+        self.skipped_for_space += 1
+        now = self._monotonic()
+        if now - self._space_warned_at >= SPACE_WARNING_EVERY_S:
+            self._space_warned_at = now
+            log.warning(
+                "evidence: only %.1f GB is free on the disk, under the %.1f GB that is kept free: "
+                "no picture or clip is written until there is room (%d passes so far)",
+                free / 1e9,
+                self._min_free / 1e9,
+                self.skipped_for_space,
+            )
+        return True
 
     def _write(self, job: EvidenceJob) -> EvidenceFiles:
         frames = self._ring.window(job.at_ns - self._before_ns, job.at_ns + self._after_ns)
@@ -400,8 +447,11 @@ def clean_up(
     clip_hours: Mapping[str, float] | None = None,
     outcomes_of: Callable[[Collection[int]], Mapping[int, str]] | None = None,
     now_s: float | None = None,
+    min_free_bytes: int = 0,
+    free_of: Callable[[Path], int] = free_bytes,
 ) -> tuple[int, int]:
-    """Delete evidence older than ``keep_days``, then the oldest until the rest fits ``max_bytes``.
+    """Delete evidence older than ``keep_days``, then the oldest until the rest fits ``max_bytes``
+    and, if ``min_free_bytes`` is given, until that much is free on the disk (D64).
 
     A clip is also deleted once it is older than ``clip_hours`` allows for the outcome of its pass
     (``outcomes_of`` says which event ids had which outcome; a clip whose outcome is not known, or
@@ -443,8 +493,14 @@ def clean_up(
         elif not part:
             kept.append((stat.st_mtime, stat.st_size, path))
     total = sum(size for _, size, _ in kept)
+    freed_so_far = (
+        removed_bytes  # already given back by the age rules, and so already in the free space
+    )
+    free = free_of(folder) if min_free_bytes > 0 else 0
     for _, size, path in sorted(kept):  # the oldest first
-        if total <= max_bytes:
+        too_big = total > max_bytes
+        too_full = min_free_bytes > 0 and free + (removed_bytes - freed_so_far) < min_free_bytes
+        if not (too_big or too_full):
             break
         remove(path, size)
         total -= size

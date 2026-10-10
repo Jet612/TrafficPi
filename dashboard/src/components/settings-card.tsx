@@ -247,7 +247,7 @@ export function SettingsCard() {
                 <div>
                   <div className="mb-1.5 flex items-center gap-1">
                     <p className="text-sm font-medium text-ink">Speed units</p>
-                    <InfoTip className="-my-0.5">What the estimated speeds on the History and Data pages and in the daily email are told in.</InfoTip>
+                    <InfoTip className="-my-0.5">What speeds are told in on the Live, Review and Data pages and in the daily email: miles an hour or kilometres an hour.</InfoTip>
                   </div>
                   <Segmented
                     className="w-fit"

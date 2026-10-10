@@ -24,6 +24,7 @@ from trafficpi.vision.evidence import (
     RingFrame,
     clean_up,
     encode_clip,
+    free_bytes,
 )
 from trafficpi.vision.profile import parse_compiled_profile
 from trafficpi.vision.tracker import TrackUpdate
@@ -646,3 +647,125 @@ def test_no_hours_given_means_the_old_behaviour(tmp_path: Path) -> None:
     clip = hours_old(folder, "d/stop-1.mp4", 10, now)
     clean_up(folder, keep_days=30, max_bytes=10**9, now_s=now)
     assert clip.exists()
+
+
+# --- the disk floor (plan.md D64) ---------------------------------------------------------------
+
+
+def test_no_evidence_is_written_while_the_disk_has_less_free_than_the_floor(
+    tmp_path: Path, encoder: FakeEncoder, caplog: pytest.LogCaptureFixture
+) -> None:
+    free = [500_000_000]
+    recorder = EvidenceRecorder(
+        tmp_path,
+        encoder=encoder,
+        threaded=False,
+        min_free_bytes=1_000_000_000,
+        free_of=lambda path: free[0],
+    )
+    feed_seconds(recorder, 0, 12)
+    recorder.request(job(8.0, event_id=1))
+    recorder.request(job(8.0, event_id=2, stem="2026-10-09/stop-2"))
+    with caplog.at_level("WARNING", logger="trafficpi.vision"):
+        recorder.drain()
+    done = recorder.poll()
+    assert done == [EvidenceFiles(1, None, None), EvidenceFiles(2, None, None)]
+    assert recorder.skipped_for_space == 2 and recorder.written == 0 and encoder.calls == 0
+    assert not (tmp_path / "evidence").exists(), "not even a folder"
+    warnings = [r.getMessage() for r in caplog.records if "kept free" in r.getMessage()]
+    assert len(warnings) == 1 and "0.5 GB is free" in warnings[0], "said once, not for every pass"
+
+    free[0] = 1_000_000_000  # room again: exactly the floor is enough
+    recorder.request(job(8.0, event_id=3, stem="2026-10-09/stop-3"))
+    recorder.drain()
+    (written,) = recorder.poll()
+    assert written.snapshot == "evidence/2026-10-09/stop-3.jpg" and recorder.written == 1
+
+
+def test_the_warning_about_a_full_disk_comes_again_an_hour_later(
+    tmp_path: Path, encoder: FakeEncoder, caplog: pytest.LogCaptureFixture
+) -> None:
+    now = [0.0]
+    recorder = EvidenceRecorder(
+        tmp_path,
+        encoder=encoder,
+        threaded=False,
+        min_free_bytes=10,
+        free_of=lambda path: 1,
+        monotonic=lambda: now[0],
+    )
+    feed_seconds(recorder, 0, 12)
+    with caplog.at_level("WARNING", logger="trafficpi.vision"):
+        for event_id, at in [(1, 0.0), (2, 100.0), (3, 3_601.0)]:
+            now[0] = at
+            recorder.request(job(8.0, event_id=event_id, deadline=0.0))
+            recorder.drain()
+    assert len([r for r in caplog.records if "kept free" in r.getMessage()]) == 2
+    assert recorder.skipped_for_space == 3
+
+
+def test_not_knowing_how_much_is_free_does_not_keep_evidence_from_anyone(
+    tmp_path: Path, encoder: FakeEncoder
+) -> None:
+    def broken(path: Path) -> int:
+        raise OSError("no such disk")
+
+    recorder = EvidenceRecorder(
+        tmp_path, encoder=encoder, threaded=False, min_free_bytes=10**12, free_of=broken
+    )
+    feed_seconds(recorder, 0, 12)
+    recorder.request(job(8.0))
+    recorder.drain()
+    assert recorder.poll()[0].snapshot is not None and recorder.skipped_for_space == 0
+
+
+def test_the_floor_is_the_nearest_folder_that_exists_when_the_evidence_folder_does_not(
+    tmp_path: Path,
+) -> None:
+    assert free_bytes(tmp_path / "evidence" / "2026-10-09") == free_bytes(tmp_path) > 0
+
+
+def test_a_disk_that_is_too_full_loses_its_oldest_evidence_first_until_there_is_room(
+    tmp_path: Path,
+) -> None:
+    now = 1_000_000_000
+    folder = tmp_path / "evidence"
+    files = [
+        make(folder, f"d/{i}.jpg", age, size=1_000_000, now=now)
+        for i, age in enumerate([4, 3, 2, 1])
+    ]
+    # 1 MB is free and 3.5 MB are wanted: three files (1 MB each) must go, the newest may stay
+    removed = clean_up(
+        folder,
+        keep_days=30,
+        max_bytes=10**9,
+        now_s=now,
+        min_free_bytes=3_500_000,
+        free_of=lambda path: 1_000_000,
+    )
+    assert removed == (3, 3_000_000)
+    assert [f.exists() for f in files] == [False, False, False, True]
+
+
+def test_enough_room_deletes_nothing_for_the_floor_and_what_the_age_rules_freed_counts(
+    tmp_path: Path,
+) -> None:
+    now = 1_000_000_000
+    folder = tmp_path / "evidence"
+    old = make(folder, "d/old.jpg", 40, size=2_000_000, now=now)  # goes by its age
+    kept = [make(folder, f"d/{i}.jpg", 1, size=1_000_000, now=now) for i in range(2)]
+    # the disk said 1 MB free after the old file was deleted: 1 MB short of 2 MB, so one more goes
+    removed = clean_up(
+        folder,
+        keep_days=30,
+        max_bytes=10**9,
+        now_s=now,
+        min_free_bytes=2_000_000,
+        free_of=lambda path: 1_000_000,
+    )
+    assert removed == (2, 3_000_000) and not old.exists()
+    assert [k.exists() for k in kept] == [False, True] or [k.exists() for k in kept] == [
+        True,
+        False,
+    ]
+    assert clean_up(folder, keep_days=30, max_bytes=10**9, now_s=now, min_free_bytes=0) == (0, 0)
