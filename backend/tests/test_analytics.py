@@ -16,6 +16,7 @@ from trafficpi.api.analytics import (
     stop_stats,
     traffic_stats,
 )
+from trafficpi.core.stop_hours import StopHours, TimeRange, judging_at
 from trafficpi.db.store import CountRow, SpeedRow, StopStatRow
 
 NY = ZoneInfo("America/New_York")
@@ -152,6 +153,27 @@ def test_what_a_person_made_of_the_passes_is_counted_apart() -> None:
     # one agreed with; one called a false alarm; three need a look and have not had one
     # (the roll, the miss and the one that could not be told); the unknown outcome is nowhere
     assert review == {"confirmed": 1, "false_alarms": 1, "waiting": 3}
+
+
+def test_passes_outside_the_hours_judged_now_stay_in_the_sums_and_are_counted_apart() -> None:
+    hours = StopHours(clock=True, ranges=(TimeRange(9 * 60, 19 * 60),))
+    kept = stop_stats(sample_rows(), None, NY, PERIOD)
+    stats = stop_stats(
+        sample_rows(), None, NY, PERIOD, judged=lambda at_ms: judging_at(hours, at_ms, NY)
+    )
+    # The miss, the one that could not be told and the confirmed roll, all before 09:00 on the 8th.
+    # The false alarm and the outcome nobody knows are in no count, so not in this one either.
+    assert stats["outside_hours"] == 3
+    assert {key: value for key, value in stats.items() if key != "outside_hours"} == {
+        key: value for key, value in kept.items() if key != "outside_hours"
+    }
+
+
+def test_with_no_hours_to_go_by_no_pass_is_outside_them() -> None:
+    assert stop_stats(sample_rows(), None, NY, PERIOD)["outside_hours"] == 0
+    always = stop_stats(sample_rows(), None, NY, PERIOD, judged=lambda at_ms: True)
+    assert always["outside_hours"] == 0
+    assert stop_stats([], None, NY, PERIOD)["outside_hours"] == 0
 
 
 def test_hours_are_the_local_hours_of_the_day_over_all_the_days() -> None:

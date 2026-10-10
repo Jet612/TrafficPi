@@ -197,6 +197,7 @@ class StopStats(BaseModel):
     all_time: bool  # asked for "all time": from the first pass (a year at most)
     sign: str | None  # only this stop sign, if asked
     totals: OutcomeCounts
+    outside_hours: int  # of the passes in totals, those outside the hours judged now (plan.md D42)
     previous: OutcomeCounts | None  # the same number of days before it; None for all time
     by_hour: list[HourOutcomes]  # all 24
     by_day: list[DayOutcomes]  # every day of the period, oldest first, empty ones included

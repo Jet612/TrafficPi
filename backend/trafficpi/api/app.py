@@ -91,6 +91,7 @@ from trafficpi.core.profile import (
     empty_profile,
     parse_profile,
 )
+from trafficpi.core.stop_hours import judging_at
 from trafficpi.core.trail_settings import TrailSettings
 from trafficpi.db.mail_store import MailStore
 from trafficpi.db.store import STOP_OUTCOMES, EventRow, Store, open_store
@@ -607,8 +608,17 @@ def create_app(
             else ctx.store.stop_rows(period.previous_start_ms, period.start_ms, sign=sign)
         )
         units = ctx.store.get_setting("units", "mph")
+        hours = ctx.store.get_stop_hours()
         return {
-            **analytics.stop_stats(rows, previous, tz, period, sign=sign),
+            **analytics.stop_stats(
+                rows,
+                previous,
+                tz,
+                period,
+                sign=sign,
+                # With no limit on, every pass is inside the hours, so none is looked up.
+                judged=(lambda at_ms: judging_at(hours, at_ms, tz)) if hours.limited else None,
+            ),
             "units": "kmh" if units == "kmh" else "mph",
         }
 

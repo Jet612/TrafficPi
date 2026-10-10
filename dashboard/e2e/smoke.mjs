@@ -301,8 +301,9 @@ try {
     await page.waitForFunction(() => !/Connecting|Waiting/.test(document.querySelector("header [role=status]")?.textContent ?? ""));
     const text = await badge.innerText();
     console.log(`     header says: ${text}`);
-    if (expectLive) assert.match(text, /^Live/i);
-    else assert.match(text, /Live|offline|lost|Throttled|Weak power/i); // a Pi that is hot or short of power says so instead of Live
+    // A Pi that is hot or short of power says so instead of Live (the pill reads the board's own flags, and the board that runs this test is a working one).
+    if (expectLive) assert.match(text, /^(Live|Throttled|Weak power)/i);
+    else assert.match(text, /Live|offline|lost|Throttled|Weak power/i);
   });
 
   await step("today's total is a number", async () => {
@@ -1215,6 +1216,10 @@ try {
       assert.equal(sum(stops.previous), 0);
       await page.getByText("No earlier period to compare with.").waitFor();
       assert.equal(await page.getByTestId("change-stopped").count(), 0);
+
+      // with no hours set every pass is judged, so none is said to be outside them
+      assert.equal(stops.outside_hours, 0);
+      assert.equal(await page.getByTestId("data-stops-outside-hours").count(), 0);
 
       // the highlights, the kinds and the reviews
       await page.getByTestId("fact-busiest-hour").waitFor();
@@ -2272,8 +2277,22 @@ try {
       mark = await newestStop();
       await page.waitForTimeout(12_000);
       assert.equal(await newestStop(), mark, "no pass is judged outside the hours");
+
+      // the passes recorded before the limit stay in the numbers, and the Data page says how many of them are outside the hours now
+      const answeredData = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/stats/stops"); // for the period the page was left on
+      await goTo("Data");
+      const { outside_hours: outside, totals } = await (await answeredData).json();
+      assert.ok(outside > 0, "the passes recorded so far are outside hours that do not hold the present");
+      assert.ok(outside <= totals.stopped + totals.rolling + totals.did_not_stop + totals.indeterminate, "and they are some of the passes counted");
+      assert.equal(
+        await page.getByTestId("data-stops-outside-hours").innerText(),
+        `Includes ${outside === 1 ? "1 pass" : `${outside.toLocaleString("en-US")} passes`} recorded outside today's judging hours.`,
+      );
+
       assert.equal(await putJson("/api/stops/hours", original), 200);
       await eventually(async () => assert.ok((await newestStop()) > mark), "vehicles are judged again once the limit is off", 90_000);
+      const nowOutside = await page.evaluate(async () => (await (await fetch("/api/stats/stops?days=7")).json()).outside_hours);
+      assert.equal(nowOutside, 0, "with no limit no pass is outside the hours");
     } finally {
       // the next steps (and the next run) expect what was there
       await putJson("/api/stops/hours", original);
@@ -2407,7 +2426,7 @@ try {
     for (const title of ["Throttled", "Weak power", "Camera not working", "Nothing recorded"]) {
       await episodes.getByText(title).first().waitFor();
     }
-    assert.match(await episodes.getByTestId("system-history-summary").innerText(), /Throttled \d+ times?, .*up to 8\d\.\d °C/, "one line sums up what happened");
+    assert.match(await episodes.getByTestId("system-history-summary").innerText(), /Throttled (once|\d+ times), .*up to 8\d\.\d °C/, "one line sums up what happened");
     assert.match(await episodes.getByRole("table").innerText(), /8\d\.\d °C/, "and the table says how hot each slowdown got");
     assert.equal(await card.locator(".recharts-wrapper").count(), 2, "a chart of the temperature and one of the frame rate");
     assert.ok((await card.locator(".recharts-line-curve").count()) >= 2, "lines are drawn");

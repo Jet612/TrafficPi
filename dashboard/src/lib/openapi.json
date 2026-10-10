@@ -3006,6 +3006,10 @@
             "title": "From Ms",
             "type": "integer"
           },
+          "outside_hours": {
+            "title": "Outside Hours",
+            "type": "integer"
+          },
           "previous": {
             "anyOf": [
               {
@@ -3062,6 +3066,7 @@
           "all_time",
           "sign",
           "totals",
+          "outside_hours",
           "previous",
           "by_hour",
           "by_day",

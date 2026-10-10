@@ -16,6 +16,7 @@ from trafficpi.api.auth import hash_password
 from trafficpi.api.settings import ApiSettings
 from trafficpi.api.vision_client import VisionClient
 from trafficpi.core.clock import WallClock
+from trafficpi.core.stop_hours import StopHours, TimeRange
 from trafficpi.db import create_db_engine, upgrade_to_head
 from trafficpi.db.store import Store
 from trafficpi.vision.rules import CountEvent, StopEvent
@@ -159,6 +160,34 @@ def test_false_alarms_are_left_out_of_the_shares_and_counted_apart(
     body = client.get("/api/stats/stops", params={"days": 7}).json()
     assert body["totals"] == {"stopped": 2, "rolling": 1, "did_not_stop": 0, "indeterminate": 1}
     assert body["review"] == {"confirmed": 1, "false_alarms": 1, "waiting": 1}
+
+
+def test_passes_outside_the_hours_judged_now_are_kept_and_counted_apart(
+    client: TestClient, store: Store
+) -> None:
+    seed_week(store)  # at 09:00 and 09:10, 08:05, 17:30 and 00:00 on five different days
+
+    def outside() -> int:
+        body = client.get("/api/stats/stops", params={"days": 7}).json()
+        assert body["totals"] == {"stopped": 2, "rolling": 1, "did_not_stop": 1, "indeterminate": 1}
+        return body["outside_hours"]
+
+    assert outside() == 0  # judged at all hours: none is turned away
+    store.set_stop_hours(StopHours(clock=True, ranges=(TimeRange(9 * 60, 17 * 60),)))
+    assert outside() == 3  # the early one, the one after five and the one at midnight
+    store.set_stop_hours(StopHours(daylight=True, latitude=40.7, longitude=-74.0))
+    assert outside() == 1  # the sun is up from before 07:00 to after 18:00 in New York in October
+    store.set_stop_hours(StopHours())
+    assert outside() == 0
+
+
+def test_a_false_alarm_outside_the_hours_is_in_no_count(client: TestClient, store: Store) -> None:
+    seed_week(store)
+    store.set_stop_hours(StopHours(clock=True, ranges=(TimeRange(9 * 60, 17 * 60),)))
+    (early,) = store.stops_between(ms("2026-10-08 00:00"), ms("2026-10-09 00:00"))
+    store.review_stop(early.id, "false_positive")
+    body = client.get("/api/stats/stops", params={"days": 7}).json()
+    assert (body["outside_hours"], body["review"]["false_alarms"]) == (2, 1)
 
 
 def test_speeds_in_words_follow_the_units_the_owner_chose(client: TestClient, store: Store) -> None:

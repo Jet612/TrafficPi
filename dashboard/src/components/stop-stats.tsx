@@ -126,6 +126,7 @@ function HowDriversDid({ stats, period, busy }: { stats: StopStats; period: Data
   const before = comparedWith(period);
   const rate = stopRate(stats.totals);
   const falseAlarms = stats.review.false_alarms;
+  const outside = typeof stats.outside_hours === "number" ? stats.outside_hours : 0; // an older API does not say
   const nothingBefore = before !== null && stats.previous !== null && totalOf(stats.previous) === 0;
   return (
     <Card aria-busy={busy}>
@@ -152,6 +153,7 @@ function HowDriversDid({ stats, period, busy }: { stats: StopStats; period: Data
             </li>
           )}
           {falseAlarms > 0 && <li>{plural(falseAlarms, "vehicle")} you called false alarms {falseAlarms === 1 ? "is" : "are"} left out.</li>}
+          {outside > 0 && <li data-testid="data-stops-outside-hours">{`Includes ${plural(outside, "pass", "passes")} recorded outside today's judging hours.`}</li>}
           {nothingBefore && total > 0 && <li>No earlier period to compare with.</li>}
         </ul>
       </CardBody>

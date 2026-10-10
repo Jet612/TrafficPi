@@ -313,7 +313,7 @@ def build_digest(data: DigestInput) -> Digest:
             ("Stopped", counted("stopped", facts.stopped)),
             ("Rolled through", counted("rolling", facts.rolling)),
             ("Did not stop", counted("did_not_stop", facts.did_not_stop)),
-            ("Could not tell", counted("indeterminate", facts.could_not_tell)),
+            ("Unclear", counted("indeterminate", facts.could_not_tell)),
             ("Stop rate", rate_text),
         ]
     rows += [("Busiest hour", busiest_text), ("Vehicles counted", str(facts.vehicles))]

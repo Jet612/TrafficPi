@@ -11,7 +11,7 @@ from __future__ import annotations
 import math
 import statistics
 from collections import Counter
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from typing import Any
@@ -191,10 +191,15 @@ def stop_stats(
     period: Period,
     *,
     sign: str | None = None,
+    judged: Callable[[int], bool] | None = None,
 ) -> dict[str, Any]:
     """How vehicles did at stop signs over a period, and over the run of days before it.
 
     Passes a person called false alarms are left out of every share and counted on their own.
+
+    ``judged`` says whether a pass at an instant (ms) is inside the hours in which stop signs are
+    judged now (plan.md D42). Passes recorded before the hours were limited, or under other hours,
+    stay in the sums; ``outside_hours`` counts the ones the hours turn away today. Without it, none.
     """
     local = _LocalTimes(tz)
     totals: Counter[str] = Counter()
@@ -210,7 +215,7 @@ def stop_stats(
     fastest_by_day: dict[date, Fastest] = {}
     roll_speeds_ms: list[float] = []
     miss_speeds_ms: list[float] = []
-    confirmed = false_alarms = waiting = 0
+    confirmed = false_alarms = waiting = outside_hours = 0
 
     for row in rows:
         if row.outcome not in STOP_OUTCOMES:
@@ -218,6 +223,8 @@ def stop_stats(
         if row.review == "false_positive":
             false_alarms += 1
             continue
+        if judged is not None and not judged(row.occurred_at):
+            outside_hours += 1
         if row.review == "confirmed":
             confirmed += 1
         elif row.outcome != "stopped":
@@ -268,6 +275,7 @@ def stop_stats(
         "all_time": period.all_time,
         "sign": sign,
         "totals": _outcomes(totals),
+        "outside_hours": outside_hours,
         "previous": (
             None
             if previous_rows is None

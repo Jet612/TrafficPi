@@ -1714,6 +1714,8 @@ export interface components {
             fastest: components["schemas"]["SpeedEstimate"] | null;
             /** From Ms */
             from_ms: number;
+            /** Outside Hours */
+            outside_hours: number;
             previous: components["schemas"]["OutcomeCounts"] | null;
             review: components["schemas"]["StopReviews"];
             /** Sign */

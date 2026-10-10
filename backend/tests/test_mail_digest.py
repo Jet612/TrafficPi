@@ -121,7 +121,7 @@ def test_the_other_outcomes_follow_in_the_order_of_the_plan() -> None:
         "Stopped",
         "Rolled through",
         "Did not stop:",
-        "Could not tell",
+        "Unclear",
         "Stop rate",
         "Busiest hour",
         "Vehicles",
@@ -403,7 +403,7 @@ def test_every_outcome_has_its_count_and_its_share_as_the_data_page_shows_it() -
         "did_not_stop": 10,
         "indeterminate": 6,
     }
-    for row in ("Stopped:", "Rolled through:", "Did not stop:", "Could not tell:"):
+    for row in ("Stopped:", "Rolled through:", "Did not stop:", "Unclear:"):
         assert row in digest.text
     for words in ("95 (64%)", "30 (20%)", "15 (10%)", "8 (6%)"):
         assert words in digest.text and words in digest.html, words
@@ -433,7 +433,7 @@ def test_with_nothing_judged_there_are_counts_and_no_shares() -> None:
         "indeterminate": 0,
     }
     lines = digest.text.splitlines()
-    for label in ("Stopped:", "Rolled through:", "Did not stop:", "Could not tell:"):
+    for label in ("Stopped:", "Rolled through:", "Did not stop:", "Unclear:"):
         line = next(line for line in lines if line.startswith(label))
         assert line.split(":", 1)[1].strip() == "0", line  # a count, and no share of nothing
     assert (
