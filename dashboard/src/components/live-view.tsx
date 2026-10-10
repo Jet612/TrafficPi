@@ -14,6 +14,7 @@ import { STILL_NOTICE, STILL_REFRESH_MS, pictureMode, stillUrl } from "@/lib/rem
 import { useFullscreen } from "@/lib/use-fullscreen";
 import type { SpeedUnits } from "@/lib/speed";
 import { useSpeedUnits } from "@/lib/use-speed-units";
+import { useStopsPaused } from "@/lib/use-stops-paused";
 import {
   DEFAULT_OVERLAY,
   drawOverlay,
@@ -103,8 +104,12 @@ export function LiveView() {
   // The units a vehicle's speed is written in on its label; the overlay is painted outside React, so it reads them here.
   const unitsRef = useRef<SpeedUnits | undefined>(undefined);
   const speedUnits = useSpeedUnits();
+  // Whether stop signs are judging now, for the same reason: a sign outside its hours is drawn faint.
+  const pausedRef = useRef(false);
+  const stopsPaused = useStopsPaused();
   useEffect(() => {
     unitsRef.current = speedUnits;
+    pausedRef.current = stopsPaused;
   });
   const [attempt, setAttempt] = useState(0);
   const [streamFailed, setStreamFailed] = useState(false);
@@ -145,6 +150,7 @@ export function LiveView() {
         zones: state?.zones ?? [],
         stopSigns: state?.stop_signs ?? [],
         units: unitsRef.current,
+        stopsPaused: pausedRef.current,
         // A still is seconds old: boxes drawn from the live data would sit beside the vehicles.
         tracks: current && state && !still ? state.tracks : [],
       };

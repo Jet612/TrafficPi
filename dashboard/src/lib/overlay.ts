@@ -114,7 +114,7 @@ export interface OverlayColors {
 export type Canvas2D = Pick<
   CanvasRenderingContext2D,
   | "save" | "restore" | "clearRect" | "beginPath" | "moveTo" | "lineTo" | "stroke" | "fill"
-  | "fillRect" | "strokeRect" | "fillText" | "measureText" | "setLineDash" | "closePath"
+  | "fillRect" | "strokeRect" | "fillText" | "strokeText" | "measureText" | "setLineDash" | "closePath"
 > & {
   strokeStyle: CanvasRenderingContext2D["strokeStyle"];
   fillStyle: CanvasRenderingContext2D["fillStyle"];
@@ -126,8 +126,14 @@ export type Canvas2D = Pick<
   textBaseline: CanvasTextBaseline;
 };
 
-const LABEL_FONT = "600 11px system-ui, -apple-system, 'Segoe UI', sans-serif";
-const COMPACT_FONT = "600 10px system-ui, -apple-system, 'Segoe UI', sans-serif";
+const FONT_FAMILY = "system-ui, -apple-system, 'Segoe UI', sans-serif";
+
+/** The size of a label's letters: a little larger on a large picture, and never under 11 px on a small one. */
+export function labelPx(width: number): number {
+  return Math.round(Math.min(13, Math.max(11, width / 64)));
+}
+
+const fontOf = (size: Size) => `600 ${labelPx(size.width)}px ${FONT_FAMILY}`;
 
 /** A picture narrower than this (a phone) gets short labels, so that they do not pile up. */
 export const COMPACT_BELOW_PX = 520;
@@ -147,7 +153,7 @@ export function zoneLabel(zone: Pick<LiveZone, "kind" | "name">): string {
   return zone.name || "Detection zone";
 }
 
-function drawZones(ctx: Canvas2D, size: Size, zones: readonly LiveZone[], labels: boolean, colors: OverlayColors, compact: boolean): void {
+function drawZones(ctx: Canvas2D, size: Size, zones: readonly LiveZone[], labels: boolean, colors: OverlayColors): void {
   for (const zone of zones) {
     if (zone.points.length < 3) continue;
     const corners = zone.points.map((p): Point => [p[0] * size.width, p[1] * size.height]);
@@ -171,9 +177,9 @@ function drawZones(ctx: Canvas2D, size: Size, zones: readonly LiveZone[], labels
     }
     ctx.restore();
     if (labels) {
-      const left = Math.min(...corners.map((c) => c[0]));
-      const top = Math.min(...corners.map((c) => c[1]));
-      drawChip(ctx, zoneLabel(zone), left + 2, Math.max(16, top - 4), colors.line, compact);
+      // At the top corner, inside, so that the name is never outside the thing it names (or outside the picture).
+      const [x, y] = topCorner(corners);
+      drawName(ctx, zoneLabel(zone), x + 5, y + labelPx(size.width) + 4, size, colors);
     }
   }
 }
@@ -183,6 +189,8 @@ export interface OverlayScene {
   zones: readonly LiveZone[];
   tracks: readonly LiveTrack[];
   stopSigns?: readonly LiveStopSign[];
+  /** Stop signs are not being judged now (outside the hours): they are drawn faint and say so. */
+  stopsPaused?: boolean;
   /** The units a vehicle's speed is written in on its label; none: speeds are not written. */
   units?: SpeedUnits;
 }
@@ -198,8 +206,13 @@ function drawStopSigns(
   options: OverlayOptions,
   colors: OverlayColors,
   compact: boolean,
+  paused: boolean,
 ): void {
   for (const sign of signs) {
+    if (!options.zones && !options.lines) continue;
+    // While stop signs are not being judged (outside their hours) a sign is drawn faint and says so, not as live as a line that counts.
+    ctx.save();
+    if (paused) ctx.globalAlpha = 0.45;
     if (options.zones && sign.approach.length >= 3) {
       const corners = sign.approach.map((p): Point => [p[0] * size.width, p[1] * size.height]);
       const outline = () => {
@@ -220,7 +233,10 @@ function drawStopSigns(
       }
       ctx.restore();
     }
-    if (!options.lines) continue;
+    if (!options.lines) {
+      ctx.restore();
+      continue;
+    }
     const ax = sign.a[0] * size.width;
     const ay = sign.a[1] * size.height;
     const bx = sign.b[0] * size.width;
@@ -252,7 +268,11 @@ function drawStopSigns(
       ctx.stroke();
     }
     ctx.restore();
-    if (options.labels && !compact) drawChip(ctx, sign.name || "Stop sign", Math.min(ax, bx) + 2, Math.max(16, Math.min(ay, by) - 4), colors.stopLine, compact);
+    ctx.restore();
+    // The name is drawn at full strength: it is what says why the sign is faint.
+    if (options.labels && !compact) {
+      drawName(ctx, `${sign.name || "Stop sign"}${paused ? " · paused" : ""}`, Math.min(ax, bx) + 4, Math.min(ay, by) - 5, size, colors);
+    }
   }
 }
 
@@ -283,8 +303,8 @@ export function paintOverlay(
 
   // A zone's name is long ("Ignored: Parked cars") and, on a phone's small picture, runs into the
   // lines and the vehicles' labels; the outline says where it is, and the Setup page has the names.
-  if (options.zones) drawZones(ctx, size, scene.zones, options.labels && !compact, colors, compact);
-  drawStopSigns(ctx, size, scene.stopSigns ?? [], options, colors, compact);
+  if (options.zones) drawZones(ctx, size, scene.zones, options.labels && !compact, colors);
+  drawStopSigns(ctx, size, scene.stopSigns ?? [], options, colors, compact, scene.stopsPaused === true);
 
   if (options.trails) {
     for (const [, trail] of trails) {
@@ -327,7 +347,7 @@ export function paintOverlay(
         }
         ctx.stroke();
       }
-      if (options.labels && line.name) drawChip(ctx, line.name, ax + 2, Math.max(16, ay - 4), colors.line, compact);
+      if (options.labels && line.name) drawName(ctx, line.name, ax + 4, ay - 5, size, colors);
     }
   }
 
@@ -342,23 +362,56 @@ export function paintOverlay(
       ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
       ctx.restore();
       if (options.labels && track.confirmed && rect.w >= MIN_LABELLED_PX) {
-        drawChip(ctx, trackLabel(track, compact, scene.units), rect.x, Math.max(14, rect.y), color, compact);
+        drawChip(ctx, trackLabel(track, compact, scene.units), rect.x, Math.max(14, rect.y), color, size);
       }
     }
   }
 }
 
-/** A small filled label sitting on top of (x, y), text black or white by the fill's brightness. */
-function drawChip(ctx: Canvas2D, text: string, x: number, y: number, fill: string, compact = false): void {
+/** The topmost corner of an outline (the leftmost of those on the top), where a zone's name goes. */
+function topCorner(corners: readonly Point[]): Point {
+  let best = corners[0] ?? [0, 0];
+  for (const corner of corners) if (corner[1] < best[1] || (corner[1] === best[1] && corner[0] < best[0])) best = corner;
+  return best;
+}
+
+/** Keep a label of this width and height (its baseline at `y`) wholly inside the picture, whatever the edge it was asked to sit on. */
+function inside(size: Size, x: number, y: number, width: number, height: number): Point {
+  return [Math.max(1, Math.min(x, size.width - width - 1)), Math.max(height, Math.min(y, size.height - 3))];
+}
+
+/**
+ * The name of a line, a zone or a stop sign, in white letters with a dark outline under them: legible on any
+ * part of the picture, and the same as the names the zone editor draws, which are the same things. It is kept
+ * inside the picture, which a long name near an edge (a phone's narrow picture) would otherwise run out of.
+ */
+function drawName(ctx: Canvas2D, text: string, x: number, y: number, size: Size, colors: OverlayColors): void {
   ctx.save();
-  ctx.font = compact ? COMPACT_FONT : LABEL_FONT;
+  ctx.font = fontOf(size);
   ctx.textBaseline = "alphabetic";
-  const height = compact ? 13 : 15;
+  ctx.lineJoin = "round";
+  const [left, base] = inside(size, x, y, ctx.measureText(text).width, labelPx(size.width) + 2);
+  ctx.lineWidth = 3.5;
+  ctx.strokeStyle = colors.chipEdge;
+  ctx.strokeText(text, left, base);
+  ctx.fillStyle = colors.line;
+  ctx.fillText(text, left, base);
+  ctx.restore();
+}
+
+/** A small filled label sitting on top of (x, y), text black or white by the fill's brightness: for a vehicle, whose colour is its kind's. Kept inside the picture. */
+function drawChip(ctx: Canvas2D, text: string, x: number, y: number, fill: string, size: Size): void {
+  ctx.save();
+  ctx.font = fontOf(size);
+  ctx.textBaseline = "alphabetic";
+  const px = labelPx(size.width);
+  const height = px + 4;
   const width = ctx.measureText(text).width + 8;
+  const [left, base] = inside(size, x, y, width, height);
   ctx.fillStyle = fill;
-  ctx.fillRect(x, y - height + 1, width, height);
+  ctx.fillRect(left, base - height + 1, width, height);
   ctx.fillStyle = chipTextColor(fill);
-  ctx.fillText(text, x + 4, y - 3);
+  ctx.fillText(text, left + 4, base - 3);
   ctx.restore();
 }
 

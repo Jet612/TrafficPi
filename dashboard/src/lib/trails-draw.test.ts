@@ -76,7 +76,7 @@ function recorder() {
     imageSmoothingEnabled: false,
     imageSmoothingQuality: "low",
   } as Record<string, unknown>;
-  for (const name of ["save", "restore", "clearRect", "beginPath", "moveTo", "lineTo", "stroke", "fill", "closePath", "fillRect", "strokeRect", "fillText", "setLineDash", "drawImage"]) {
+  for (const name of ["save", "restore", "clearRect", "beginPath", "moveTo", "lineTo", "stroke", "fill", "closePath", "fillRect", "strokeRect", "fillText", "strokeText", "setLineDash", "drawImage"]) {
     ctx[name] = (...args: unknown[]) => {
       ops.push({ name, args, style: ctx.strokeStyle, alpha: ctx.globalAlpha as number, width: ctx.lineWidth as number });
     };

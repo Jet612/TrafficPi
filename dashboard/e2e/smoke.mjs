@@ -998,17 +998,17 @@ try {
   };
 
   if (demo) {
-    await step("the Stop signs card says what the vehicles did, lists the passes that need a look, and a review is kept", async () => {
+    await step("the Stop signs card says what the vehicles did, lists the passes that need review, and a review is kept", async () => {
       await goTo("History");
       const passes = page.getByRole("list", { name: "Passes at stop signs" });
       const rowsOf = () => passes.getByRole("listitem");
       await eventually(async () => assert.match(await page.getByTestId("stops-headline").innerText(), /reached a stop sign: /), "the summary says what was seen");
       const tile = (outcome) => page.getByRole("list", { name: "Outcomes" }).getByRole("button", { name: new RegExp(`^${outcome}`) });
-      assert.equal(await tile("Did not stop").getAttribute("aria-pressed"), "true", "what needs a look is shown to begin with");
+      assert.equal(await tile("Did not stop").getAttribute("aria-pressed"), "true", "what needs review is shown to begin with");
       assert.equal(await tile("Stopped").getAttribute("aria-pressed"), "false", "and a clean stop is not");
       await eventually(async () => assert.ok((await rowsOf().count()) >= 1, "a pass is listed"));
       const kinds = await rowsOf().evaluateAll((items) => items.map((item) => item.getAttribute("data-outcome")));
-      assert.ok(kinds.every((kind) => ["rolling", "did_not_stop", "indeterminate"].includes(kind)), `only those that need a look: ${kinds}`);
+      assert.ok(kinds.every((kind) => ["rolling", "did_not_stop", "indeterminate"].includes(kind)), `only those that need review: ${kinds}`);
 
       // a tile that is pressed again takes its outcome off the list, and one pressed adds it
       await tile("Did not stop").click();
@@ -1074,7 +1074,7 @@ try {
       await shot("stop-signs-card");
     });
 
-    await step("a pass that needs a look has its picture and clip, which open in a window where it can be reviewed", async () => {
+    await step("a pass that needs review has its picture and clip, which open in a window where it can be reviewed", async () => {
       await goTo("History");
       const passes = page.getByRole("list", { name: "Passes at stop signs" });
       const clipButtons = () => passes.getByRole("button", { name: /^Watch the clip of the / });
@@ -1191,7 +1191,9 @@ try {
       const stops = answer("stops", 7);
       const total = sum(stops.totals);
       assert.ok(total > 0, "the made-up street's passes at the stop sign are in the numbers");
-      assert.match(await page.getByTestId("data-stops-headline").innerText(), new RegExp(`${total.toLocaleString("en-US")} vehicles? (was|were) judged`));
+      assert.match(await page.getByTestId("data-stops-headline").innerText(), new RegExp(`${total.toLocaleString("en-US")} vehicles? reached a stop sign`));
+      // the days the page covers are said once, beside the period, and not in each card
+      assert.match(await page.getByTestId("data-range").innerText(), /^\w{3} \d+ – \w{3} \d+$/, "the toolbar gives the range of days");
 
       // four tiles that add up: the counts are the server's, the percentages whole numbers that make 100
       let shares = 0;
@@ -1202,11 +1204,11 @@ try {
         shares += share;
       }
       assert.equal(shares, 100, "the four percentages make 100");
-      assert.equal(await page.getByRole("img", { name: /^(Stopped|Rolled through|Did not stop|Could not tell) \d+%/ }).count(), 1, "the share bar says the same in words");
+      assert.equal(await page.getByRole("img", { name: /^(Stopped|Rolled through|Did not stop|Unclear) \d+%/ }).count(), 1, "the share bar says the same in words");
 
       // nothing was judged in the days before, and the page says so instead of showing a change
       assert.equal(sum(stops.previous), 0);
-      await page.getByText("Nothing to compare with: the 7 days before had no vehicle judged.").waitFor();
+      await page.getByText("No earlier period to compare with.").waitFor();
       assert.equal(await page.getByTestId("change-stopped").count(), 0);
 
       // the highlights, the kinds and the reviews
@@ -1214,10 +1216,17 @@ try {
       // the fastest estimated speed: in the owner's units, with when and what, and said to be an estimate
       assert.ok(stops.fastest, "the made-up street's passes were given a fastest speed");
       const fastestFact = await page.getByTestId("fact-fastest").innerText();
-      assert.match(fastestFact, /Fastest estimated speed/);
-      assert.match(fastestFact, /about \d+ mph|almost still/);
-      assert.match(fastestFact, /rough estimate/);
-      assert.match(fastestFact, /a (car|truck|bus|bicycle|motorcycle|vehicle), \w{3} \d+ \w{3}, \d\d:\d\d/);
+      if (stops.fastest.calibrated) {
+        // the passes made while the calibration step had the road measured are in this period: a measured speed beats an estimate
+        assert.match(fastestFact, /Fastest speed/);
+        assert.match(fastestFact, /\d+ (mph|km\/h)|almost still/);
+        assert.doesNotMatch(fastestFact, /rough estimate/);
+      } else {
+        assert.match(fastestFact, /Fastest estimated speed/);
+        assert.match(fastestFact, /about \d+ mph|almost still/);
+        assert.match(fastestFact, /rough estimate/);
+      }
+      assert.match(fastestFact, /a (car|truck|bus|bicycle|motorcycle|vehicle) (just now|\d+ min ago|at \d\d:\d\d|yesterday at \d\d:\d\d|on \w{3}, \w{3} \d+(, \d{4})? at \d\d:\d\d)/);
       const kinds = page.getByTestId("data-stops-by-kind");
       await kinds.getByRole("row", { name: /^Cars / }).waitFor();
       await page.getByTestId("data-stops-reviews").waitFor();
@@ -1226,6 +1235,7 @@ try {
       // the hours: a chart with columns, the same numbers as a table, and the shares of each column
       const hours = page.getByTestId("data-stops-by-hour");
       await eventually(async () => assert.ok((await hours.locator(".recharts-bar-rectangle").count()) > 0, "the chart has columns"));
+      assert.equal(await hours.getByRole("button", { name: "Chart", exact: true }).count(), 0, "one control for the view: count, share or table");
       await hours.getByRole("button", { name: "Share", exact: true }).click();
       await hours.getByText("100%", { exact: true }).first().waitFor();
       await hours.getByRole("button", { name: "Count", exact: true }).click();
@@ -1236,18 +1246,18 @@ try {
         trs.slice(1).reduce((sum, tr) => sum + Number(tr.querySelectorAll("td")[4].textContent.replaceAll(",", "")), 0),
       );
       assert.equal(tableTotal, total, "the hours add up to the vehicles judged");
-      await hours.getByRole("button", { name: "Chart", exact: true }).click();
+      await hours.getByRole("button", { name: "Count", exact: true }).click();
       assert.ok(answer("stops", 7).by_hour.length === 24);
       assert.equal(await page.getByTestId("data-stops-by-day").count(), 1, "7 days have a day-by-day chart");
       // the day-by-day table has a column for each day's fastest estimate, and today's is the server's
       const dayCard = page.getByTestId("data-stops-by-day");
       await dayCard.getByRole("button", { name: "Table", exact: true }).click();
-      await dayCard.getByRole("columnheader", { name: "Fastest (est.)" }).waitFor();
+      await dayCard.getByRole("columnheader", { name: /^Fastest( \(est\.\))?$/ }).waitFor(); // "Fastest" once a day has a measured speed
       assert.ok(stops.by_day.at(-1).fastest, "today has a fastest estimate");
       const todayCells = await dayCard.getByRole("row").last().locator("td").allInnerTexts();
-      assert.match(todayCells.at(-1), /^(\d+ (mph|km\/h)|almost still)$/, `today's fastest is a speed (${todayCells.at(-1)})`);
+      assert.match(todayCells.at(-1), /^(≈ )?(\d+ (mph|km\/h)|almost still)$/, `today's fastest is a speed (${todayCells.at(-1)})`); // "≈" marks an estimate beside a measured day
       assert.equal(await dayCard.getByRole("row").first().locator("th").count() > 3, true);
-      await dayCard.getByRole("button", { name: "Chart", exact: true }).click();
+      await dayCard.getByRole("button", { name: "Count", exact: true }).click();
 
       // the traffic, from the same period
       const traffic = answer("traffic", 7);
@@ -1267,9 +1277,9 @@ try {
         await eventually(async () => assert.equal(answer("stops", days)?.days >= 1, true));
       }
       // the answer has arrived, but the page may not have drawn it yet (a slow machine, a busy board)
-      await eventually(async () => assert.match(await page.getByTestId("data-stops-headline").innerText(), /since /), "all time says since when");
+      await eventually(async () => assert.match(await page.getByTestId("data-range").innerText(), /^since \w{3} \d+/), "all time says since when");
       assert.equal(answer("stops", 0).previous, null, "all time has nothing before it");
-      assert.equal(await page.getByText(/^Nothing to compare with/).count(), 0, "and does not say that there is nothing to compare with");
+      assert.equal(await page.getByText(/^No earlier period to compare with/).count(), 0, "and does not say that there is nothing to compare with");
       await reload();
       await page.getByTestId("data-stops-headline").waitFor();
       assert.equal(await page.getByRole("button", { name: "All time", exact: true }).getAttribute("aria-pressed"), "true", "the period is remembered");
@@ -1279,8 +1289,8 @@ try {
       await eventually(async () => assert.equal(await page.getByRole("button", { name: "7 days", exact: true }).getAttribute("aria-pressed"), "true"));
       await shot("data");
 
-      // the link to the passes that need a look goes to the History page
-      await page.getByRole("link", { name: "Review passes on the History page" }).click();
+      // the link to the passes that need review goes to the History page
+      await page.getByRole("link", { name: /^Review passes/ }).click();
       await page.getByRole("heading", { level: 1, name: "History" }).waitFor({ state: "attached" });
       await page.unroute(/\/api\/stats\/(stops|traffic)\?/);
     });
@@ -2064,7 +2074,8 @@ try {
       for (const label of ["Stopped:", "Rolled through:", "Did not stop:", "Could not tell:"]) {
         assert.match(mailText, new RegExp(`${label}\\s+\\d+( \\(\\d+%\\))?\\n`), `${label} has a count and a share`);
       }
-      assert.match(mailText, /Fastest estimate:\s+(about \d+ (mph|km\/h)|almost still|–)/);
+      // "Fastest speed" once the calibration step has measured a pass in this period, "Fastest estimate" before that
+      assert.match(mailText, /Fastest (estimate|speed):\s+((about )?\d+ (mph|km\/h)|almost still|–)/);
       await mailCard.getByRole("button", { name: "Close the preview" }).click();
       assert.equal(await mailCard.locator("iframe").count(), 0);
       await shot("mail");

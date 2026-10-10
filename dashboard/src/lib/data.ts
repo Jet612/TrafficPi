@@ -172,10 +172,38 @@ const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Satur
 /** 0 is Monday, as the server counts them. */
 export const weekdayName = (weekday: number): string => WEEKDAYS[weekday] ?? String(weekday);
 
-/** "Oct 3 to Oct 9", or "Oct 9" for a single day. */
+/** A day with its year when the span it belongs to crosses years: "Oct 9" or "Oct 9, 2026". */
+const spanDay = (date: string, withYear: boolean): string => (withYear ? `${dayLabel(date)}, ${date.slice(0, 4)}` : dayLabel(date));
+
+/** "Oct 3 – Oct 9", or "Oct 9" for a single day; the years are said when the days are not in one: "Dec 28, 2026 – Jan 3, 2027". */
 export function rangeText(firstDate: string | undefined, lastDate: string | undefined): string {
   if (!firstDate || !lastDate) return "";
-  return firstDate === lastDate ? dayLabel(firstDate) : `${dayLabel(firstDate)} to ${dayLabel(lastDate)}`;
+  if (firstDate === lastDate) return dayLabel(firstDate);
+  const years = firstDate.slice(0, 4) !== lastDate.slice(0, 4);
+  return `${spanDay(firstDate, years)} – ${spanDay(lastDate, years)}`;
+}
+
+/** The days a period covers, said once for the whole page: "Oct 3 – Oct 9", or "since Oct 3" for all time ("since Oct 3, 2025" from an earlier year). */
+export function periodText(byDay: readonly { date: string }[], allTime: boolean): string {
+  const first = byDay[0]?.date;
+  const last = byDay.at(-1)?.date;
+  if (!allTime) return rangeText(first, last);
+  return first && last ? `since ${spanDay(first, first.slice(0, 4) !== last.slice(0, 4))}` : "";
+}
+
+/** How many of the days have anything in them: a busiest day means something only from two of them. */
+export function daysWithData(byDay: readonly { total: number }[]): number {
+  return byDay.filter((day) => day.total > 0).length;
+}
+
+/**
+ * The rows from the first one that has anything in it, so that a record that began this week does not
+ * draw a chart that is empty until then. Everything is kept when none has anything (there is nothing to
+ * cut to) or when the first has.
+ */
+export function trimEmptyLead<T extends { total: number }>(rows: readonly T[]): T[] {
+  const first = rows.findIndex((row) => row.total > 0);
+  return first <= 0 ? [...rows] : rows.slice(first);
 }
 
 /**

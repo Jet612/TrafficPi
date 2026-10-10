@@ -10,6 +10,7 @@ import {
   directionArrow,
   drawOverlay,
   groundPoint,
+  labelPx,
   updateTrails,
   type Trail,
 } from "./overlay";
@@ -126,7 +127,7 @@ function recorder() {
     save: record("save"), restore: record("restore"), clearRect: record("clearRect"),
     beginPath: record("beginPath"), moveTo: record("moveTo"), lineTo: record("lineTo"),
     stroke: record("stroke"), fill: record("fill"), closePath: record("closePath"),
-    fillRect: record("fillRect"), strokeRect: record("strokeRect"), fillText: record("fillText"),
+    fillRect: record("fillRect"), strokeRect: record("strokeRect"), fillText: record("fillText"), strokeText: record("strokeText"),
     measureText: vi.fn(() => ({ width: 40 }) as TextMetrics), setLineDash: record("setLineDash"),
     strokeStyle: "", fillStyle: "", lineWidth: 1, font: "", globalAlpha: 1,
     lineJoin: "round", lineCap: "round", textBaseline: "alphabetic",
@@ -345,5 +346,92 @@ describe("a vehicle's label with its speed (plan.md M6)", () => {
 
   it("says a vehicle that hardly moves is almost still", () => {
     expect(trackLabel({ ...truck, speed_ms: 0.1 }, true, "mph")).toBe("truck almost still");
+  });
+});
+
+describe("a label is kept inside the picture", () => {
+  const textAt = (ctx: Canvas2D) => (ctx.fillText as unknown as ReturnType<typeof vi.fn>).mock.calls as [string, number, number][];
+  const linesOnly = { boxes: false, labels: true, trails: false, lines: true, zones: false };
+
+  it("grows a little with the picture, and is never under 11 px", () => {
+    expect([200, 360, 640, 704].map(labelPx)).toEqual([11, 11, 11, 11]);
+    expect([768, 832, 1280].map(labelPx)).toEqual([12, 13, 13]);
+  });
+
+  it("moves a name that would run out of the right edge back inside it", () => {
+    const { ctx } = recorder(); // every text is 40 px wide
+    const line = { id: "l", name: "Right Counter", a: [0.99, 0.5] as [number, number], b: [0.99, 0.9] as [number, number] };
+    drawOverlay(ctx, size, { lines: [line], zones: [], tracks: [] }, linesOnly, new Map(), colors);
+    const [, x] = textAt(ctx)[0]!;
+    expect(x).toBeLessThanOrEqual(size.width - 40 - 1);
+    expect(x).toBeGreaterThan(size.width / 2);
+  });
+
+  it("moves a name that would run off the top back down, and one off the left edge right", () => {
+    const { ctx } = recorder();
+    const line = { id: "l", name: "Edge", a: [0, 0] as [number, number], b: [0.5, 0.5] as [number, number] };
+    drawOverlay(ctx, size, { lines: [line], zones: [], tracks: [] }, linesOnly, new Map(), colors);
+    const [, x, y] = textAt(ctx)[0]!;
+    expect(x).toBeGreaterThanOrEqual(1);
+    expect(y).toBeGreaterThanOrEqual(labelPx(size.width));
+  });
+
+  it("puts a vehicle's chip inside too", () => {
+    const { ctx } = recorder();
+    const options = { boxes: true, labels: true, trails: false, lines: false, zones: false };
+    drawOverlay(ctx, size, { lines: [], zones: [], tracks: [track(1, { box: [0.97, 0.001, 0.999, 0.3] })] }, options, new Map(), colors);
+    const [rect] = (ctx.fillRect as unknown as ReturnType<typeof vi.fn>).mock.calls as [number, number, number, number][];
+    expect(rect![0] + rect![2]).toBeLessThanOrEqual(size.width);
+    expect(rect![1]).toBeGreaterThanOrEqual(0);
+  });
+
+  it("draws a name as white letters with a dark outline under them, and only a vehicle's label as a filled chip", () => {
+    const { ctx, calls } = recorder();
+    const line = { id: "l", name: "Main", a: [0.2, 0.5] as [number, number], b: [0.8, 0.5] as [number, number] };
+    drawOverlay(ctx, size, { lines: [line], zones: [], tracks: [] }, linesOnly, new Map(), colors);
+    expect(calls).toContain("strokeText");
+    expect(calls).not.toContain("fillRect");
+    expect(calls.indexOf("strokeText")).toBeLessThan(calls.indexOf("fillText")); // the outline is under the letters
+  });
+
+  it("names a zone inside its outline, at its top corner", () => {
+    const { ctx } = recorder();
+    const road: LiveZone = { id: "d", name: "The road", kind: "detection", points: [[0.1, 0.4], [0.9, 0.4], [0.9, 0.9], [0.1, 0.9]] };
+    const options = { boxes: false, labels: true, trails: false, lines: false, zones: true };
+    drawOverlay(ctx, size, { lines: [], zones: [road], tracks: [] }, options, new Map(), colors);
+    const [, x, y] = textAt(ctx)[0]!;
+    expect(x).toBeGreaterThan(0.1 * size.width); // to the right of the corner
+    expect(y).toBeGreaterThan(0.4 * size.height); // below the top edge: inside, not above it
+  });
+});
+
+describe("stop signs outside the hours they are judged in", () => {
+  const sign: LiveStopSign = { id: "elm", name: "Elm Street", approach: [[0.1, 0.5], [0.5, 0.5], [0.5, 0.9], [0.1, 0.9]], a: [0.5, 0.9], b: [0.5, 0.5], direction: 1 };
+  const options = { boxes: false, labels: true, trails: false, lines: true, zones: true };
+  const draw = (paused: boolean) => {
+    const { ctx } = recorder();
+    const alphas: number[] = [];
+    // A canvas puts back what save() kept: the fake does too, so that a faint sign does not make what is drawn after it faint.
+    const kept: number[] = [];
+    (ctx.save as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => void kept.push(ctx.globalAlpha));
+    (ctx.restore as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => void (ctx.globalAlpha = kept.pop() ?? 1));
+    (ctx.stroke as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => void alphas.push(ctx.globalAlpha));
+    (ctx.fillText as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => void alphas.push(-ctx.globalAlpha));
+    drawOverlay(ctx, size, { lines: [], zones: [], tracks: [], stopSigns: [sign], stopsPaused: paused }, options, new Map(), colors);
+    const texts = (ctx.fillText as unknown as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0] as string);
+    return { alphas, texts };
+  };
+
+  it("is drawn at full strength while it is judging", () => {
+    const { alphas, texts } = draw(false);
+    expect(alphas.filter((a) => a > 0).every((a) => a === 1)).toBe(true);
+    expect(texts).toEqual(["Elm Street"]);
+  });
+
+  it("is drawn faint, and says that it is paused, while it is not", () => {
+    const { alphas, texts } = draw(true);
+    expect(alphas.filter((a) => a > 0).every((a) => a < 1)).toBe(true); // the outline, the line and the arrow
+    expect(texts).toEqual(["Elm Street · paused"]);
+    expect(alphas.filter((a) => a < 0)).toEqual([-1]); // but the words are not faint
   });
 });

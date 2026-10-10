@@ -3,9 +3,11 @@
 import Link from "next/link";
 import { ArrowDown, ArrowUp, Minus } from "lucide-react";
 import { StackedChartCard } from "@/components/stacked-chart";
-import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardBody, CardHeader, CardSubtitle, CardTitle } from "@/components/ui/card";
+import { HowItWorks } from "@/components/ui/how-it-works";
 import { OUTCOME_ICON } from "@/components/ui/outcome-icon";
 import { ShareBar } from "@/components/ui/share-bar";
+import { METRIC_SIZE } from "@/components/ui/stat";
 import { cn } from "@/lib/cn";
 import { classLabel } from "@/lib/classes";
 import {
@@ -16,12 +18,10 @@ import {
   changeInPoints,
   changeTone,
   comparedWith,
-  dayTitle,
   outcomeDayRows,
   outcomeHourRows,
   peak,
   pointsText,
-  rangeText,
   rateExtremes,
   sharesOf,
   speedText,
@@ -36,6 +36,7 @@ import {
 } from "@/lib/data";
 import { ESTIMATE_CAVEAT, MEASURED_CAVEAT, fastestText, speedPhrase, speedShort } from "@/lib/speed";
 import { formatCount, hourRange } from "@/lib/format";
+import { useNow } from "@/lib/hooks";
 import { OUTCOMES, OUTCOME_LABEL, signLabel } from "@/lib/stops";
 import type { Profile, StopOutcome, StopStats } from "@/lib/types";
 
@@ -60,8 +61,8 @@ export function StopStatsSection({ stats, period, profile, busy }: { stats: Stop
       <HowDriversDid stats={stats} period={period} busy={busy} />
       <Highlights stats={stats} />
       <StackedChartCard
-        title="When it happens"
-        subtitle={busiest ? `Busiest hour ${hourRange(busiest.item.hour)} with ${plural(busiest.value, "vehicle")}` : undefined}
+        title="Stop-sign results by hour"
+        subtitle={busiest ? `Busiest hour ${hourRange(busiest.item.hour)} · ${plural(busiest.value, "vehicle")}` : undefined}
         rows={outcomeHourRows(stats.by_hour)}
         series={OUTCOME_SERIES}
         unit="vehicle"
@@ -77,8 +78,10 @@ export function StopStatsSection({ stats, period, profile, busy }: { stats: Stop
       />
       {days > 1 && (
         <StackedChartCard
-          title="Day by day"
+          title="Stop-sign results by day"
           subtitle="Today is the last column, and it is not over yet."
+          startAtData
+          maxBar={64}
           rows={outcomeDayRows(stats.by_day)}
           series={OUTCOME_SERIES}
           unit="vehicle"
@@ -104,14 +107,13 @@ export function StopStatsSection({ stats, period, profile, busy }: { stats: Stop
           testId="data-stops-by-day"
         />
       )}
-      <div className="grid gap-4 lg:grid-cols-2">
+      {/* The small cards, two to a row, with a last one that would be alone given the whole row: no half-empty rows. */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:[&>:last-child:nth-child(odd)]:col-span-2">
         <BreakdownTable title="By kind of vehicle" firstHeader="Kind" rows={kinds} testId="data-stops-by-kind" />
-        {signs.length > 1 && <BreakdownTable title="By stop sign" firstHeader="Stop sign" rows={signs} testId="data-stops-by-sign" />}
-        {days >= 14 && <BreakdownTable title="By day of the week" firstHeader="Day" rows={weekdays} testId="data-stops-by-weekday" />}
-      </div>
-      <div className="grid gap-4 lg:grid-cols-2">
         <HowTheyStop stats={stats} />
         <Reviews stats={stats} />
+        {signs.length > 1 && <BreakdownTable title="By stop sign" firstHeader="Stop sign" rows={signs} testId="data-stops-by-sign" />}
+        {days >= 14 && <BreakdownTable title="By day of the week" firstHeader="Day" rows={weekdays} testId="data-stops-by-weekday" />}
       </div>
     </>
   );
@@ -123,20 +125,16 @@ function HowDriversDid({ stats, period, busy }: { stats: StopStats; period: Data
   const total = totalOf(stats.totals);
   const before = comparedWith(period);
   const rate = stopRate(stats.totals);
-  const first = stats.by_day[0]?.date;
-  const last = stats.by_day.at(-1)?.date;
   const falseAlarms = stats.review.false_alarms;
   const nothingBefore = before !== null && stats.previous !== null && totalOf(stats.previous) === 0;
   return (
     <Card aria-busy={busy}>
       <CardHeader>
         <div>
-          <CardTitle as="h3">How drivers did</CardTitle>
-          <p className="mt-0.5 text-sm text-ink-2" data-testid="data-stops-headline">
-            {total === 0
-              ? "No vehicle has been judged at a stop sign in this time."
-              : `${plural(total, "vehicle was", "vehicles were")} judged, ${stats.all_time ? `since ${rangeText(first, first)}` : rangeText(first, last)}.`}
-          </p>
+          <CardTitle as="h3">Stop-sign results</CardTitle>
+          <CardSubtitle data-testid="data-stops-headline">
+            {total === 0 ? "No vehicle has reached a stop sign in this time." : `${plural(total, "vehicle")} reached a stop sign.`}
+          </CardSubtitle>
         </div>
       </CardHeader>
       <CardBody className={cn("grid gap-4 transition-opacity", busy && "opacity-60")}>
@@ -154,26 +152,26 @@ function HowDriversDid({ stats, period, busy }: { stats: StopStats; period: Data
             </li>
           )}
           {falseAlarms > 0 && <li>{plural(falseAlarms, "vehicle")} you called false alarms {falseAlarms === 1 ? "is" : "are"} left out.</li>}
-          {nothingBefore && total > 0 && <li>Nothing to compare with: {before} had no vehicle judged.</li>}
+          {nothingBefore && total > 0 && <li>No earlier period to compare with.</li>}
         </ul>
       </CardBody>
     </Card>
   );
 }
 
+/** One outcome: its icon and name, its share as the number the tile is about, how many of how many, and how it moved. All four are the same size: no outcome is the hero. */
 function OutcomeTile({ outcome, counts, before, beforeText }: { outcome: StopOutcome; counts: OutcomeCounts; before: OutcomeCounts | null; beforeText: string | null }) {
   const total = totalOf(counts);
   const share = sharesOf(counts)[outcome];
   const delta = beforeText === null ? null : changeInPoints(counts, before, outcome);
   const Icon = OUTCOME_ICON[outcome];
-  const hero = outcome === "stopped"; // the one number this page leads with
   return (
-    <li className={cn("min-w-0 rounded-xl border border-edge bg-surface p-4", (hero || outcome === "indeterminate") && "col-span-2 lg:col-span-1")} data-outcome={outcome}>
+    <li className="min-w-0 rounded-xl bg-sunken p-4" data-outcome={outcome}>
       <p className="flex items-center gap-1.5 text-sm text-ink-2">
         <Icon className="size-4 shrink-0" style={{ color: OUTCOME_COLOR[outcome] }} aria-hidden="true" />
         {OUTCOME_LABEL[outcome]}
       </p>
-      <p className={cn("mt-1.5 font-semibold leading-none text-ink", hero ? "text-5xl" : "text-3xl")} data-testid={`share-${outcome}`}>
+      <p className={cn(METRIC_SIZE.tile, "mt-1.5 text-ink")} data-testid={`share-${outcome}`}>
         {total === 0 ? "–" : `${share}%`}
       </p>
       <p className="mt-2 text-sm text-ink-2" data-testid={`count-${outcome}`}>
@@ -209,13 +207,14 @@ interface Fact {
 }
 
 function Highlights({ stats }: { stats: StopStats }) {
+  const now = useNow(60_000);
   const total = totalOf(stats.totals);
   const facts: Fact[] = [];
   const hour = peak(stats.by_hour, totalOf);
   if (hour) {
     facts.push({
       key: "busiest-hour",
-      label: "Busiest hour",
+      label: "Busiest hour at stop signs",
       value: hourRange(hour.item.hour),
       note: `${plural(hour.value, "vehicle")}, ${percentOf(hour.value, total)}% of all`,
     });
@@ -224,7 +223,7 @@ function Highlights({ stats }: { stats: StopStats }) {
   if (misses) {
     facts.push({
       key: "most-misses",
-      label: "Most rolls and misses",
+      label: "Most that did not fully stop",
       value: hourRange(misses.item.hour),
       note: `${plural(misses.value, "vehicle")} rolled through or did not stop`,
     });
@@ -237,21 +236,9 @@ function Highlights({ stats }: { stats: StopStats }) {
       value: hourRange(byHour.lowest.item.hour),
       note: `${byHour.lowest.percent}% of ${byHour.lowest.of} stopped`,
     });
-    if (byHour.highest) {
-      facts.push({
-        key: "highest-hour",
-        label: "Hour with the highest stop rate",
-        value: hourRange(byHour.highest.item.hour),
-        note: `${byHour.highest.percent}% of ${byHour.highest.of} stopped`,
-      });
-    }
-  }
-  const day = stats.by_day.length > 1 ? peak(stats.by_day, totalOf) : null;
-  if (day) {
-    facts.push({ key: "busiest-day", label: "Busiest day", value: dayTitle(day.item.date), note: plural(day.value, "vehicle") });
   }
   if (stats.fastest) {
-    const fastest = fastestText(stats.fastest, stats.units, stats.timezone);
+    const fastest = fastestText(stats.fastest, stats.units, stats.timezone, now);
     const measured = stats.fastest.calibrated;
     facts.push({
       key: "fastest",
@@ -264,18 +251,10 @@ function Highlights({ stats }: { stats: StopStats }) {
   if (byKind) {
     facts.push({
       key: "lowest-kind",
-      label: "Kind that stops least",
+      label: "Least likely to stop",
       value: classLabel(byKind.lowest.item.label),
       note: `${byKind.lowest.percent}% of ${byKind.lowest.of} stopped`,
     });
-    if (byKind.highest) {
-      facts.push({
-        key: "highest-kind",
-        label: "Kind that stops most",
-        value: classLabel(byKind.highest.item.label),
-        note: `${byKind.highest.percent}% of ${byKind.highest.of} stopped`,
-      });
-    }
   }
   return (
     <Card>
@@ -298,11 +277,13 @@ function Highlights({ stats }: { stats: StopStats }) {
             ))}
           </dl>
         )}
-        <p className="mt-4 text-sm text-ink-3">
-          An hour or a kind is compared only when at least {MIN_SAMPLE} of its vehicles could be judged, so that one out of one is not &ldquo;100%&rdquo;. A stop rate is the
-          share of those vehicles that stopped.
-          {stats.fastest && ` ${stats.fastest.calibrated ? MEASURED_CAVEAT : ESTIMATE_CAVEAT} Each day's fastest is in the table of the day-by-day card.`}
-        </p>
+        <HowItWorks title="How these are calculated" className="mt-4">
+          <p>
+            An hour or a kind is compared only when at least {MIN_SAMPLE} of its vehicles could be judged, so that one out of one is not &ldquo;100%&rdquo;. A stop rate is the share
+            of those vehicles that stopped.
+          </p>
+          {stats.fastest && <p>{`${stats.fastest.calibrated ? MEASURED_CAVEAT : ESTIMATE_CAVEAT} Each day's fastest is in the table of the day-by-day card.`}</p>}
+        </HowItWorks>
       </CardBody>
     </Card>
   );
@@ -374,13 +355,14 @@ function HowTheyStop({ stats }: { stats: StopStats }) {
   // A speed measured on the calibrated road is used when there is one; otherwise the estimate from
   // the vehicle's size.
   const slowedTo = (measuredMs: number | null, sizesPerSecond: number | null): string | null =>
-    measuredMs !== null
+    typeof measuredMs === "number"
       ? `slowed to ${speedPhrase(measuredMs, stats.units, true)}`
       : sizesPerSecond === null
         ? null
         : `slowed to ${speedText(sizesPerSecond, stats.units)}`;
-  const measured = rolling_min_speed_ms !== null || did_not_stop_min_speed_ms !== null;
-  const estimated = (rolling_min_speed_ms === null && rolling_min_speed !== null) || (did_not_stop_min_speed_ms === null && did_not_stop_min_speed !== null);
+  const measured = typeof rolling_min_speed_ms === "number" || typeof did_not_stop_min_speed_ms === "number";
+  const estimated =
+    (typeof rolling_min_speed_ms !== "number" && typeof rolling_min_speed === "number") || (typeof did_not_stop_min_speed_ms !== "number" && typeof did_not_stop_min_speed === "number");
   const lines: { outcome: StopOutcome; text: string | null }[] = [
     { outcome: "stopped", text: stopped_hold_s === null ? null : `stood still for ${stopped_hold_s.toFixed(1)} s` },
     { outcome: "rolling", text: slowedTo(rolling_min_speed_ms, rolling_min_speed) },
@@ -430,24 +412,23 @@ function Reviews({ stats }: { stats: StopStats }) {
   return (
     <Card data-testid="data-stops-reviews">
       <CardHeader>
-        <CardTitle as="h3">Your reviews</CardTitle>
+        <CardTitle as="h3">Review progress</CardTitle>
       </CardHeader>
       <CardBody>
         <dl className="grid grid-cols-3 gap-3">
           <ReviewCount label="Confirmed" value={confirmed} />
           <ReviewCount label="False alarms" value={false_alarms} />
-          <ReviewCount label="Waiting for a look" value={waiting} />
+          <ReviewCount label="Needs review" value={waiting} />
         </dl>
         <p className="mt-3 text-sm text-ink-2">
           {looked === 0
-            ? "Nothing has been looked at in this time."
-            : `${percentOf(false_alarms, looked)}% of the ${plural(looked, "vehicle")} you looked at were false alarms: how often the camera got it wrong.`}{" "}
+            ? "No reviews yet."
+            : `${percentOf(false_alarms, looked)}% of the ${plural(looked, "vehicle")} you reviewed were false alarms: how often the camera got it wrong.`}{" "}
           <Link href="/history/" className="font-medium text-accent underline underline-offset-2">
-            Review passes on the History page
+            Review passes &rarr;
           </Link>
-          .
         </p>
-        <p className="mt-1 text-sm text-ink-3">Only the vehicles that rolled through, did not stop or could not be told are kept for a look.</p>
+        <p className="mt-1 text-sm text-ink-3">Only rolled-through, did-not-stop and unclear passes are queued for review.</p>
       </CardBody>
     </Card>
   );

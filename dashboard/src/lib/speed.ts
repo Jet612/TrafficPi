@@ -1,3 +1,4 @@
+import { atText } from "./format";
 import type { SpeedEstimate } from "./types";
 
 /**
@@ -71,29 +72,13 @@ const ARTICLES: Record<string, string> = { car: "a car", truck: "a truck", bus: 
 /** "a car", "a bus", or "a vehicle" for a kind this page has no word for. */
 export const aKind = (label: string): string => ARTICLES[label] ?? "a vehicle";
 
-/** "Fri 9 Oct, 17:42": when something happened, on the camera's clock. */
-export function passedText(ms: number, timeZone: string): string {
-  let zone = timeZone;
-  try {
-    new Intl.DateTimeFormat("en-GB", { timeZone });
-  } catch {
-    zone = "UTC";
-  }
-  const parts = Object.fromEntries(
-    new Intl.DateTimeFormat("en-GB", { timeZone: zone, weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
-      .formatToParts(new Date(ms))
-      .map((part) => [part.type, part.value]),
-  );
-  return `${parts.weekday} ${parts.day} ${parts.month}, ${parts.hour}:${parts.minute}`;
-}
-
 /**
  * The fastest speed as a headline and a note: "about 30 mph" (an estimate) or "30 mph" (measured on a
- * calibrated road), and "a car, Fri 9 Oct, 17:42".
+ * calibrated road), and "a car on Fri, Oct 9 at 17:42" (how a moment reads everywhere: lib/format.ts).
  */
-export function fastestText(estimate: SpeedEstimate, units: SpeedUnits, timeZone: string): { speed: string; note: string } {
+export function fastestText(estimate: SpeedEstimate, units: SpeedUnits, timeZone: string, nowMs: number): { speed: string; note: string } {
   return {
     speed: speedPhrase(estimate.speed_ms, units, estimate.calibrated),
-    note: `${aKind(estimate.label)}, ${passedText(estimate.at, timeZone)}`,
+    note: `${aKind(estimate.label)} ${atText(estimate.at, timeZone, nowMs)}`,
   };
 }

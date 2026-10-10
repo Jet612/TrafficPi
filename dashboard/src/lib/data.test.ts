@@ -8,6 +8,9 @@ import {
   approximateSpeed,
   asShares,
   averagePerFinishedDay,
+  daysWithData,
+  periodText,
+  trimEmptyLead,
   changeInPoints,
   changeTone,
   classSeries,
@@ -244,8 +247,9 @@ describe("days", () => {
   });
 
   it("make a range in words", () => {
-    expect(rangeText("2026-10-03", "2026-10-09")).toBe("Oct 3 to Oct 9");
+    expect(rangeText("2026-10-03", "2026-10-09")).toBe("Oct 3 – Oct 9");
     expect(rangeText("2026-10-09", "2026-10-09")).toBe("Oct 9");
+    expect(rangeText("2026-12-28", "2027-01-03")).toBe("Dec 28, 2026 – Jan 3, 2027"); // days in two years say both
     expect(rangeText(undefined, "2026-10-09")).toBe("");
   });
 
@@ -314,5 +318,33 @@ describe("rows for the charts", () => {
     expect(b?.values.stopped).toBe(0);
     expect(b?.total).toBe(0);
     expect(rows[0]?.values.stopped).toBe(3); // the rows given are not changed
+  });
+});
+
+describe("the period said once", () => {
+  const days = (...dates: string[]) => dates.map((date) => ({ date }));
+
+  it("is the first and the last day, or since the first for all time", () => {
+    expect(periodText(days("2026-10-03", "2026-10-04", "2026-10-09"), false)).toBe("Oct 3 – Oct 9");
+    expect(periodText(days("2026-10-09"), false)).toBe("Oct 9");
+    expect(periodText(days("2026-10-03", "2026-10-09"), true)).toBe("since Oct 3");
+    expect(periodText(days("2025-10-03", "2026-10-09"), true)).toBe("since Oct 3, 2025");
+    expect(periodText([], false)).toBe("");
+  });
+});
+
+describe("the days that have anything", () => {
+  it("are counted, so that a busiest day is told only from two", () => {
+    expect(daysWithData([{ total: 0 }, { total: 0 }, { total: 1444 }])).toBe(1);
+    expect(daysWithData([{ total: 3 }, { total: 0 }, { total: 5 }])).toBe(2);
+    expect(daysWithData([])).toBe(0);
+  });
+
+  it("start a chart where the record does", () => {
+    const rows = [{ total: 0, id: "a" }, { total: 0, id: "b" }, { total: 4, id: "c" }, { total: 0, id: "d" }, { total: 9, id: "e" }];
+    expect(trimEmptyLead(rows).map((row) => row.id)).toEqual(["c", "d", "e"]); // a gap after the start stays a gap
+    expect(trimEmptyLead(rows.slice(2)).map((row) => row.id)).toEqual(["c", "d", "e"]);
+    expect(trimEmptyLead([{ total: 0 }, { total: 0 }])).toHaveLength(2); // nothing to cut to
+    expect(trimEmptyLead([])).toEqual([]);
   });
 });

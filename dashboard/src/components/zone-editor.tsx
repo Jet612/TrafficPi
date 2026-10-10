@@ -12,10 +12,10 @@ import { ZoneInspector } from "@/components/zone-inspector";
 import { ApiError, api, referencePictureUrl, snapshotUrl } from "@/lib/api";
 import { believedCells, defaultLengthUnit, type LengthUnit } from "@/lib/calibration";
 import { addCalibration, addLine, addStop, addZone, deleteElement, type ZoneKind } from "@/lib/editor";
-import { usePersistentState } from "@/lib/hooks";
+import { useNow, usePersistentState } from "@/lib/hooks";
 import { useSpeedUnits } from "@/lib/use-speed-units";
 import { useCalibrationReport } from "@/lib/use-calibration-report";
-import { formatDateTime } from "@/lib/format";
+import { atText } from "@/lib/format";
 import { canRedo, canUndo, editorReducer, initialEditorState } from "@/lib/editor-state";
 import {
   MAX_ELEMENTS,
@@ -55,6 +55,7 @@ export function ZoneEditor() {
   const fileInput = useRef<HTMLInputElement>(null);
   const introId = useId();
   const zone = useStats().today?.timezone ?? "UTC";
+  const now = useNow(60_000);
   // Lengths are typed in the unit a person measures a road in: the one they chose, else feet for a
   // reader of miles an hour and metres for the rest.
   const [chosenUnit, setChosenUnit] = usePersistentState<LengthUnit | null>("trafficpi.lengthUnit", null);
@@ -349,9 +350,7 @@ export function ZoneEditor() {
                         "No picture."
                       ) : saved.referenceAt ? (
                         <>
-                          Picture saved{" "}
-                          <time dateTime={new Date(saved.referenceAt).toISOString()}>{formatDateTime(saved.referenceAt, zone)}</time>
-                          {zone !== "UTC" && <> ({zone.replace("_", " ")})</>}.
+                          Picture saved <time dateTime={new Date(saved.referenceAt).toISOString()}>{atText(saved.referenceAt, zone, now)}</time>.
                         </>
                       ) : (
                         "This is the live view, not saved."
@@ -421,9 +420,10 @@ export function ZoneEditor() {
                 />
               </div>
 
-              <div aria-live="polite" className="mt-3 min-h-6 text-sm">
+              {/* No room is kept for a message that is not there: the live region is empty until there is one, and the message brings its own space. */}
+              <div aria-live="polite" className="text-sm">
                 {outcome && (
-                  <p role={outcome.kind === "error" ? "alert" : undefined} className="text-ink">
+                  <p role={outcome.kind === "error" ? "alert" : undefined} className="mt-3 text-ink">
                     <span
                       className={`mr-1.5 inline-block size-2 rounded-full align-middle ${outcome.kind === "error" ? "bg-critical" : "bg-good"}`}
                       aria-hidden="true"

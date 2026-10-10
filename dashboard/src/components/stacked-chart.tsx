@@ -14,10 +14,11 @@ import {
   type TooltipContentProps,
 } from "recharts";
 import type { LucideIcon } from "lucide-react";
-import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardBody, CardHeader, CardSubtitle, CardTitle } from "@/components/ui/card";
+import { ClassIcon } from "@/components/ui/class-icon";
 import { Segmented } from "@/components/ui/segmented";
 import { cn } from "@/lib/cn";
-import { asShares, peak, type ChartRow, type ChartSeries } from "@/lib/data";
+import { asShares, peak, trimEmptyLead, type ChartRow, type ChartSeries } from "@/lib/data";
 import { formatCount } from "@/lib/format";
 import { axisTicks, axisWidth, niceMax } from "@/lib/hourly";
 
@@ -44,6 +45,12 @@ export interface StackedChartProps {
   icons?: Readonly<Record<string, LucideIcon>>;
   /** Offer the shares of each column as well as the counts. */
   shareToggle?: boolean;
+  /** The series are kinds of vehicle: the key shows each kind's icon. */
+  kinds?: boolean;
+  /** Begin at the first column that has anything in it (a day chart of a record that began this week). */
+  startAtData?: boolean;
+  /** The widest a bar may be, in pixels: a column of an hourly chart is slim, one of a daily chart has room. */
+  maxBar?: number;
   /** How many axis labels to skip between two that are shown. */
   interval?: number;
   emptyText: string;
@@ -65,11 +72,14 @@ export interface StackedChartProps {
 export function StackedChartCard({
   title,
   subtitle,
-  rows,
+  rows: allRows,
   series,
   unit,
   icons,
   shareToggle = false,
+  kinds = false,
+  startAtData = false,
+  maxBar = 48,
   interval = 0,
   emptyText,
   firstColumn,
@@ -78,13 +88,16 @@ export function StackedChartCard({
   busy = false,
   testId,
 }: StackedChartProps) {
-  const [view, setView] = useState<"chart" | "table">("chart");
-  const [mode, setMode] = useState<"count" | "share">("count");
-  const shares = mode === "share";
+  // One control for how to look at it: the counts or the shares as a chart, or the table. (Two controls side by side read as one.)
+  const [shown, setShown] = useState<"chart" | "count" | "share" | "table">(shareToggle ? "count" : "chart");
+  const view = shown === "table" ? "table" : "chart";
+  const shares = shown === "share";
+  const columns = useMemo(() => (startAtData ? trimEmptyLead(allRows) : allRows), [allRows, startAtData]);
+  const began = startAtData && columns.length < allRows.length ? columns[0]?.title : undefined;
 
   const data = useMemo<DataRow[]>(() => {
-    const asPercent = asShares(rows);
-    return rows.map((row, index) => {
+    const asPercent = asShares(columns);
+    return columns.map((row, index) => {
       const fields: Record<string, number> = {};
       for (const one of series) {
         fields[countField(one.key)] = row.values[one.key] ?? 0;
@@ -92,9 +105,9 @@ export function StackedChartCard({
       }
       return { id: row.id, label: row.label, title: row.title, total: row.total, ...fields };
     });
-  }, [rows, series]);
+  }, [columns, series]);
 
-  const highest = useMemo(() => peak(rows, (row) => row.total), [rows]);
+  const highest = useMemo(() => peak(columns, (row) => row.total), [columns]);
   const max = shares ? 100 : niceMax(highest?.value ?? 0);
   const ticks = shares ? [0, 25, 50, 75, 100] : axisTicks(max);
   const empty = highest === null;
@@ -105,37 +118,38 @@ export function StackedChartCard({
       <CardHeader>
         <div>
           <CardTitle as="h3">{title}</CardTitle>
-          {subtitle && <p className="mt-0.5 text-sm text-ink-2">{subtitle}</p>}
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {shareToggle && view === "chart" && (
-            <Segmented
-              label="Count or share"
-              value={mode}
-              options={[
-                { value: "count", label: "Count" },
-                { value: "share", label: "Share" },
-              ]}
-              onChange={setMode}
-            />
+          {(subtitle || began) && (
+            <CardSubtitle>
+              {subtitle}
+              {subtitle && began ? " " : ""}
+              {began && `Counting began ${began}.`}
+            </CardSubtitle>
           )}
-          <Segmented
-            label="Show as"
-            value={view}
-            options={[
-              { value: "chart", label: "Chart" },
-              { value: "table", label: "Table" },
-            ]}
-            onChange={setView}
-          />
         </div>
+        <Segmented
+          label="Show as"
+          value={shown}
+          options={
+            shareToggle
+              ? [
+                  { value: "count", label: "Count" },
+                  { value: "share", label: "Share" },
+                  { value: "table", label: "Table" },
+                ]
+              : [
+                  { value: "chart", label: "Chart" },
+                  { value: "table", label: "Table" },
+                ]
+          }
+          onChange={setShown}
+        />
       </CardHeader>
       <CardBody className={cn("transition-opacity", busy && "opacity-60")}>
         {view === "table" ? (
-          <ChartTable rows={rows} series={series} firstColumn={firstColumn} caption={title} extraColumns={extraColumns} />
+          <ChartTable rows={allRows} series={series} firstColumn={firstColumn} caption={title} extraColumns={extraColumns} />
         ) : (
           <>
-            {series.length > 1 && <Legend series={series} icons={icons} />}
+            {series.length > 1 && <Legend series={series} icons={icons} kinds={kinds} />}
             <p className="sr-only" id={describedBy}>
               {summary} Switch to the table for every value.
             </p>
@@ -158,7 +172,7 @@ export function StackedChartCard({
                   <Tooltip
                     isAnimationActive={false}
                     cursor={{ fill: "var(--ink)", fillOpacity: 0.06 }}
-                    content={(props) => <ChartTooltip {...props} series={series} unit={unit} />}
+                    content={(props) => <ChartTooltip {...props} series={series} unit={unit} kinds={kinds} />}
                   />
                   <BarStack radius={[4, 4, 0, 0]}>
                     {series.map((one) => (
@@ -168,7 +182,7 @@ export function StackedChartCard({
                         fill={one.color}
                         stroke="var(--surface)"
                         strokeWidth={2}
-                        maxBarSize={20}
+                        maxBarSize={maxBar}
                         isAnimationActive={false}
                       />
                     ))}
@@ -192,7 +206,7 @@ export function StackedChartCard({
   );
 }
 
-function Legend({ series, icons }: { series: readonly ChartSeries[]; icons?: Readonly<Record<string, LucideIcon>> }) {
+function Legend({ series, icons, kinds }: { series: readonly ChartSeries[]; icons?: Readonly<Record<string, LucideIcon>>; kinds: boolean }) {
   return (
     <ul className="mb-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-ink-2" aria-label="Key">
       {series.map((one) => {
@@ -201,6 +215,8 @@ function Legend({ series, icons }: { series: readonly ChartSeries[]; icons?: Rea
           <li key={one.key} className="inline-flex items-center gap-1.5">
             {Icon ? (
               <Icon className="size-4 shrink-0" style={{ color: one.color }} aria-hidden="true" />
+            ) : kinds ? (
+              <ClassIcon name={one.key} />
             ) : (
               <span className="size-2.5 rounded-[3px]" style={{ background: one.color }} aria-hidden="true" />
             )}
@@ -212,7 +228,7 @@ function Legend({ series, icons }: { series: readonly ChartSeries[]; icons?: Rea
   );
 }
 
-function ChartTooltip({ active, payload, series, unit }: TooltipContentProps & { series: readonly ChartSeries[]; unit: string }) {
+function ChartTooltip({ active, payload, series, unit, kinds }: TooltipContentProps & { series: readonly ChartSeries[]; unit: string; kinds: boolean }) {
   if (!active || !payload || payload.length === 0) return null;
   const row = payload[0]?.payload as DataRow | undefined;
   if (!row) return null;
@@ -225,7 +241,7 @@ function ChartTooltip({ active, payload, series, unit }: TooltipContentProps & {
         <ul className="mt-1.5 flex flex-col gap-1">
           {present.map((one) => (
             <li key={one.key} className="flex items-center gap-2">
-              <span className="h-[3px] w-3 shrink-0 rounded-full" style={{ background: one.color }} aria-hidden="true" />
+              {kinds ? <ClassIcon name={one.key} /> : <span className="h-[3px] w-3 shrink-0 rounded-full" style={{ background: one.color }} aria-hidden="true" />}
               <span className="text-ink-2">{one.label}</span>
               <span className="ml-auto pl-3 font-medium tabular-nums text-ink">
                 {formatCount(row[countField(one.key)] ?? 0)}

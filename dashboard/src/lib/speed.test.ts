@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { ESTIMATE_CAVEAT, MEASURED_CAVEAT, aKind, fastestText, inUnits, measuredSpeed, passedText, roughSpeed, speedPhrase, speedShort, SIZE_METRES } from "./speed";
+import { ESTIMATE_CAVEAT, MEASURED_CAVEAT, aKind, fastestText, inUnits, measuredSpeed, roughSpeed, speedPhrase, speedShort, SIZE_METRES } from "./speed";
 
 const cases = JSON.parse(readFileSync(new URL("../../../backend/tests/data/speed_cases.json", import.meta.url), "utf8")) as {
   rough: { value: number; rough: number }[];
@@ -71,32 +71,33 @@ describe("units", () => {
 });
 
 describe("what was passed", () => {
-  it("is told on the camera's clock", () => {
-    const at = Date.UTC(2026, 9, 9, 21, 42); // 17:42 in New York
-    expect(passedText(at, "America/New_York")).toBe("Fri 9 Oct, 17:42");
-    expect(passedText(at, "UTC")).toBe("Fri 9 Oct, 21:42");
-    expect(passedText(at, "Asia/Kolkata")).toBe("Sat 10 Oct, 03:12");
-  });
-
-  it("falls back to UTC for a zone nobody knows", () => {
-    expect(passedText(Date.UTC(2026, 9, 9, 21, 42), "Mars/Olympus")).toBe("Fri 9 Oct, 21:42");
-  });
-
   it("names a kind with its article, and a vehicle for one it has no word for", () => {
     expect(aKind("car")).toBe("a car");
     expect(aKind("bus")).toBe("a bus");
     expect(aKind("boat")).toBe("a vehicle");
   });
 
+  it("tells when on the camera's clock, as a moment reads everywhere else", () => {
+    const fastest = { speed_ms: 13.5, label: "bus", at: Date.UTC(2026, 9, 9, 21, 42), calibrated: false }; // 17:42 in New York
+    expect(fastestText(fastest, "mph", "UTC", Date.UTC(2026, 9, 9, 22, 42)).note).toBe("a bus at 21:42"); // the same day
+    expect(fastestText(fastest, "mph", "UTC", Date.UTC(2026, 9, 10, 9)).note).toBe("a bus yesterday at 21:42");
+    expect(fastestText(fastest, "mph", "Asia/Kolkata", Date.UTC(2026, 9, 12)).note).toBe("a bus on Sat, Oct 10 at 03:12"); // the next morning there
+    expect(fastestText(fastest, "mph", "UTC", Date.UTC(2026, 9, 9, 21, 52)).note).toBe("a bus 10 min ago");
+    expect(fastestText(fastest, "mph", "UTC", Date.UTC(2027, 0, 5)).note).toBe("a bus on Fri, Oct 9, 2026 at 21:42"); // another year says its year
+    expect(fastestText({ ...fastest, label: "boat" }, "mph", "Mars/Olympus", Date.UTC(2026, 9, 12)).note).toBe("a vehicle on Fri, Oct 9 at 21:42"); // a zone nobody knows is UTC
+  });
+
   it("makes a headline and a note of the fastest estimate", () => {
     const fastest = { speed_ms: 13.5, label: "car", at: Date.UTC(2026, 9, 9, 21, 42), calibrated: false };
-    expect(fastestText(fastest, "mph", "America/New_York")).toEqual({ speed: "about 30 mph", note: "a car, Fri 9 Oct, 17:42" });
-    expect(fastestText(fastest, "kmh", "America/New_York").speed).toBe("about 50 km/h");
+    const later = Date.UTC(2026, 9, 12, 12); // three days on
+    expect(fastestText(fastest, "mph", "America/New_York", later)).toEqual({ speed: "about 30 mph", note: "a car on Fri, Oct 9 at 17:42" });
+    expect(fastestText(fastest, "kmh", "America/New_York", later).speed).toBe("about 50 km/h");
   });
 
   it("says a speed measured on a calibrated road without an about, and to the whole mile", () => {
     const measured = { speed_ms: 12.5, label: "truck", at: Date.UTC(2026, 9, 9, 21, 42), calibrated: true };
-    expect(fastestText(measured, "mph", "America/New_York")).toEqual({ speed: "28 mph", note: "a truck, Fri 9 Oct, 17:42" });
-    expect(fastestText(measured, "kmh", "America/New_York").speed).toBe("45 km/h");
+    const later = Date.UTC(2026, 9, 12, 12);
+    expect(fastestText(measured, "mph", "America/New_York", later)).toEqual({ speed: "28 mph", note: "a truck on Fri, Oct 9 at 17:42" });
+    expect(fastestText(measured, "kmh", "America/New_York", later).speed).toBe("45 km/h");
   });
 });
