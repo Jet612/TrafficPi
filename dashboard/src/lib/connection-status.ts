@@ -1,4 +1,5 @@
 import type { LiveSnapshot } from "./live";
+import { describeThrottle } from "./severity";
 import type { StatusLevel } from "@/components/ui/status";
 
 export interface HeaderStatus {
@@ -11,7 +12,17 @@ export interface HeaderStatus {
   detail?: string;
 }
 
-/** What the badge in the header says, from the state of the live socket. */
+/** "the CPU speed is capped; it is running hot" as a sentence. */
+const sentence = (flags: readonly string[]): string => {
+  const text = flags.map(describeThrottle).join("; ");
+  return `${text.charAt(0).toUpperCase()}${text.slice(1)}.`;
+};
+
+/**
+ * What the pill in the header says, from the state of the live socket and of the Pi: live and how
+ * fast, or what is wrong. The Pi slowing itself down (too hot, or a weak supply) turns it amber, so
+ * that the page does not say all is well while the board is struggling.
+ */
 export function deriveStatus(snapshot: LiveSnapshot): HeaderStatus {
   const { connection, state, visionOnline } = snapshot;
   if (connection === "closed") return { level: "neutral", label: "Not connected" };
@@ -27,7 +38,14 @@ export function deriveStatus(snapshot: LiveSnapshot): HeaderStatus {
   if (!state.camera.ok) {
     return { level: "critical", label: "Camera offline", detail: state.camera.error ?? undefined };
   }
-  return { level: "good", label: `Live · ${state.fps.toFixed(0)} fps` };
+  const fps = `${state.fps.toFixed(0)} fps`;
+  const trouble = state.system.throttled_now;
+  if (trouble.length > 0) {
+    // Only a weak supply is a different trouble from the board slowing itself down.
+    const power = trouble.every((flag) => flag === "under-voltage");
+    return { level: "warning", label: power ? "Weak power" : "Throttled", extra: fps, detail: sentence(trouble) };
+  }
+  return { level: "good", label: "Live", extra: fps };
 }
 
 /** Whether boxes from the socket describe the picture being shown right now. */

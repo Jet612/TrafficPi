@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Maximize2, Minimize2, VideoOff } from "lucide-react";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
-import { Switch } from "@/components/ui/switch";
+import { ToggleChip } from "@/components/ui/toggle-chip";
 import { useLiveClient, useLiveSelector } from "@/components/live-provider";
 import { useSession } from "@/components/session";
 import { deriveStatus, overlayIsCurrent } from "@/lib/connection-status";
@@ -42,8 +42,11 @@ function usePageVisible(): boolean {
 
 /** Why there is no picture, or null when there is one. */
 function selectNoPicture(snapshot: LiveSnapshot): { label: string; detail?: string } | null {
+  // A Pi that is slowing itself down still has a picture (the header's pill says so): only a link, a
+  // service or a camera that is not working takes it away.
+  if (overlayIsCurrent(snapshot)) return null;
   const status = deriveStatus(snapshot);
-  return status.level === "good" ? null : { label: status.label, detail: status.detail };
+  return { label: status.label, detail: status.detail };
 }
 const sameReason = (a: ReturnType<typeof selectNoPicture>, b: ReturnType<typeof selectNoPicture>) =>
   a === b || (a !== null && b !== null && a.label === b.label && a.detail === b.detail);
@@ -201,14 +204,6 @@ export function LiveView() {
     <Card>
       <CardHeader>
         <CardTitle>Live view</CardTitle>
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2" role="group" aria-label="What to show">
-          <Switch label={still ? "Picture" : "Video"} checked={prefs.video} onChange={(video) => set({ video })} />
-          <Switch label="Boxes" checked={prefs.boxes} onChange={(boxes) => set({ boxes })} />
-          <Switch label="Labels" checked={prefs.labels} onChange={(labels) => set({ labels })} />
-          <Switch label="Trails" checked={prefs.trails} onChange={(trails) => set({ trails })} />
-          <Switch label="Lines" checked={prefs.lines} onChange={(lines) => set({ lines })} />
-          <Switch label="Zones" checked={prefs.zones} onChange={(zones) => set({ zones })} />
-        </div>
       </CardHeader>
       <CardBody>
         {/* The stage is what goes full screen: the picture and the boxes drawn over it, so that both
@@ -273,26 +268,40 @@ export function LiveView() {
             {STILL_NOTICE}
           </p>
         )}
-        <LiveFooter />
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <LiveFooter />
+          {/* The picture is one thing and what is drawn over it another: the base layer first, then the five overlays. */}
+          <div className="flex flex-wrap items-center gap-2" role="group" aria-label="What to show">
+            <ToggleChip checked={prefs.video} onChange={(video) => set({ video })}>
+              {still ? "Picture" : "Video"}
+            </ToggleChip>
+            <span className="mx-1 hidden h-5 w-px bg-edge sm:block" aria-hidden="true" />
+            <ToggleChip checked={prefs.boxes} onChange={(boxes) => set({ boxes })}>
+              Boxes
+            </ToggleChip>
+            <ToggleChip checked={prefs.labels} onChange={(labels) => set({ labels })}>
+              Labels
+            </ToggleChip>
+            <ToggleChip checked={prefs.trails} onChange={(trails) => set({ trails })}>
+              Trails
+            </ToggleChip>
+            <ToggleChip checked={prefs.lines} onChange={(lines) => set({ lines })}>
+              Lines
+            </ToggleChip>
+            <ToggleChip checked={prefs.zones} onChange={(zones) => set({ zones })}>
+              Zones
+            </ToggleChip>
+          </div>
+        </div>
       </CardBody>
     </Card>
   );
 }
 
-const selectFooter = (snapshot: LiveSnapshot) => ({
-  tracked: snapshot.state?.tracks.filter((track) => track.confirmed).length ?? 0,
-  detector: snapshot.state?.detector ?? "",
-  profile: snapshot.state?.profile_version ?? 0,
-});
-const sameFooter = (a: ReturnType<typeof selectFooter>, b: ReturnType<typeof selectFooter>) =>
-  a.tracked === b.tracked && a.detector === b.detector && a.profile === b.profile;
+/** How many vehicles are in view. (The model's name is on the System page, which is where it is about.) */
+const selectTracked = (snapshot: LiveSnapshot) => snapshot.state?.tracks.filter((track) => track.confirmed).length ?? 0;
 
 function LiveFooter() {
-  const { tracked, detector } = useLiveSelector(selectFooter, sameFooter);
-  return (
-    <p className="mt-3 text-sm text-ink-2">
-      {tracked === 0 ? "No vehicles in view" : `${tracked} tracked`}
-      {detector && <> &middot; model {detector}</>}
-    </p>
-  );
+  const tracked = useLiveSelector(selectTracked);
+  return <p className="text-sm text-ink-2">{tracked === 0 ? "No vehicles in view" : `${tracked} in view`}</p>;
 }

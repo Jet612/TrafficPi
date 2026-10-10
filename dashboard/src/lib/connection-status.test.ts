@@ -25,8 +25,30 @@ const state = (over: Partial<LiveState> = {}): LiveState => ({
 const snap = (over: Partial<LiveSnapshot>): LiveSnapshot => ({ connection: "open", state: state(), visionOnline: true, ...over });
 
 describe("deriveStatus", () => {
-  it("is live and says how fast", () => {
-    expect(deriveStatus(snap({}))).toEqual({ level: "good", label: "Live · 30 fps" });
+  it("is live and says how fast, apart from the word that is announced", () => {
+    expect(deriveStatus(snap({}))).toEqual({ level: "good", label: "Live", extra: "30 fps" });
+  });
+
+  it("turns amber while the Pi is slowing itself down, and says why", () => {
+    const hot = deriveStatus(snap({ state: state({ system: { throttled_now: ["throttled", "soft temperature limit"], throttled_since_boot: [] } }) }));
+    expect(hot).toEqual({
+      level: "warning",
+      label: "Throttled",
+      extra: "30 fps",
+      detail: "The CPU is being slowed down; it is running hot.",
+    });
+  });
+
+  it("calls a weak power supply that, and not throttling", () => {
+    const weak = deriveStatus(snap({ state: state({ system: { throttled_now: ["under-voltage"], throttled_since_boot: [] } }) }));
+    expect(weak).toMatchObject({ level: "warning", label: "Weak power", detail: "The power supply is too weak." });
+    const both = deriveStatus(snap({ state: state({ system: { throttled_now: ["under-voltage", "throttled"], throttled_since_boot: [] } }) }));
+    expect(both).toMatchObject({ level: "warning", label: "Throttled" });
+  });
+
+  it("does not hold what happened since the Pi started against it now", () => {
+    const earlier = deriveStatus(snap({ state: state({ system: { throttled_now: [], throttled_since_boot: ["throttling occurred"] } }) }));
+    expect(earlier).toMatchObject({ level: "good", label: "Live" });
   });
 
   it("says why the camera is offline", () => {

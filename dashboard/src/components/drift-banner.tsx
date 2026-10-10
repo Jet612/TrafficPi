@@ -18,7 +18,7 @@ export function DriftBanner() {
   if (drift?.state !== "drifted") return null;
   return (
     <div role="alert" data-testid="drift-banner" className="border-b border-edge bg-sunken">
-      <div className="mx-auto flex max-w-[1280px] items-start gap-3 px-4 py-3 sm:px-6">
+      <div className="mx-auto flex max-w-(--shell) items-start gap-3 px-4 py-3 sm:px-6">
         <TriangleAlert className="mt-0.5 size-5 shrink-0 text-warning" aria-hidden="true" />
         <div className="min-w-0 text-sm">
           <p className="font-medium text-ink">{drift.message}</p>

@@ -25,7 +25,11 @@ export function Switch({
   const control = (
     <label
       htmlFor={id}
-      className={cn("inline-flex min-h-8 select-none items-center gap-2 text-sm text-ink-2", disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer", className)}
+      className={cn(
+        "inline-flex min-h-8 select-none items-center gap-2 text-sm text-ink-2 pointer-coarse:min-h-10",
+        disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer",
+        className,
+      )}
     >
       <button
         id={id}
@@ -37,14 +41,15 @@ export function Switch({
         onClick={() => onChange(!checked)}
         className={cn(
           "relative h-5 w-9 shrink-0 rounded-full border transition-colors",
-          checked ? "border-accent bg-accent" : "border-baseline bg-sunken",
+          checked ? "border-accent bg-accent" : "border-ink-3/50 bg-baseline",
         )}
       >
+        {/* White on the blue track in both themes (the accent's own ink is near black in the dark one and looked like a hole); grey on the off track. */}
         <span
           aria-hidden="true"
           className={cn(
             "absolute top-1/2 size-3.5 -translate-y-1/2 rounded-full transition-[left]",
-            checked ? "left-[calc(100%-1.125rem)] bg-accent-ink" : "left-0.5 bg-ink-3",
+            checked ? "left-[calc(100%-1.125rem)] bg-white" : "left-0.5 bg-ink-3",
           )}
         />
       </button>

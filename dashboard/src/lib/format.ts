@@ -52,6 +52,94 @@ export function formatDateTimeSeconds(ms: number, timeZone: string): string {
   return `${formatDateTime(ms, timeZone)}:${formatClock(ms, timeZone).slice(-2)}`;
 }
 
+// --- dates and times, as the dashboard writes them for people -----------------------------------------
+//
+// One style everywhere. A day is "Fri, Oct 9" (and "Fri, Oct 9, 2025" when it is not in this year), a
+// clock time is the 24-hour "22:07", with seconds only where they matter (the live feed, a tooltip), and
+// something that happened a moment ago is "2 min ago". The year-month-day form above is for working a
+// time out (it is what the sums slice up), not for reading.
+
+const DAY_FORMAT = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "short", month: "short", day: "numeric" });
+const DATE_PARTS = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/** A local date like "2026-10-09" as an instant at noon UTC, so that no zone can move it to another day. */
+function noonOf(date: string): Date | null {
+  const match = DATE_PARTS.exec(date);
+  return match ? new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12)) : null;
+}
+
+/** "2026-10-09": the date of an instant on the wall clock of a zone. */
+export function localDate(ms: number, timeZone: string): string {
+  return formatDateTime(ms, timeZone).slice(0, 10);
+}
+
+/** The date after, or before, a local date ("2026-10-09" and 1 give "2026-10-10"); the date itself if it is not one. */
+export function shiftDate(date: string, days: number): string {
+  const noon = noonOf(date);
+  if (noon === null) return date;
+  noon.setUTCDate(noon.getUTCDate() + days);
+  return noon.toISOString().slice(0, 10);
+}
+
+/** "Fri, Oct 9" for a local date; "Fri, Oct 9, 2025" when the date is not in `thisYear`. */
+export function dayText(date: string, thisYear: number): string {
+  const noon = noonOf(date);
+  if (noon === null) return date;
+  const text = DAY_FORMAT.format(noon);
+  return Number(date.slice(0, 4)) === thisYear ? text : `${text}, ${date.slice(0, 4)}`;
+}
+
+/** The year it is now in a zone, which decides whether a date needs its year. */
+export function yearIn(nowMs: number, timeZone: string): number {
+  return Number(localDate(nowMs, timeZone).slice(0, 4));
+}
+
+/** "22:07": a clock time, 24-hour, no seconds. */
+export function timeText(ms: number, timeZone: string): string {
+  return formatClock(ms, timeZone).slice(0, 5);
+}
+
+/** "Fri, Oct 9, 2026, 22:07:58": all of an instant, for a tooltip or a spoken name. */
+export function fullTimeText(ms: number, timeZone: string): string {
+  // No year is ever "this year" here (-1), so the year is always said.
+  return `${dayText(localDate(ms, timeZone), -1)}, ${formatClock(ms, timeZone)}`;
+}
+
+/**
+ * When something happened, as short as it can be said: "just now", "2 min ago" for under an hour,
+ * then "22:07" for earlier today, "Yesterday, 22:07", and "Fri, Oct 9, 22:07" for anything older.
+ */
+export function momentText(ms: number, timeZone: string, nowMs: number): string {
+  const age = nowMs - ms;
+  if (age < 60_000) return "just now";
+  if (age < 3_600_000) return `${Math.round(age / 60_000)} min ago`;
+  const date = localDate(ms, timeZone);
+  const today = localDate(nowMs, timeZone);
+  const clock = timeText(ms, timeZone);
+  if (date === today) return clock;
+  if (date === shiftDate(today, -1)) return `Yesterday, ${clock}`;
+  return `${dayText(date, yearIn(nowMs, timeZone))}, ${clock}`;
+}
+
+/**
+ * The zone as a small chip says it: "ET" for America/New_York, "UTC", or "GMT+2" for a zone with no
+ * short name of its own in English. Said once on a page, with the full name in its tooltip, instead of
+ * in every card's subtitle.
+ */
+export function zoneChip(timeZone: string, nowMs: number): string {
+  const zone = safeZone(timeZone);
+  if (zone === "UTC") return "UTC";
+  const name = (style: "shortGeneric" | "short") =>
+    new Intl.DateTimeFormat("en-US", { timeZone: zone, timeZoneName: style }).formatToParts(new Date(nowMs)).find((part) => part.type === "timeZoneName")?.value ?? "";
+  const generic = name("shortGeneric");
+  return /^[A-Z]{2,5}$/.test(generic) ? generic : name("short") || zone;
+}
+
+/** "America/New_York" with its underscores taken out, which is how it reads in a sentence. */
+export function zoneName(timeZone: string): string {
+  return timeZone.replaceAll("_", " ");
+}
+
 /** The local hour (0-23) of an instant in a time zone. */
 export function localHour(ms: number, timeZone: string): number {
   const parts = new Intl.DateTimeFormat("en-GB", {
@@ -79,6 +167,13 @@ export function formatMegabytes(mb: number): string {
 
 export function formatPercent(value: number, digits = 0): string {
   return `${value.toFixed(digits)}%`;
+}
+
+/** A part of a whole as a percentage people can read: "85%", "<1%" for something that did happen but is under half a percent, "0%" for nothing. */
+export function shareText(part: number, whole: number): string {
+  if (whole <= 0 || part <= 0) return "0%";
+  const percent = (part / whole) * 100;
+  return percent < 0.5 ? "<1%" : `${Math.round(percent)}%`;
 }
 
 export function formatTemperature(celsius: number): string {
