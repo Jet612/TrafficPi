@@ -10,8 +10,10 @@ from pathlib import Path
 
 from trafficpi.api import backup, speed_check
 from trafficpi.api.auth import MIN_PASSWORD_LENGTH, hash_password, normalize_username
+from trafficpi.api.calibration_text import report_text
 from trafficpi.api.settings import ApiSettings
 from trafficpi.core.clock import resolve_timezone
+from trafficpi.core.ground import CalibrationError
 from trafficpi.core.paths import DATA_DIR_HELP
 from trafficpi.core.profile import ProfileError, parse_profile
 from trafficpi.db.mail_store import MailStore
@@ -145,6 +147,31 @@ def cmd_speed_check(args: argparse.Namespace) -> int:
         )
     print(speed_check.report(matches, tz, units, exclude_ambiguous=args.exclude_ambiguous))
     return 0 if any(m.event is not None for m in matches) else 1
+
+
+def cmd_calibration_report(args: argparse.Namespace) -> int:
+    """Say what the saved speed calibration is expected to give, line by line."""
+    store = open_store(args.data_dir)
+    try:
+        stored = store.get_profile()
+    finally:
+        store.close()
+    if stored is None:
+        raise RuntimeError("no profile is saved yet")
+    try:
+        profile = parse_profile(stored[0])
+    except ProfileError as exc:
+        raise RuntimeError(f"the saved profile cannot be read: {exc}") from exc
+    if profile.calibration is None:
+        raise RuntimeError(
+            "the saved profile has no speed calibration: draw one on the Setup page "
+            "(docs/speed-calibration.md)"
+        )
+    try:
+        print(report_text(profile), end="")
+    except CalibrationError as exc:
+        raise RuntimeError(f"the saved calibration cannot be used: {exc}") from exc
+    return 0
 
 
 def cmd_users(args: argparse.Namespace) -> int:
@@ -318,6 +345,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="also match counts whose speed was measured under an earlier calibration",
     )
     sc.set_defaults(func=cmd_speed_check)
+
+    cr = sub.add_parser(
+        "calibration-report",
+        help="say what the saved speed calibration is expected to give, line by line",
+        description="Prints the editor's report for the calibration in the saved profile: what the "
+        "map finds for each known distance and how far a speed can be believed at each counting "
+        "line and stop line. It is what the calibration is expected to give, not a measurement "
+        "against vehicles of known speed (that is speed-check). Nothing is changed.",
+    )
+    cr.set_defaults(func=cmd_calibration_report)
     return parser
 
 

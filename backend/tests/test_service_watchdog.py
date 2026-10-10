@@ -8,7 +8,7 @@ import pytest
 from tests.fakes import ScriptedDetector, ScriptedSource, car_crossing
 from trafficpi.db import create_db_engine, upgrade_to_head
 from trafficpi.db.store import Store
-from trafficpi.vision.service import ServiceConfig, VisionService
+from trafficpi.vision.service import CameraUnavailable, ServiceConfig, VisionService
 from trafficpi.vision.shutdown import StopRequest
 
 STALL = 0.3  # how long without a move counts as stuck, in these tests
@@ -26,11 +26,13 @@ def store() -> Store:
 class StickySource(ScriptedSource):
     """A camera that hangs where it is told to: in start, or in the read of one frame."""
 
-    def __init__(self, script, *, hang_in_start=False, hang_at_frame=None):  # type: ignore[no-untyped-def]
+    def __init__(self, script, *, hang_in_start=False, hang_at_frame=None, hang_in_stop=False):  # type: ignore[no-untyped-def]
         super().__init__(script)
         self.release = threading.Event()
         self.hang_in_start = hang_in_start
         self.hang_at_frame = hang_at_frame
+        self.hang_in_stop = hang_in_stop
+        self.stops = 0  # how many times stop() was called
         self.hanging = threading.Event()  # set while it is stuck
 
     def start(self) -> None:
@@ -48,7 +50,10 @@ class StickySource(ScriptedSource):
         self.release.wait(30)
         self.hanging.clear()
 
-    def stop(self) -> None: ...
+    def stop(self) -> None:
+        self.stops += 1
+        if self.hang_in_stop:
+            self._hang()
 
 
 class StickyDetector(ScriptedDetector):
@@ -168,3 +173,33 @@ def test_the_status_line_says_what_the_service_is_doing(store: Store) -> None:
     assert line.startswith("counting at ") and "fps" in line and "yolov8s_h8l" in line
     service.live.set_camera_error("cannot start the camera: busy")
     assert service.status_line() == "camera offline: cannot start the camera: busy"
+
+
+def test_a_camera_that_never_stops_is_given_up_on_after_the_limit_and_what_is_in_hand_is_saved(
+    store: Store,
+) -> None:
+    """On 2026-10-09 Picamera2's stop() hung for good and the watchdog restarted the service a
+    minute later. The service now waits for a stop only as long as it is told to, says so with
+    CameraUnavailable (the way out that makes the process restart), does not try to stop the camera
+    a second time, and has saved the trail of the car that was being followed first."""
+    source = StickySource(car_crossing(60), hang_in_stop=True)
+    config = ServiceConfig(camera_stop_timeout_s=0.3, stall_after_s=30.0)
+    service = VisionService(source, ScriptedDetector(source), store, config=config)
+    started = time.monotonic()
+    try:
+        with pytest.raises(CameraUnavailable, match=r"did not stop within 0\.3 s"):
+            service.run(StopRequest())
+        assert time.monotonic() - started < 3.0, "it did not wait for the camera for ever"
+        assert source.stops == 1, "a stop that hung is not tried again"
+        assert store.trail_count() == 1, "what was in hand was saved before the exit"
+    finally:
+        source.release.set()  # the stuck thread is let go
+
+
+def test_a_camera_that_stops_slowly_but_within_the_limit_is_waited_for(store: Store) -> None:
+    source = StickySource(car_crossing(20), hang_in_stop=True)
+    threading.Timer(0.1, source.release.set).start()  # it comes back after a tenth of a second
+    config = ServiceConfig(camera_stop_timeout_s=5.0)
+    service = VisionService(source, ScriptedDetector(source), store, config=config)
+    service.run(StopRequest())  # no exception
+    assert service.frames == 20 and source.stops == 1

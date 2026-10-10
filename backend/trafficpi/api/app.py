@@ -8,7 +8,7 @@ import logging
 import shutil
 import threading
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import date, datetime
@@ -26,6 +26,7 @@ from starlette.concurrency import run_in_threadpool
 from trafficpi.api import (
     analytics,
     calibration_routes,
+    export,
     machine,
     mail_routes,
     stats,
@@ -235,10 +236,14 @@ def _measured(value: Any) -> float | None:
     return float(value)
 
 
-def _stop_out(event: EventRow, data_dir: Path) -> StopOut:
+def _stop_out(event: EventRow, data_dir: Path, calibration: str | None) -> StopOut:
+    """A stop event as the API tells it; ``calibration`` is the name of the one in force now."""
     details = event.details or {}
     has_snapshot = _evidence_file(data_dir, event.evidence_path) is not None
     has_clip = _evidence_file(data_dir, details.get("clip")) is not None
+    speeds = [
+        _measured(details.get(key)) for key in ("min_speed_ms", "max_speed_ms", "line_speed_ms")
+    ]
     return StopOut(
         id=event.id,
         t=event.occurred_at,
@@ -248,9 +253,12 @@ def _stop_out(event: EventRow, data_dir: Path) -> StopOut:
         hold_s=details.get("hold_s", 0.0),
         min_speed=details.get("min_speed", -1.0),
         observed_s=details.get("observed_s", 0.0),
-        min_speed_ms=_measured(details.get("min_speed_ms")),
-        max_speed_ms=_measured(details.get("max_speed_ms")),
-        line_speed_ms=_measured(details.get("line_speed_ms")),
+        min_speed_ms=speeds[0],
+        max_speed_ms=speeds[1],
+        line_speed_ms=speeds[2],
+        calibrated=calibration is not None
+        and details.get("cal") == calibration
+        and any(speed is not None for speed in speeds),
         review=event.review,  # type: ignore[arg-type]
         reviewed_at=event.reviewed_at,
         snapshot_url=f"/api/stops/{event.id}/snapshot.jpg" if has_snapshot else None,
@@ -672,6 +680,72 @@ def create_app(
             excluded=len(every) - len(rows),
         )
 
+    # --- exports (plan.md D62) ---------------------------------------------------------------
+
+    def sign_names() -> dict[str, str]:
+        stored = ctx.store.get_profile()
+        if stored is None:
+            return {}
+        try:
+            return {sign.id: sign.name for sign in parse_profile(stored[0]).stop_signs}
+        except ProfileError:
+            return {}
+
+    def csv_response(rows: Iterator[str], what: str, period: analytics.Period) -> StreamingResponse:
+        first, last = period.first_day.isoformat(), period.today.isoformat()
+        return StreamingResponse(
+            rows,
+            media_type="text/csv; charset=utf-8",
+            headers={
+                "Content-Disposition": (
+                    f'attachment; filename="trafficpi-{what}-{first}-to-{last}.csv"'
+                ),
+                "Cache-Control": "no-store",
+            },
+        )
+
+    @app.get("/api/export/counts.csv")
+    def export_counts(
+        user: User,
+        days: Annotated[int, Query(ge=0, le=analytics.MAX_DAYS)] = 7,
+    ) -> StreamingResponse:
+        """The vehicles counted over the last ``days`` local days (today included; ``0`` is
+        everything since the first count), one row for each, as CSV."""
+        tz = _timezone(ctx.store)
+        first_s = ctx.store.first_count_s()
+        period = analytics.period_for(
+            ctx.clock.now_ms(), tz, days, None if first_s is None else first_s * 1000
+        )
+        rows = export.count_rows(
+            ctx.store,
+            period.start_ms,
+            period.end_ms,
+            tz,
+            line_names(),
+            ctx.store.current_calibration(),
+        )
+        return csv_response(rows, "counts", period)
+
+    @app.get("/api/export/passes.csv")
+    def export_passes(
+        user: User,
+        days: Annotated[int, Query(ge=0, le=analytics.MAX_DAYS)] = 7,
+    ) -> StreamingResponse:
+        """What vehicles did at the stop signs over the last ``days`` local days (today included;
+        ``0`` is everything since the first pass), one row for each pass, as CSV. The passes called
+        false alarms are in it, marked."""
+        tz = _timezone(ctx.store)
+        period = analytics.period_for(ctx.clock.now_ms(), tz, days, ctx.store.first_stop_ms())
+        rows = export.pass_rows(
+            ctx.store,
+            period.start_ms,
+            period.end_ms,
+            tz,
+            sign_names(),
+            ctx.store.current_calibration(),
+        )
+        return csv_response(rows, "stop-passes", period)
+
     @app.get("/api/events", response_model=list[EventOut])
     def events(
         user: User,
@@ -700,12 +774,17 @@ def create_app(
         from_ms: Annotated[int, Query(ge=0)],
         to_ms: Annotated[int, Query(ge=0)],
         outcome: str | None = None,
-        review: Literal["unreviewed", "confirmed", "false_positive"] | None = None,
+        review: Literal["unreviewed", "confirmed", "false_positive", "counted"] | None = None,
         sign: str | None = None,
         limit: Annotated[int, Query(ge=1, le=500)] = 50,
         before_id: int | None = None,
     ) -> list[StopOut]:
-        """What vehicles did at stop signs in a range, newest first; ``before_id`` pages on."""
+        """What vehicles did at stop signs in a range, newest first; ``before_id`` pages on.
+
+        ``review`` picks by what a person made of the pass: ``unreviewed``, ``confirmed`` or
+        ``false_positive``, or ``counted`` for every pass that is not a false alarm (the ones the
+        tiles and the Data page count). Left out, it is every pass, false alarms included.
+        """
         _check_stop_range(from_ms, to_ms)
         found = ctx.store.stops_between(
             from_ms,
@@ -716,7 +795,8 @@ def create_app(
             limit=limit,
             before_id=before_id,
         )
-        return [_stop_out(event, settings.data_dir) for event in found]
+        calibration = ctx.store.current_calibration()
+        return [_stop_out(event, settings.data_dir, calibration) for event in found]
 
     @app.get("/api/stops/summary", response_model=StopSummary)
     def stops_summary(
@@ -739,7 +819,7 @@ def create_app(
         reviewed = ctx.store.review_stop(event_id, body.state, now_ms=ctx.clock.now_ms())
         if reviewed is None:
             raise HTTPException(status_code=404, detail="no such stop event")
-        return _stop_out(reviewed, settings.data_dir)
+        return _stop_out(reviewed, settings.data_dir, ctx.store.current_calibration())
 
     def evidence_response(event_id: int, kind: Literal["snapshot", "clip"]) -> FileResponse:
         event = ctx.store.stop_event(event_id)

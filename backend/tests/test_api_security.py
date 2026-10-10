@@ -289,22 +289,22 @@ def script_hash(text: str) -> str:
 
 
 INDEX_SCRIPTS = ["self.__next_f=[]", 'self.__next_f.push([1,"a < b && c"])\n']
-HISTORY_SCRIPT = "history_only()"
+REVIEW_SCRIPT = "review_only()"
 
 
 @pytest.fixture
 def site(tmp_path: Path) -> Path:
     """A little dashboard: pages with inline scripts, as Next's static export writes them."""
     root = tmp_path / "site"
-    (root / "history").mkdir(parents=True)
+    (root / "review").mkdir(parents=True)
     (root / "index.html").write_text(
         "<!DOCTYPE html><html><head>"
         f'<script>{INDEX_SCRIPTS[0]}</script><script src="/_next/a.js"></script>'
         f'</head><body><script>{INDEX_SCRIPTS[1]}</script><script type="application/json">'
         "</script></body></html>"
     )
-    (root / "history" / "index.html").write_text(
-        f"<html><body><script>{HISTORY_SCRIPT}</script></body></html>"
+    (root / "review" / "index.html").write_text(
+        f"<html><body><script>{REVIEW_SCRIPT}</script></body></html>"
     )
     (root / "404.html").write_text(
         "<html><head><style>.a{color:red}</style></head><body><script>four04()</script></body></html>"
@@ -336,8 +336,24 @@ def test_a_page_is_sent_with_the_hashes_of_its_own_inline_scripts_and_no_unsafe_
 
 
 def test_another_page_gets_its_own_hashes_and_not_the_first_pages(site_client: TestClient) -> None:
-    scripts = policy_of(site_client.get("/history/"))["script-src"]
-    assert set(scripts[1:]) == {script_hash(HISTORY_SCRIPT)}
+    scripts = policy_of(site_client.get("/review/"))["script-src"]
+    assert set(scripts[1:]) == {script_hash(REVIEW_SCRIPT)}
+
+
+def test_the_old_address_of_a_page_that_moved_sends_a_bookmark_to_the_new_one(
+    site_client: TestClient, site: Path
+) -> None:
+    """The History page became the Review page (plan.md D59). The redirect is temporary, so that a
+    browser never keeps it, and does not depend on the old files being gone from the disk."""
+    (site / "history").mkdir()
+    (site / "history" / "index.html").write_text("<html><body>the old page</body></html>")
+    for path in ("/history", "/history/", "/history/2026-10-09/", "/history/?day=2026-10-09"):
+        response = site_client.get(path, follow_redirects=False)
+        assert response.status_code == 307 and response.headers["location"] == "/review/", path
+    assert site_client.get("/review/").status_code == 200
+    assert (
+        site_client.get("/historyx/").status_code == 404
+    )  # only that page, not a name that starts with it
 
 
 def test_the_not_found_page_has_a_policy_for_its_scripts_too(site_client: TestClient) -> None:
@@ -349,10 +365,10 @@ def test_the_not_found_page_has_a_policy_for_its_scripts_too(site_client: TestCl
 def test_a_rebuilt_page_gets_a_new_policy_without_restarting_the_server(
     site_client: TestClient, site: Path
 ) -> None:
-    assert script_hash("replaced()") not in policy_of(site_client.get("/history/"))["script-src"]
-    (site / "history" / "index.html").write_text("<script>replaced()</script>" + " " * 7)
-    scripts = policy_of(site_client.get("/history/"))["script-src"]
-    assert script_hash("replaced()") in scripts and script_hash(HISTORY_SCRIPT) not in scripts
+    assert script_hash("replaced()") not in policy_of(site_client.get("/review/"))["script-src"]
+    (site / "review" / "index.html").write_text("<script>replaced()</script>" + " " * 7)
+    scripts = policy_of(site_client.get("/review/"))["script-src"]
+    assert script_hash("replaced()") in scripts and script_hash(REVIEW_SCRIPT) not in scripts
 
 
 def test_a_page_that_is_revalidated_keeps_its_own_policy(site_client: TestClient) -> None:
@@ -360,14 +376,14 @@ def test_a_page_that_is_revalidated_keeps_its_own_policy(site_client: TestClient
     A browser merges the headers of that answer into the page it has kept, so a 304 that carried
     the default policy (which allows no inline script) made the reloaded page blank. A browser
     found this on the first reload; a test that only ever fetches each page once could not."""
-    first = site_client.get("/history/")
+    first = site_client.get("/review/")
     assert first.status_code == 200
     expected = policy_of(first)["script-src"]
-    again = site_client.get("/history/", headers={"If-None-Match": first.headers["etag"]})
+    again = site_client.get("/review/", headers={"If-None-Match": first.headers["etag"]})
     assert again.status_code == 304
     assert policy_of(again)["script-src"] == expected
     by_date = site_client.get(
-        "/history/", headers={"If-Modified-Since": first.headers["last-modified"]}
+        "/review/", headers={"If-Modified-Since": first.headers["last-modified"]}
     )
     assert by_date.status_code == 304 and policy_of(by_date)["script-src"] == expected
 
@@ -414,10 +430,10 @@ def test_a_request_cannot_reach_a_file_outside_the_dashboard(site_client: TestCl
         "/../secret.txt",
         "/%2e%2e/secret.txt",
         "/..%2fsecret.txt",
-        "/history/../../secret.txt",
+        "/review/../../secret.txt",
         "/%2e%2e%2f%2e%2e%2fetc/passwd",
         "//etc/passwd",
-        "/history/%00",
+        "/review/%00",
     ):
         response = site_client.get(path)
         assert "not for the web" not in response.text and "root:" not in response.text, path

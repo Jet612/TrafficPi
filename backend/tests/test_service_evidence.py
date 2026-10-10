@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 import time
 from collections.abc import Iterator
 from datetime import datetime
@@ -18,6 +19,8 @@ from tests.fakes import (
     car_driving,
 )
 from tests.test_evidence import FakeEncoder
+from tests.test_service_speed import drive as calibrated_drive
+from tests.test_service_speed import profile as calibrated_profile
 from trafficpi.core.evidence_settings import EvidenceSettings
 from trafficpi.core.types import Detection
 from trafficpi.db import create_db_engine, upgrade_to_head
@@ -159,6 +162,41 @@ def test_the_job_says_where_what_and_when_and_which_vehicle(
     assert job.sign is not None and job.sign.id == "elm" and job.sign.name == "Elm Street"
     assert job.caption.startswith("Elm Street: car #") and " rolled through - 20" in job.caption
     assert job.stem == f"{day_of(event.occurred_at)}/stop-{event.id}"
+
+
+@pytest.mark.parametrize(
+    ("units", "low", "high", "unit"), [("mph", 18, 22, "mph"), ("kmh", 29, 36, "km/h")]
+)
+def test_a_pass_measured_on_a_calibrated_road_has_its_speeds_in_the_caption(
+    store: Store,
+    tmp_path: Path,
+    recorder: Recorded,
+    units: str,
+    low: int,
+    high: int,
+    unit: str,
+) -> None:
+    """A car at 9 m/s (20 mph, 32 km/h) through the calibrated stop sign: the picture says how fast,
+    in the owner's units, and that the calibration is not checked (D46, MEASURED_CAVEAT)."""
+    store.set_profile(calibrated_profile())
+    store.set_setting("units", units)
+    run(calibrated_drive(9.0, 8.0) + AFTER, store, tmp_path, recorder)
+    (job,) = recorder.jobs
+    found = re.search(
+        rf" - speed \(calibrated, not checked\): slowest (\d+) {unit}, at the line (\d+) {unit}$",
+        job.caption,
+    )
+    assert found, job.caption
+    assert low <= int(found[1]) <= high and low <= int(found[2]) <= high
+    assert job.caption.startswith("Elm: car #") and " did not stop - 20" in job.caption
+
+
+def test_a_pass_with_no_measured_speed_has_none_in_its_caption(
+    store: Store, tmp_path: Path, recorder: Recorded
+) -> None:
+    run(car_driving(ROLLING_STOP) + AFTER, store, tmp_path, recorder)  # no calibration
+    (job,) = recorder.jobs
+    assert "speed" not in job.caption and " rolled through - 20" in job.caption
 
 
 def test_the_time_in_the_caption_is_the_cameras(

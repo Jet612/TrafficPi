@@ -99,6 +99,10 @@ class StopOut(BaseModel):
     min_speed_ms: float | None
     max_speed_ms: float | None
     line_speed_ms: float | None
+    # True when those speeds were measured under the calibration saved now (plan.md D49). A pass
+    # measured under an earlier one still carries its speeds, for anyone who wants to see what a
+    # correction changed, but the pages show only these.
+    calibrated: bool
     review: ReviewState | None  # None: not looked at yet
     reviewed_at: int | None
     snapshot_url: str | None  # the picture of the moment it crossed the line; None: none is kept

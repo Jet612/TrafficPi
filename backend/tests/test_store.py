@@ -143,6 +143,9 @@ def test_reviews_are_filtered_and_only_known_ones_are_taken(store: Store) -> Non
     assert [e.id for e in store.stops_between(*mine, review="confirmed")] == [ids[0]]
     assert [e.id for e in store.stops_between(*mine, review="false_positive")] == [ids[1]]
     assert [e.id for e in store.stops_between(*mine, review="unreviewed")] == [ids[2]]
+    # "counted" is every pass that is not a false alarm: the confirmed and the not yet reviewed (a
+    # missing review is not "different from false_positive" to SQL, so the filter names it)
+    assert [e.id for e in store.stops_between(*mine, review="counted")] == [ids[2], ids[0]]
     assert len(store.stops_between(*mine)) == 3
     with pytest.raises(ValueError, match="confirmed"):
         store.review_stop(ids[2], "maybe")

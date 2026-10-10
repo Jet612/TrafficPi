@@ -149,12 +149,15 @@ def create_app(
         await websocket.accept()
         last_frame, last_sent = -2, 0.0
         try:
-            while True:
+            while not app.state.stopping.is_set():
                 current = live.snapshot()
                 if current["frame"] != last_frame or time.monotonic() - last_sent > 1.0:
                     await websocket.send_json({"type": "state", **current})
                     last_frame, last_sent = current["frame"], time.monotonic()
                 await asyncio.sleep(1 / live_hz)
+            # The service is stopping: say goodbye, so that the server need not wait for this
+            # viewer and then cancel it (which logs an ERROR on every restart with a viewer open).
+            await websocket.close(code=1001)
         except (WebSocketDisconnect, RuntimeError):
             return
 

@@ -81,7 +81,7 @@ def test_each_pass_at_the_stop_sign_is_judged_as_it_looked(replayed: ReplayResul
     assert stops == [(3.6, "rolling", "truck"), (16.1, "rolling", "car"), (99.1, "rolling", "car")]
     for stop in replayed.stops:
         assert stop.hold_s < 0.5, "none of them stood still"
-        # a calibrated speed measured on this road: a few metres a second, a vehicle at a crawl to a trot
+        # a speed measured on this road: a few metres a second, a vehicle at a crawl to a trot
         assert 1.0 < stop.min_speed_ms <= stop.max_speed_ms < 9.0
 
 

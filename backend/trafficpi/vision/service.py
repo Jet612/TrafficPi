@@ -25,6 +25,7 @@ from trafficpi.core.detection_settings import DETECT_PEOPLE_KEY, people_wanted
 from trafficpi.core.evidence_settings import EvidenceSettings
 from trafficpi.core.paths import evidence_dir, reference_file
 from trafficpi.core.profile import Profile, ProfileError, empty_profile, parse_profile
+from trafficpi.core.speed import pass_speeds_phrase
 from trafficpi.core.stop_hours import (
     CLOCK_KEY,
     DAYLIGHT_KEY,
@@ -63,7 +64,8 @@ TRAIL_CLEANUP_CHUNKS_PER_PASS = 5  # so that a big backlog never holds up the ca
 
 
 class CameraUnavailable(RuntimeError):
-    """The camera could not be brought back within ``ServiceConfig.camera_giveup_s``."""
+    """The camera could not be brought back within ``ServiceConfig.camera_giveup_s``, or did not
+    stop within ``ServiceConfig.camera_stop_timeout_s``."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,6 +78,10 @@ class ServiceConfig:
     # a supervisor (systemd) restarts the whole process. Starting afresh also resets libcamera,
     # and bounds what Picamera2 leaks (a file descriptor) on every failed attempt.
     camera_giveup_s: float = 300.0
+    # A camera that has not stopped after this long never will: on 2026-10-09 Picamera2's stop()
+    # hung for good and the watchdog restarted the service a minute later. Giving up at once
+    # (CameraUnavailable, the same way out as above) saves most of that minute of counting.
+    camera_stop_timeout_s: float = 10.0
     trail_cleanup_every_s: float = (
         6 * 3600.0
     )  # how often trails older than the owner wants are deleted
@@ -349,6 +355,7 @@ class VisionService:
         self.events_recorded = 0
         self._camera_failures = 0  # in a row, since a frame last arrived
         self._camera_down_since: float | None = None  # time.monotonic() of the first of them
+        self._source_stuck = False  # a stop of the camera that never returned (see _close_source)
         self._trails: TrailRecorder | None = None  # None while trails are switched off
         self._pending_trails: deque[FinishedTrail] = deque(maxlen=MAX_PENDING_TRAILS)
         self._trail_retry_at = 0.0  # time.monotonic(): do not try to store trails before this
@@ -489,14 +496,20 @@ class VisionService:
             self._finish_health()
             self._finish_drift()
             return
+        stuck: CameraUnavailable | None = None
         try:
             self._loop(stop, max_frames)
         finally:
-            self._close_source()
+            try:
+                self._close_source()
+            except CameraUnavailable as exc:
+                stuck = exc  # said again below, once what is in hand has been saved
             self._finish_trails()
             self._finish_health()
             self._finish_evidence()
             self._finish_drift()
+        if stuck is not None:
+            raise stuck
 
     def _tick(self) -> None:
         """Take a reading of the machine every few seconds: for the live view, and for the record
@@ -616,10 +629,31 @@ class VisionService:
         return False
 
     def _close_source(self) -> None:
-        try:
-            self.source.stop()
-        except Exception:
-            log.exception("could not stop the camera cleanly")
+        """Stop the source, but not for longer than ``camera_stop_timeout_s``: a stop that does not
+        return is given up on (``CameraUnavailable``, so that the process is restarted) and is not
+        tried again, since a second one would only hang the same way."""
+        if self._source_stuck:
+            return
+        outcome: list[BaseException] = []
+        done = threading.Event()
+
+        def stop_it() -> None:
+            try:
+                self.source.stop()
+            except Exception as exc:  # reported below, from this thread
+                outcome.append(exc)
+            finally:
+                done.set()
+
+        threading.Thread(target=stop_it, name="camera-stop", daemon=True).start()
+        if not done.wait(self.config.camera_stop_timeout_s):
+            self._source_stuck = True
+            raise CameraUnavailable(
+                f"the camera did not stop within {self.config.camera_stop_timeout_s:g} s; "
+                "stopping so that the service can be restarted"
+            )
+        if outcome:
+            log.error("could not stop the camera cleanly", exc_info=outcome[0])
 
     def _give_up_if_hopeless(self, exc: BaseException) -> None:
         down_s = time.monotonic() - (self._camera_down_since or time.monotonic())
@@ -729,12 +763,19 @@ class VisionService:
             )
             name = (sign.name if sign else "") or "Stop sign"
             day = datetime.fromtimestamp(at_ms / 1000, UTC).strftime("%Y-%m-%d")
+            caption = f"{name}: {event.label} #{event.track_id} {what} - {when}"
+            # A calibrated camera also measured how fast it went. Said as the pages say it:
+            # calibrated, and not yet checked against a vehicle of known speed (MEASURED_CAVEAT).
+            units = "kmh" if self.store.get_setting("units", "mph") == "kmh" else "mph"
+            speeds = pass_speeds_phrase(event.min_speed_ms, event.line_speed_ms, units)
+            if speeds:
+                caption += f" - speed (calibrated, not checked): {speeds}"
             self._evidence.request(
                 EvidenceJob(
                     event_id=event_id,
                     track_id=event.track_id,
                     at_ns=event.timestamp_ns,
-                    caption=f"{name}: {event.label} #{event.track_id} {what} - {when}",
+                    caption=caption,
                     sign=sign,
                     stem=f"{day}/stop-{event_id}",
                     deadline=time.monotonic() + evidence_module.GIVE_UP_AFTER_S,

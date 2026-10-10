@@ -14,7 +14,7 @@ By default TrafficPi answers on your own network only (`http://<the Pi>:8000`). 
 
 ## What TrafficPi does for people who come through Cloudflare
 
-Everything works for them as it does at home (the numbers, the charts, the History and Data pages, the pictures and clips of stop-sign passes, the zone editor, the boxes in the live data) with one exception: **the continuous live video is held back**. In its place the Live page shows a still picture, renewed every few seconds, with the lines and zones over it, and a line of text saying why. People on your own network and on a VPN are not affected.
+Everything works for them as it does at home (the numbers, the charts, the Review and Data pages, the pictures and clips of stop-sign passes, the zone editor, the boxes in the live data) with one exception: **the continuous live video is held back**. In its place the Live page shows a still picture, renewed every few seconds, with the lines and zones over it, and a line of text saying why. People on your own network and on a VPN are not affected.
 
 The reason is Cloudflare's terms. When this was written (2026-10-09), the CDN section of Cloudflare's *Service-Specific Terms* (the page was dated 2026-09-28) said that Cloudflare may limit use of its CDN by a customer without a paid plan who delivers "video or a disproportionate percentage of pictures, audio files, or other large files". The *Zero Trust* terms of the same date, which cover Tunnel and Access, did not mention Tunnel traffic or video, and neither page mentions Tunnel and video together, so **whether a tunnelled hostname counts as use of the CDN is not stated**. A ten-frames-a-second stream is the one thing here that is video in the plainest sense, so it is off until you say otherwise. A still picture every three seconds is the same size as the pictures the site has always shown. (Those pages were read through a tool that summarises them: read them yourself before you switch the video on. Cloudflare changes its terms, and this is not legal advice.)
 
@@ -83,7 +83,7 @@ TrafficPi tells the browser to run only the scripts that are in the page it sent
 
 ### 7. Try it
 
-Open the hostname on a phone that is **not** on your Wi-Fi. Expect: Cloudflare asks for your email address and a code; the TrafficPi login follows; the Live page shows *a still picture* with the line "Live video is off for people who come through Cloudflare…"; **Setup → Settings** says "You are looking at this page through Cloudflare now."; the History and Data pages work.
+Open the hostname on a phone that is **not** on your Wi-Fi. Expect: Cloudflare asks for your email address and a code; the TrafficPi login follows; the Live page shows *a still picture* with the line "Live video is off for people who come through Cloudflare…"; **Setup → Settings** says "You are looking at this page through Cloudflare now."; the Review and Data pages work.
 
 ### Taking it down
 

@@ -1,3 +1,5 @@
+import json
+import logging
 import threading
 import time
 
@@ -5,7 +7,9 @@ import cv2
 import httpx
 import numpy as np
 import pytest
+import websockets.exceptions
 from fastapi.testclient import TestClient
+from websockets.sync.client import connect
 
 from tests.fakes import ScriptedDetector, ScriptedSource, car_crossing
 from trafficpi.db import create_db_engine, upgrade_to_head
@@ -144,6 +148,33 @@ def test_a_real_server_serves_requests_in_a_thread(service: VisionService) -> No
     time.sleep(0.1)
     with pytest.raises(httpx.ConnectError):
         httpx.get("http://127.0.0.1:18741/health", timeout=1)
+
+
+def test_an_open_live_socket_is_closed_when_the_server_stops_and_nothing_is_logged_as_an_error(
+    service: VisionService, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A viewer that holds the live socket open used to be cancelled by the server after its
+    three seconds of grace, and the cancellation was logged as an ERROR with a traceback on every
+    restart of the service. Now the socket ends itself with 1001 ("going away") as soon as the
+    service stops."""
+    server = ServerThread(create_app(service, live_hz=50), port=18744)
+    server.start()
+    try:
+        with connect("ws://127.0.0.1:18744/live", open_timeout=5) as socket:
+            assert json.loads(socket.recv(timeout=5))["type"] == "state"
+            started = time.monotonic()
+            with caplog.at_level(logging.WARNING):
+                server.stop()
+                with pytest.raises(websockets.exceptions.ConnectionClosed) as closed:
+                    while True:
+                        socket.recv(timeout=2)
+            assert closed.value.rcvd is not None and closed.value.rcvd.code == 1001
+            assert time.monotonic() - started < 2.0, (
+                "it did not wait for the end of the grace period"
+            )
+    finally:
+        server.stop()
+    assert [r.getMessage() for r in caplog.records if r.levelno >= logging.ERROR] == []
 
 
 def test_encode_jpeg_swaps_to_the_right_channel_order() -> None:

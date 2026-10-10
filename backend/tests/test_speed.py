@@ -12,6 +12,7 @@ from trafficpi.core.speed import (
     SIZE_M,
     estimated_speed_ms,
     measured_speed,
+    pass_speeds_phrase,
     rough_speed,
     size_metres,
     speed_phrase,
@@ -90,3 +91,19 @@ def test_the_sentences_that_say_what_a_speed_is_worth_are_the_dashboards_too() -
     assert CASES["caveats"]["estimate"] == ESTIMATE_CAVEAT
     assert CASES["caveats"]["measured"] == MEASURED_CAVEAT
     assert "40%" in ESTIMATE_CAVEAT and "unproven" in MEASURED_CAVEAT
+
+
+def test_a_pass_measured_on_a_calibrated_road_is_told_in_a_few_words_for_a_caption() -> None:
+    # 1.8 m/s is 4.03 mph, 3.1 m/s is 6.93 mph: whole miles an hour, no "about"
+    assert pass_speeds_phrase(1.8, 3.1, "mph") == "slowest 4 mph, at the line 7 mph"
+    assert (
+        pass_speeds_phrase(1.8, 3.1, "kmh") == "slowest 6 km/h, at the line 11 km/h"
+    )  # 6.48 and 11.16
+    assert pass_speeds_phrase(0.2, 3.1, "mph") == "slowest almost still, at the line 7 mph"
+
+
+def test_a_speed_that_was_not_measured_is_left_out_of_the_words() -> None:
+    assert pass_speeds_phrase(-1.0, 3.1, "mph") == "at the line 7 mph"
+    assert pass_speeds_phrase(1.8, -1.0, "mph") == "slowest 4 mph"
+    assert pass_speeds_phrase(-1.0, -1.0, "mph") is None
+    assert pass_speeds_phrase(0.0, 0.0, "mph") == "slowest almost still, at the line almost still"

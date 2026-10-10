@@ -8,6 +8,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests.calibrations import CALIBRATION, OTHER, name_of
 from trafficpi.api.app import _stop_out, create_app
 from trafficpi.api.auth import hash_password
 from trafficpi.api.settings import ApiSettings
@@ -82,6 +83,7 @@ def test_a_stop_comes_back_with_what_was_seen_and_nothing_reviewed(
         "min_speed_ms": None,  # the camera was not calibrated
         "max_speed_ms": None,
         "line_speed_ms": None,
+        "calibrated": False,
         "review": None,
         "reviewed_at": None,
         "snapshot_url": None,
@@ -110,6 +112,42 @@ def test_a_pass_measured_on_a_calibrated_road_comes_back_with_its_speeds(
     store.record_stop(measured, BASE + 5_000)
     (row,) = client.get("/api/stops", params=RANGE).json()
     assert (row["min_speed_ms"], row["max_speed_ms"], row["line_speed_ms"]) == (1.5, 9.75, 0.0)
+
+
+def test_a_pass_says_whether_its_speeds_are_of_the_calibration_in_force(
+    client: TestClient, store: Store
+) -> None:
+    """The pages show a measured speed only if it was measured under the calibration saved now
+    (plan.md D49); a pass of an earlier calibration still carries its speeds, and says it is not."""
+
+    def measured(calibration: str, at: int) -> int:
+        event = StopEvent(
+            0, 7, 2, "car", "elm", "rolling", 0.2, 0.5, 4.0,
+            min_speed_ms=1.5, max_speed_ms=9.75, line_speed_ms=3.0, calibration=calibration,
+        )  # fmt: skip
+        return store.record_stop(event, BASE + at)
+
+    def flags() -> dict[int, bool]:
+        return {
+            row["id"]: row["calibrated"] for row in client.get("/api/stops", params=RANGE).json()
+        }
+
+    old = measured(name_of(OTHER), 1_000)
+    now_ = measured(name_of(CALIBRATION), 2_000)
+    estimate = store.record_stop(stop("rolling"), BASE + 3_000)  # no speeds at all
+    assert flags() == {old: False, now_: False, estimate: False}  # no calibration is saved yet
+    store.set_profile({"calibration": CALIBRATION})
+    assert flags() == {old: False, now_: True, estimate: False}
+    rows = {row["id"]: row for row in client.get("/api/stops", params=RANGE).json()}
+    assert rows[old]["min_speed_ms"] == 1.5, (
+        "the speeds of the earlier calibration are still served"
+    )
+    reviewed = client.put(f"/api/stops/{now_}/review", json={"state": "confirmed"}).json()
+    assert reviewed["calibrated"] is True
+    store.set_profile({"calibration": OTHER})  # corrected since: the first is now the one in force
+    assert flags() == {old: True, now_: False, estimate: False}
+    store.set_profile({})  # taken away: nothing is calibrated
+    assert flags() == {old: False, now_: False, estimate: False}
 
 
 def test_a_speed_that_was_not_measured_is_none_not_minus_one(
@@ -171,9 +209,19 @@ def test_a_review_is_made_filtered_by_and_taken_back(client: TestClient, store: 
         and ids("unreviewed") == [second]
         and ids("confirmed") == []
     )
+    # "counted" leaves out the false alarm and keeps the pass nobody has reviewed; none: every pass
+    assert ids("counted") == [second]
+    assert sorted(row["id"] for row in client.get("/api/stops", params=RANGE).json()) == [
+        first,
+        second,
+    ]
+    third = store.record_stop(stop("rolling"), BASE + 3_000)
+    client.put(f"/api/stops/{third}/review", json={"state": "confirmed"})
+    assert ids("counted") == [third, second]
     undone = client.put(f"/api/stops/{first}/review", json={"state": None}).json()
     assert (undone["review"], undone["reviewed_at"]) == (None, None)
     assert sorted(ids("unreviewed")) == [first, second]
+    assert sorted(ids("counted")) == [first, second, third]
 
 
 def test_the_summary_counts_by_outcome_and_review(client: TestClient, store: Store) -> None:
@@ -250,7 +298,7 @@ def test_a_stop_event_without_its_details_is_shown_as_one_that_could_not_be_judg
 ) -> None:
     """Such a row should not exist; if one does (a damaged database), the list must not fail."""
     row = EventRow(5, BASE, "stop", 7, "car", "elm", None, None, None)
-    out = _stop_out(row, tmp_path)
+    out = _stop_out(row, tmp_path, None)
     assert (out.outcome, out.hold_s, out.min_speed, out.observed_s) == (
         "indeterminate",
         0.0,

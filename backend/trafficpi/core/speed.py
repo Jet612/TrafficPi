@@ -88,3 +88,15 @@ def speed_phrase(speed_ms: float, units: str, measured: bool = False) -> str:
     if measured:
         return f"{measured_speed(value)} {unit}"
     return f"about {rough_speed(value)} {unit}"
+
+
+def pass_speeds_phrase(min_speed_ms: float, line_speed_ms: float, units: str) -> str | None:
+    """The speeds a calibrated camera measured for one stop pass, in a few words for a caption:
+    "slowest 4 mph, at the line 7 mph". Each is left out if it was not measured (it is negative
+    then); None if neither was."""
+    parts = []
+    if min_speed_ms >= 0:
+        parts.append(f"slowest {speed_phrase(min_speed_ms, units, measured=True)}")
+    if line_speed_ms >= 0:
+        parts.append(f"at the line {speed_phrase(line_speed_ms, units, measured=True)}")
+    return ", ".join(parts) or None

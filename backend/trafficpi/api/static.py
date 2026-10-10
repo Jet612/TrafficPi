@@ -19,7 +19,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 
 from starlette.concurrency import run_in_threadpool
-from starlette.responses import FileResponse, Response
+from starlette.responses import FileResponse, RedirectResponse, Response
 from starlette.staticfiles import PathLike, StaticFiles
 from starlette.types import Scope
 
@@ -89,6 +89,11 @@ def _set_policy(response: Response, path: str | Path, stat: os.stat_result) -> N
         response.headers["Content-Security-Policy"] = content_security_policy(hashes)
 
 
+# Pages that have a new address. A bookmark or a link to the old one is sent on. The redirect is
+# temporary (307) so that a browser never keeps it: the old name could be used again.
+MOVED_PAGES = {"history": "/review/"}
+
+
 class DashboardFiles(StaticFiles):
     """The exported dashboard, every HTML page with a policy that fits its own inline scripts.
 
@@ -107,6 +112,9 @@ class DashboardFiles(StaticFiles):
         return response
 
     async def get_response(self, path: str, scope: Scope) -> Response:
+        moved = MOVED_PAGES.get(path.split("/", 1)[0])
+        if moved is not None:  # first, so that an old export still on the disk is not served
+            return RedirectResponse(moved, status_code=307)
         response = await super().get_response(path, scope)
         # The not-found page does not come through file_response, so look at what comes back.
         if isinstance(response, FileResponse) and response.status_code == 404:

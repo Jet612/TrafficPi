@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
-from sqlalchemy import CursorResult, Engine, delete, func, select
+from sqlalchemy import CursorResult, Engine, delete, func, or_, select
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -325,6 +325,23 @@ class Store:
             rows = s.execute(query.order_by(Event.id.desc()).limit(limit)).scalars()
             return [_event_row(r) for r in rows]
 
+    def events_after(
+        self, type: str, start_ms: int, end_ms: int, *, after_id: int = 0, limit: int = 2_000
+    ) -> list[EventRow]:
+        """Events of one type in ``[start_ms, end_ms)``, oldest first, ``limit`` at a time: pass the
+        last id seen as ``after_id`` for the next page. For an export, which must not hold a year
+        of rows in memory at once."""
+        query = select(Event).where(
+            Event.camera_id == self.camera_id,
+            Event.type == type,
+            Event.occurred_at >= start_ms,
+            Event.occurred_at < end_ms,
+            Event.id > after_id,
+        )
+        with self._session() as s:
+            rows = s.execute(query.order_by(Event.id).limit(limit)).scalars()
+            return [_event_row(r) for r in rows]
+
     # --- stops: what vehicles did at stop signs, and what a person made of it -------------------
 
     def stops_between(
@@ -340,7 +357,8 @@ class Store:
     ) -> list[EventRow]:
         """Stop events in ``[start_ms, end_ms)``, newest first.
 
-        ``review`` is "unreviewed", "confirmed" or "false_positive" (None: whichever). Pass the
+        ``review`` is "unreviewed", "confirmed" or "false_positive", or "counted" for every pass
+        that has not been called a false alarm (None: whichever, false alarms included). Pass the
         last id seen as ``before_id`` to get the next page.
         """
         query = select(Event).where(
@@ -353,6 +371,9 @@ class Store:
             query = query.where(Event.details["outcome"].as_string().in_(list(outcomes)))
         if review == "unreviewed":
             query = query.where(Event.review.is_(None))
+        elif review == "counted":
+            # SQL's "not equal" is not true for a missing review, so the missing ones are named.
+            query = query.where(or_(Event.review.is_(None), Event.review != "false_positive"))
         elif review is not None:
             query = query.where(Event.review == review)
         if sign is not None:
