@@ -209,7 +209,7 @@ function Selected({
         <>
           <p className="mt-3 text-sm text-ink-2">
             {element.kind === "exclusion"
-              ? "Vehicles standing in this area are ignored, for example parked cars."
+              ? "Vehicles standing in this area are ignored."
               : "Vehicles are only looked for inside detection zones, when there are any."}{" "}
             Drag a corner to reshape it, or the small dot on an edge to add a corner. Press a corner twice to remove it.
           </p>

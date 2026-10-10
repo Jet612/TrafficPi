@@ -1,17 +1,16 @@
 """When stop signs are judged (plan.md D42).
 
-The model sees poorly in the dark, and a pass judged badly counts against a driver, so the owner
-can limit the hours in which stop signs are judged. Outside them a vehicle is not judged at all:
-no row in the database, no picture, no clip, nothing on the Data page or in the email. The vehicles
-are still counted at the counting lines and their trails still saved: only the stop-sign stats stop.
+The hours in which stop signs are judged can be limited. Outside them a vehicle is not judged at
+all: no row in the database, no picture, no clip, nothing on the Data page or in the email. The
+vehicles are still counted at the counting lines and their trails still saved: only the stop-sign
+stats stop.
 
 There are two limits, each switched on by itself, and both must hold for a pass to be judged:
 
 * **In daylight**: from some minutes before sunrise to some minutes after sunset, where the camera
   is. It follows the seasons by itself. It needs the camera's latitude and longitude (``sun.py``).
 * **In set hours**: one or more ranges of the day on the camera's clock, on chosen days of the
-  week, for the cases the sun does not fit (school-run hours, weekdays only, leaving out the hour
-  the sun is in the lens). A range may run through midnight; it belongs to the day it starts on.
+  week. A range may run through midnight; it belongs to the day it starts on.
 
 With neither on, every pass is judged, as it always was.
 
@@ -41,7 +40,7 @@ CLOCK_KEY = "stop_hours_clock"
 RANGES_KEY = "stop_hours_ranges"
 DAYS_KEY = "stop_hours_days"
 
-DEFAULT_MARGIN_MIN = 30  # the owner's: 30 minutes before sunrise to 30 minutes after sunset
+DEFAULT_MARGIN_MIN = 30  # 30 minutes before sunrise to 30 minutes after sunset
 MIN_MARGIN_MIN = -120  # a negative margin starts later (or stops sooner) than the sun
 MAX_MARGIN_MIN = 180
 MAX_RANGES = 6

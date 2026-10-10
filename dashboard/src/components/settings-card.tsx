@@ -260,7 +260,7 @@ export function SettingsCard() {
 
             <OptionGroup
               title="Evidence for stop signs"
-              hint="For each pass at a stop sign that needs a look (rolled through, did not stop, could not be told), a picture and a short clip are kept on this machine, for you to see and decide. A vehicle that stopped as it should gets none. The pictures are small, 640 by 360 pixels, so far-off number plates and faces cannot be read in them (one close to the camera might be)."
+              hint="For each pass at a stop sign that needs a look (rolled through, did not stop, could not be told), a picture and a short clip are kept on this machine. A vehicle that stopped as it should gets none. The pictures are small, 640 by 360 pixels, so far-off number plates and faces cannot be read in them (one close to the camera might be)."
             >
               <Switch
                 label="Keep a picture and a clip of passes that need a look"
@@ -294,7 +294,7 @@ export function SettingsCard() {
               />
               <WholeNumber
                 label="Keep the clip of a rolled-through stop for (hours)"
-                hint={`Clips of rolled-through stops are deleted after ${rollingHours === null ? "this time" : hoursText(rollingHours)}, to spare the disk. The picture stays for the days above, and the count for good.`}
+                hint={`Clips of rolled-through stops are deleted after ${rollingHours === null ? "this time" : hoursText(rollingHours)}. The picture stays for the days above, and the count for good.`}
                 value={draft.rollingClipHours}
                 onChange={(text) => change({ rollingClipHours: text })}
                 problem={rollingHours === null ? `A whole number of hours, from 1 to ${MAX_CLIP_HOURS}.` : null}

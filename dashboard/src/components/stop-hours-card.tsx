@@ -41,8 +41,8 @@ type Outcome = { kind: "ok" | "error"; text: string } | null;
 
 /**
  * When stop signs are judged (plan.md D42): only in daylight, which follows the seasons, and/or
- * only at set times of the day on chosen days, which suits the cases the sun does not. Outside the
- * hours a pass is not judged at all. The sun's times for a place are shown as it is typed.
+ * only at set times of the day on chosen days. Outside the hours a pass is not judged at all. The
+ * sun's times for a place are shown as it is typed.
  */
 export function StopHoursCard() {
   const [state, setState] = useState<StopHoursState | null>(null);
@@ -172,9 +172,9 @@ function HoursForm({ state, apply }: { state: StopHoursState; apply: (next: Stop
       }}
     >
       <p className="max-w-3xl text-sm text-ink-2">
-        The camera sees poorly in the dark, and a pass judged badly counts against a driver, so you can choose the hours in which stop signs are judged. Outside them a pass is not judged
-        at all: no row in the history, no picture, no clip, nothing on the Data page or in the daily email. Vehicles are still counted at the counting lines and their trails still
-        saved. Switch on one limit or both (a pass must then be inside both); with both off, every pass is judged at every hour.
+        You can choose the hours in which stop signs are judged. Outside them a pass is not judged at all: no row in the history, no picture, no clip, nothing on the Data page or in
+        the daily email. Vehicles are still counted at the counting lines and their trails still saved. Switch on one limit or both (a pass must then be inside both); with both off,
+        every pass is judged at every hour.
       </p>
 
       <div className="grid gap-x-10 gap-y-6 md:grid-cols-2">
@@ -275,8 +275,8 @@ function HoursForm({ state, apply }: { state: StopHoursState; apply: (next: Stop
           title="At set times"
           hint={
             <>
-              One or more ranges of the day by the camera&rsquo;s clock ({state.status.timezone}), on the days you pick: for when the sun is not the right guide, like school-run hours, weekdays
-              only, or leaving out the hour the sun is in the lens. A range may run through midnight, so 18:00 to 16:00 leaves out 16:00 to 18:00.
+              One or more ranges of the day by the camera&rsquo;s clock ({state.status.timezone}), on the days you pick. A range may run through midnight, so 18:00 to 16:00 leaves out
+              16:00 to 18:00.
             </>
           }
         >

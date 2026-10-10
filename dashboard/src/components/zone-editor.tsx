@@ -259,7 +259,7 @@ export function ZoneEditor() {
               <p id={introId} className="mb-3 max-w-3xl text-sm text-ink-2">
                 A <strong className="font-medium text-ink">counting line</strong> counts the vehicles that cross it.{" "}
                 A <strong className="font-medium text-ink">detection zone</strong> limits where vehicles are looked for.{" "}
-                An <strong className="font-medium text-ink">exclusion zone</strong> ignores a spot, such as parked cars.
+                An <strong className="font-medium text-ink">exclusion zone</strong> ignores whatever is detected inside it.
                 A <strong className="font-medium text-ink">stop sign</strong> checks whether vehicles stop before its line.
                 Add a shape, then drag it into place on the picture.
               </p>

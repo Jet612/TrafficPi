@@ -1,14 +1,13 @@
 """Sunrise and sunset from a place and a day (plan.md D42).
 
-Stop signs can be judged only in daylight, because the model sees poorly in the dark and a pass
-judged badly counts against a driver. That needs the times of sunrise and sunset where the camera
-is, for any day, with no table, no network and no library. These are the formulas of NOAA's solar
-calculator (Jean Meeus, *Astronomical Algorithms*): the sun's declination and the equation of time
-from the Julian century, then the hour angle at which the sun's upper edge meets the horizon, with
-refraction. They agree with the U.S. Naval Observatory's published times to a minute or two (the
-tests compare 24 places and days, polar ones included); near the polar circles the sun grazes the
-horizon and a small error in its height is a large one in the clock, so they are good to a few
-minutes there.
+Stop signs can be judged only in daylight. That needs the times of sunrise and sunset where the
+camera is, for any day, with no table, no network and no library. These are the formulas of NOAA's
+solar calculator (Jean Meeus, *Astronomical Algorithms*): the sun's declination and the equation
+of time from the Julian century, then the hour angle at which the sun's upper edge meets the
+horizon, with refraction. They agree with the U.S. Naval Observatory's published times to a minute
+or two (the tests compare 24 places and days, polar ones included); near the polar circles the sun
+grazes the horizon and a small error in its height is a large one in the clock, so they are good
+to a few minutes there.
 
 **A day here is a solar day**, not a calendar day of the clock: the 24 hours around local solar
 noon, named by a number (days since 1970-01-01, as if the place's mean solar time were UTC). That
