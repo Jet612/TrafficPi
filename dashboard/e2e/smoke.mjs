@@ -634,10 +634,15 @@ try {
       await page.getByText(/choose at least one kind/).first().waitFor({ state: "detached" });
     });
 
-    /** Select the speed calibration in the list (a press on a selected row would let go of it). */
+    /**
+     * Select the speed calibration in the list (a press on a selected row would let go of it). Its own
+     * corners are told by their names: a selected known distance has two handles of its own, which
+     * are not the calibration being selected.
+     */
     const selectCalibration = async () => {
-      if ((await corners().count()) === 0) await page.getByRole("button", { name: /^Speed calibration/ }).first().click();
-      await corners().first().waitFor();
+      const own = canvas().locator('[data-handle="corner"][aria-label^="Speed calibration, corner"]');
+      if ((await own.count()) === 0) await page.getByRole("button", { name: /^Speed calibration/ }).first().click();
+      await own.first().waitFor();
     };
 
     // The made-up street runs left and right across the picture, so its road is a horizontal band:
@@ -1216,16 +1221,11 @@ try {
       // the fastest estimated speed: in the owner's units, with when and what, and said to be an estimate
       assert.ok(stops.fastest, "the made-up street's passes were given a fastest speed");
       const fastestFact = await page.getByTestId("fact-fastest").innerText();
-      if (stops.fastest.calibrated) {
-        // the passes made while the calibration step had the road measured are in this period: a measured speed beats an estimate
-        assert.match(fastestFact, /Fastest speed/);
-        assert.match(fastestFact, /\d+ (mph|km\/h)|almost still/);
-        assert.doesNotMatch(fastestFact, /rough estimate/);
-      } else {
-        assert.match(fastestFact, /Fastest estimated speed/);
-        assert.match(fastestFact, /about \d+ mph|almost still/);
-        assert.match(fastestFact, /rough estimate/);
-      }
+      // the calibration step has taken its calibration away, and only the one in force counts (D49): an estimate again
+      assert.equal(stops.fastest.calibrated, false, "no calibration is in force, so the fastest is an estimate");
+      assert.match(fastestFact, /Fastest estimated speed/);
+      assert.match(fastestFact, /about \d+ mph|almost still/);
+      assert.match(fastestFact, /rough estimate/);
       assert.match(fastestFact, /a (car|truck|bus|bicycle|motorcycle|vehicle) (just now|\d+ min ago|at \d\d:\d\d|yesterday at \d\d:\d\d|on \w{3}, \w{3} \d+(, \d{4})? at \d\d:\d\d)/);
       const kinds = page.getByTestId("data-stops-by-kind");
       await kinds.getByRole("row", { name: /^Cars / }).waitFor();
@@ -1252,10 +1252,10 @@ try {
       // the day-by-day table has a column for each day's fastest estimate, and today's is the server's
       const dayCard = page.getByTestId("data-stops-by-day");
       await dayCard.getByRole("button", { name: "Table", exact: true }).click();
-      await dayCard.getByRole("columnheader", { name: /^Fastest( \(est\.\))?$/ }).waitFor(); // "Fastest" once a day has a measured speed
+      await dayCard.getByRole("columnheader", { name: "Fastest (est.)" }).waitFor();
       assert.ok(stops.by_day.at(-1).fastest, "today has a fastest estimate");
       const todayCells = await dayCard.getByRole("row").last().locator("td").allInnerTexts();
-      assert.match(todayCells.at(-1), /^(≈ )?(\d+ (mph|km\/h)|almost still)$/, `today's fastest is a speed (${todayCells.at(-1)})`); // "≈" marks an estimate beside a measured day
+      assert.match(todayCells.at(-1), /^(\d+ (mph|km\/h)|almost still)$/, `today's fastest is a speed (${todayCells.at(-1)})`);
       assert.equal(await dayCard.getByRole("row").first().locator("th").count() > 3, true);
       await dayCard.getByRole("button", { name: "Count", exact: true }).click();
 
@@ -2074,8 +2074,7 @@ try {
       for (const label of ["Stopped:", "Rolled through:", "Did not stop:", "Could not tell:"]) {
         assert.match(mailText, new RegExp(`${label}\\s+\\d+( \\(\\d+%\\))?\\n`), `${label} has a count and a share`);
       }
-      // "Fastest speed" once the calibration step has measured a pass in this period, "Fastest estimate" before that
-      assert.match(mailText, /Fastest (estimate|speed):\s+((about )?\d+ (mph|km\/h)|almost still|–)/);
+      assert.match(mailText, /Fastest estimate:\s+(about \d+ (mph|km\/h)|almost still|–)/);
       await mailCard.getByRole("button", { name: "Close the preview" }).click();
       assert.equal(await mailCard.locator("iframe").count(), 0);
       await shot("mail");
@@ -2426,7 +2425,8 @@ try {
     // a shorter period has less to tell: the made-up troubles are hours back (a real slowdown of this very board may be in the last hour, since the demo
     // records the machine it runs on, so "nothing to report" cannot be asked for), and the choice is kept
     await card.getByRole("button", { name: "1 hour", exact: true }).click();
-    await episodes.getByText("Weak power").waitFor({ state: "detached" });
+    // (the words are in the summary line, a row and the key, so wait by counting: a locator that matches several cannot be waited on to detach)
+    await eventually(async () => assert.equal(await episodes.getByText("Weak power").count(), 0), "the weak supply was two hours back, so the last hour has none");
     for (const title of ["Camera not working", "Nothing recorded"]) assert.equal(await episodes.getByText(title).count(), 0, `${title} was hours ago`);
     assert.equal(await card.getByRole("button", { name: "1 hour", exact: true }).getAttribute("aria-pressed"), "true");
     await page.reload();

@@ -40,7 +40,7 @@ export function StatTile({
       <dt className="text-sm text-ink-2">{label}</dt>
       <dd className="mt-1">
         <span className={cn("block text-ink", METRIC_SIZE[size], wrap ? "break-words" : "truncate")}>{value}</span>
-        {note && <span className="mt-0.5 block text-sm text-ink-2">{note}</span>}
+        {note && <span className="mt-0.5 block break-words text-sm text-ink-2">{note}</span>}
         {children && <span className="mt-3 block">{children}</span>}
       </dd>
     </div>
