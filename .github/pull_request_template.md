@@ -1,6 +1,6 @@
 ## What this changes, and why
 
-<!-- One or two sentences. Link the issue or the decision in plan.md (D…) it follows. -->
+<!-- One or two sentences. Link the issue it follows. -->
 
 ## How it was tested
 
@@ -17,7 +17,7 @@
 
 <!-- What you did not or could not try (the real camera, a phone, another browser). -->
 
-## Notes kept true
+## Docs kept true
 
-- [ ] plan.md (a decision, or its log), todo.md and the docs say what is now so
+- [ ] The README and the pages in `docs/` say what is now so
 - [ ] Nothing here reads a licence plate, identifies a face or a person, or weakens the "not for enforcement" wording

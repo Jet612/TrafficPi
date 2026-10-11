@@ -29,3 +29,9 @@ hailort.log
 # Local configuration and secrets
 .env
 .env.*
+
+# The maintainer's working notes (plan, task list, what is waiting on the owner): kept in the
+# checkout, not in the repository. CLAUDE.md says how they are used.
+/plan.md
+/todo.md
+/owner.md

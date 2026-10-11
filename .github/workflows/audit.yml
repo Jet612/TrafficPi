@@ -1,6 +1,6 @@
 name: Dependency audit
 
-# Looks for known weaknesses and unwelcome licences in the locked dependencies (plan.md M8). It runs
+# Looks for known weaknesses and unwelcome licences in the locked dependencies. It runs
 # weekly and by hand, and is not part of the checks that every push must pass: a new advisory would
 # turn an unrelated push red. The work is in scripts/audit_deps.sh, which scripts/rehearse_ci.sh
 # --audit runs from a fresh clone.

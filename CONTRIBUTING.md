@@ -10,7 +10,7 @@ TrafficPi counts vehicles, judges stop-sign behaviour and estimates speeds from 
 - **No enforcement.** It is not a certified speed-measurement device and a result must not be used as evidence against anyone; the pages and the README say so, and a change must not weaken that.
 - **No cloud service is required.** Video stays on the device.
 
-[plan.md](plan.md) holds the architecture, the decisions (D1 and on) and the reasons for them, and [todo.md](todo.md) the work in hand. Read the decision that covers what you want to change before you change it; if you think it is wrong, say so in the issue.
+The [README](README.md) shows the architecture, and [docs/](docs/) has the rest: [dev-setup.md](docs/dev-setup.md) (how the parts fit, and why the toolchain is what it is), [security.md](docs/security.md), [speed-calibration.md](docs/speed-calibration.md) and [accuracy.md](docs/accuracy.md). Read what covers the part you want to change before you change it; if you think a design choice is wrong, say so in the issue.
 
 ## You do not need the hardware for most work
 
@@ -45,7 +45,7 @@ E2E_PASSWORD=... E2E_DEMO=1 node dashboard/e2e/smoke.mjs
 - **The API's types are generated.** After changing a route or a response model run `scripts/gen_api_types.sh` and commit `dashboard/src/lib/openapi.json` and `api-types.ts`; CI fails when they are out of date.
 - **Style.** Ruff (line length 100) and Pyright for Python; ESLint and TypeScript for the dashboard. Write comments the way the code around yours does: say why, not what.
 - **Words on screen.** One name for each idea (`dashboard/src/lib/stops.ts` has the outcomes, `lib/format.ts` the dates and times). A hint beside an option says what the option does and never why anyone would use it; docs/dev-setup.md ("Explaining an option") has the rule.
-- **Keep the notes true.** A decision or a change of approach goes in plan.md (the decision table and the log), a task in todo.md, and whatever only the owner can do in owner.md. [CLAUDE.md](CLAUDE.md) has the same rules, and the traps of the development Pi, for an AI assistant working in the checkout.
+- **Keep the docs true.** A change to what a page says, a command, a setting or a limit updates the README or the page in `docs/` that describes it, in the same pull request. [CLAUDE.md](CLAUDE.md) has the rules for an AI assistant working in the checkout, and the traps of the development Pi.
 - **Commit messages** name the area and say what changed: `dashboard: the Review page keeps a pass you have just reviewed`.
 - **Do not run heavy jobs beside a live camera.** If you develop on the Pi that is also counting traffic, queue them as docs/dev-setup.md says ("Heavy jobs share the Pi with the camera").
 
@@ -61,4 +61,4 @@ A bug report is most useful with the version (`git log -1 --oneline`), what the 
 
 ## Licence
 
-By contributing you agree that your work is released under the [MIT License](LICENSE). Dependencies must be permissively licensed (D16); `scripts/audit_deps.sh` checks that.
+By contributing you agree that your work is released under the [MIT License](LICENSE). Dependencies must be permissively licensed (MIT, BSD, Apache-2.0, ISC and the like); `scripts/audit_deps.sh` checks that.

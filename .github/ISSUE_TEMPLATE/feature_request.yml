@@ -17,7 +17,7 @@ body:
     id: idea
     attributes:
       label: What would you change?
-      description: Optional. plan.md has the decisions (D1 and on) that already cover a lot; say if yours would change one.
+      description: Optional. Which part of TrafficPi it would change, and how.
   - type: textarea
     id: alternatives
     attributes:
