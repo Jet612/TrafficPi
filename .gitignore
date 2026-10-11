@@ -30,6 +30,17 @@ hailort.log
 .env
 .env.*
 
+# The keys and databases the services make. They are normally under the data directory, ignored
+# above; these catch a data directory that was pointed somewhere else.
+secret.key
+mail.key
+*.pem
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
 # The maintainer's working notes (plan, task list, what is waiting on the owner): kept in the
 # checkout, not in the repository. CLAUDE.md says how they are used.
 /plan.md
