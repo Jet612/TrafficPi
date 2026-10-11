@@ -1,4 +1,4 @@
-"""What the status page says about the machine around the services (plan.md M8 step 4): how much
+"""What the status page says about the machine around the services: how much
 the data directory holds, when the last backup was made, and what the installer's memory test said.
 
 Only plain facts read from the files, never anything from the network, so that the status page

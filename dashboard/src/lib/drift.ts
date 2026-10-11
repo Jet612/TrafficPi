@@ -2,7 +2,7 @@ import { formatAgo } from "./format";
 
 /**
  * What the camera-drift check has found: has the view moved since the reference picture was kept?
- * It mirrors `DriftMonitor.status()` in backend/trafficpi/vision/drift.py (plan.md D40), which the
+ * It mirrors `DriftMonitor.status()` in backend/trafficpi/vision/drift.py, which the
  * vision service sends in every live state message.
  */
 export type DriftState = "ok" | "drifted" | "unknown" | "no_reference";

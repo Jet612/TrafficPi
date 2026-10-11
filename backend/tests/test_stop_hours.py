@@ -1,4 +1,4 @@
-"""When stop signs are judged (plan.md D42): the daylight limit and the set hours."""
+"""When stop signs are judged: the daylight limit and the set hours."""
 
 from collections.abc import Iterable
 from datetime import UTC, datetime, tzinfo

@@ -1,4 +1,4 @@
-"""When stop signs are judged: the endpoints behind the Stop-sign hours card (plan.md D42).
+"""When stop signs are judged: the endpoints behind the Stop-sign hours card.
 
 Three of them. ``GET`` gives what is saved and what it means now; ``PUT`` saves a whole new
 setting and tells the vision service to read it (it applies at once, with no restart); ``POST

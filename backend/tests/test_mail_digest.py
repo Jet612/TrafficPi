@@ -1,4 +1,4 @@
-"""The daily email's content: what it says for a stretch of time, in text and in HTML (D32)."""
+"""The daily email's content: what it says for a stretch of time, in text and in HTML."""
 
 from datetime import datetime, tzinfo
 from zoneinfo import ZoneInfo
@@ -530,7 +530,7 @@ def test_the_caveat_about_estimates_is_there_only_when_a_speed_is_shown() -> Non
     assert "not a measurement" in build([stop("did_not_stop", max_speed=3.0)]).text
 
 
-# --- a speed measured on a calibrated road (plan.md M6) -------------------------------------------
+# --- a speed measured on a calibrated road --------------------------------------------------------
 
 
 def test_a_measured_speed_is_a_speed_and_not_an_estimate_and_has_no_about() -> None:
@@ -582,7 +582,7 @@ def test_a_long_mail_with_both_kinds_says_both_and_marks_each_day_as_it_was_made
     assert "own size" in digest.text and "unproven" in digest.text  # both sentences
 
 
-# --- the hours stop signs are judged in (plan.md D42) ---------------------------------------------
+# --- the hours stop signs are judged in -----------------------------------------------------------
 
 HOURS = "from 30 minutes before sunrise to 30 minutes after sunset"
 

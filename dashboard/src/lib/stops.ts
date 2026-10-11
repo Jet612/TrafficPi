@@ -166,7 +166,7 @@ export function slowestText(minSpeed: number, units: SpeedUnits): string {
 /**
  * The speeds a calibrated camera measured for a pass, in the units that are set: "slowest 4 mph",
  * "at the line 7 mph" (and, in `detail`, "fastest 12 mph"). Only the speeds measured under the
- * calibration saved now (`calibrated`, plan.md D49); an empty list says there are none, and the
+ * calibration saved now (`calibrated`); an empty list says there are none, and the
  * rough estimate is told instead.
  */
 export function measuredSpeedParts(
@@ -186,7 +186,7 @@ export function measuredSpeedParts(
  * The numbers behind a verdict, for anyone who wants to see why: how long it was watched in the zone,
  * how long it stood still, and how fast it went. With a calibrated camera that is measured ("slowest 4
  * mph · at the line 7 mph"); without one it is how slowly it went at the least, a rough estimate (a
- * vehicle's own size stands for a car's, plan.md D41), in the units set on the Setup page: "1.9 s in
+ * vehicle's own size stands for a car's), in the units set on the Setup page: "1.9 s in
  * zone · still 0.1 s · slowest ≈ 4 mph".
  */
 export function numbersText(

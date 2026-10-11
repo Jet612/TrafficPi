@@ -1,4 +1,4 @@
-"""The endpoint behind the calibration editor: what a calibration means (plan.md M6, D44)."""
+"""The endpoint behind the calibration editor: what a calibration means."""
 
 import math
 from collections.abc import Iterator

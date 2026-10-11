@@ -1,4 +1,4 @@
-"""The health table and the store's way to it (plan.md M8 step 4)."""
+"""The health table and the store's way to it."""
 
 import pytest
 

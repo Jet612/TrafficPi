@@ -25,7 +25,7 @@ class AuthState(BaseModel):
 
 class Me(BaseModel):
     username: str
-    # Whether the request came through Cloudflare (plan.md D28), and whether this viewer may open
+    # Whether the request came through Cloudflare, and whether this viewer may open
     # the continuous live stream: always on the LAN, and from outside only if the owner allowed it.
     remote: bool = False
     live_video: bool = True
@@ -83,7 +83,7 @@ ReviewState = Literal["confirmed", "false_positive"]
 
 
 class StopOut(BaseModel):
-    """What one vehicle did at one stop sign (plan.md D23), and what a person made of it."""
+    """What one vehicle did at one stop sign, and what a person made of it."""
 
     id: int
     t: int  # ms since the epoch: when it crossed the stop line
@@ -93,13 +93,13 @@ class StopOut(BaseModel):
     hold_s: float  # the longest it was still in the approach zone
     min_speed: float  # the slowest it went there, in its own sizes a second; -1 if not measured
     observed_s: float  # how long it was watched in the zone before the line
-    # With a calibrated camera (plan.md M6), in metres a second as the speed meter measured them
+    # With a calibrated camera, in metres a second as the speed meter measured them
     # while the vehicle was in the approach zone: the slowest, the fastest, and the last one before
     # the line. None where the camera was not calibrated or the speed could not be believed.
     min_speed_ms: float | None
     max_speed_ms: float | None
     line_speed_ms: float | None
-    # True when those speeds were measured under the calibration saved now (plan.md D49). A pass
+    # True when those speeds were measured under the calibration saved now. A pass
     # measured under an earlier one still carries its speeds, for anyone who wants to see what a
     # correction changed, but the pages show only these.
     calibrated: bool
@@ -142,8 +142,8 @@ class HourOutcomes(OutcomeCounts):
 
 class SpeedEstimate(BaseModel):
     """The fastest speed in some time. Without a calibration it is an estimate from the vehicle's
-    own size, good to about 40% (plan.md D41); with one (``calibrated``) it was measured in metres
-    on the road, and a calibrated speed always beats an estimate, whatever their sizes (M6)."""
+    own size, good to about 40%; with one (``calibrated``) it was measured in metres
+    on the road, and a calibrated speed always beats an estimate, whatever their sizes."""
 
     speed_ms: float  # metres a second, to a tenth
     label: str  # the kind of vehicle it was
@@ -191,7 +191,7 @@ class StopReviews(BaseModel):
 
 
 class StopStats(BaseModel):
-    """How vehicles did at the stop signs over some local days (plan.md D25)."""
+    """How vehicles did at the stop signs over some local days."""
 
     timezone: str
     units: Literal["mph", "kmh"]  # the owner's choice, for speeds shown in words
@@ -201,7 +201,7 @@ class StopStats(BaseModel):
     all_time: bool  # asked for "all time": from the first pass (a year at most)
     sign: str | None  # only this stop sign, if asked
     totals: OutcomeCounts
-    outside_hours: int  # of the passes in totals, those outside the hours judged now (plan.md D42)
+    outside_hours: int  # of the passes in totals, those outside the hours judged now
     previous: OutcomeCounts | None  # the same number of days before it; None for all time
     by_hour: list[HourOutcomes]  # all 24
     by_day: list[DayOutcomes]  # every day of the period, oldest first, empty ones included
@@ -260,7 +260,7 @@ class SpeedKind(BaseModel):
 
 
 class SpeedStats(BaseModel):
-    """How fast the vehicles counted at the counting lines were going (plan.md M6). A speed is
+    """How fast the vehicles counted at the counting lines were going. A speed is
     given only for a vehicle seen for long enough and in a part of the picture the calibration
     can be believed, so ``counted`` is more than ``figures.count`` and the difference is shown."""
 
@@ -303,7 +303,7 @@ class TrafficWeekday(BaseModel):
 
 
 class TrafficStats(BaseModel):
-    """Vehicles counted over some local days (plan.md D25)."""
+    """Vehicles counted over some local days."""
 
     timezone: str
     from_ms: int
@@ -415,10 +415,10 @@ class Settings(BaseModel):
     timezone: str
     units: Literal["mph", "kmh"]
     # Strict, so that a stray `true` is not read as the number of days, nor "yes" as a switch.
-    trails_enabled: bool = Field(strict=True)  # save the path each vehicle took (plan.md D21)
+    trails_enabled: bool = Field(strict=True)  # save the path each vehicle took
     trails_people: bool = Field(strict=True)  # and people's paths too (vehicles' only, if not)
     trails_keep_days: int = Field(strict=True, ge=1, le=MAX_KEEP_DAYS)  # older ones are deleted
-    # The same for the picture and clip kept of a stop-sign pass that needs a look (plan.md D24).
+    # The same for the picture and clip kept of a stop-sign pass that needs a look.
     evidence_enabled: bool = Field(strict=True)
     evidence_keep_days: int = Field(strict=True, ge=1, le=MAX_EVIDENCE_DAYS)
     evidence_max_mb: int = Field(strict=True, ge=MIN_MAX_MB, le=MAX_MAX_MB)  # the oldest goes first
@@ -427,14 +427,14 @@ class Settings(BaseModel):
     evidence_rolling_clip_hours: int = Field(strict=True, ge=1, le=MAX_CLIP_HOURS)
     evidence_did_not_stop_clip_hours: int = Field(strict=True, ge=1, le=MAX_CLIP_HOURS)
     # Whether a picture and a clip are kept of a roll, and of a pass that did not stop. Off: the
-    # pass is still judged and counted, only its evidence is not made (plan.md D33).
+    # pass is still judged and counted, only its evidence is not made.
     evidence_keep_rolling: bool = Field(strict=True)
     evidence_keep_did_not_stop: bool = Field(strict=True)
     # May viewers who come through Cloudflare open the continuous live stream? Off: Cloudflare's
-    # terms let it limit video on its CDN and do not say whether a Tunnel counts (plan.md D28).
+    # terms let it limit video on its CDN and do not say whether a Tunnel counts.
     remote_live_video: bool = Field(strict=True)
-    # Does the camera look for people at all? Off: no box, no track, no trail and no count for them
-    # (plan.md D34). Vehicles are unaffected.
+    # Does the camera look for people at all? Off: no box, no track, no trail and no count for
+    # them. Vehicles are unaffected.
     detect_people: bool = Field(strict=True)
 
 
@@ -450,7 +450,7 @@ class StopHoursRange(BaseModel):
 
 
 class StopHoursConfig(BaseModel):
-    """When stop signs are judged (plan.md D42). A PUT replaces all of it, so every member is given:
+    """When stop signs are judged. A PUT replaces all of it, so every member is given:
     a client that does not know one cannot reset it by leaving it out. Checked in full again by
     ``StopHours``."""
 
@@ -593,7 +593,7 @@ class BackupInfo(BaseModel):
 
 class MemoryTest(BaseModel):
     """What the installer's memory test found; a bad result means the board's other results
-    cannot be trusted (plan.md R16)."""
+    cannot be trusted."""
 
     at_ms: int
     mb: int
@@ -653,7 +653,7 @@ class StatusResponse(BaseModel):
     timezone: str
 
 
-# --- the daily email (plan.md D32) --------------------------------------------------------------
+# --- the daily email ----------------------------------------------------------------------------
 
 
 class MailScheduleBody(BaseModel):

@@ -1,4 +1,4 @@
-"""The daily email's settings and tables (plan.md D32): recipients, each scheduled mail, each copy.
+"""The daily email's settings and tables: recipients, each scheduled mail, each copy.
 
 A scheduled mail is one ``mail_sends`` row (the stretch it covers and the mail as it was made, so
 that every recipient and every retry gets the same words), with one ``mail_deliveries`` row for each

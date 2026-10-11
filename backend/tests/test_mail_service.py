@@ -1,4 +1,4 @@
-"""The daily email's service: what is due, who gets what once, retries, tests (plan.md D32)."""
+"""The daily email's service: what is due, who gets what once, retries, tests."""
 
 import logging
 from datetime import datetime

@@ -20,8 +20,8 @@ export type SpeedUnits = "mph" | "kmh";
 /**
  * What a speed on a page is worth, in a sentence, for each kind of speed. The same words as the
  * server's (backend core/speed.py); tests/data/speed_cases.json holds them for both, so that they
- * cannot drift. When a calibration has been checked against vehicles of known speed (plan.md M6's
- * "done when"), MEASURED_CAVEAT is where its error band goes.
+ * cannot drift. When a calibration has been checked against vehicles of known speed,
+ * MEASURED_CAVEAT is where its error band goes.
  */
 export const ESTIMATE_CAVEAT =
   "A speed is an estimate: how fast a vehicle crossed the picture, compared with its own size. It is good to about 40% and is not a measurement.";
@@ -45,7 +45,7 @@ export function roughSpeed(value: number): number {
 }
 
 /**
- * A speed measured on a calibrated road (plan.md M6), rounded to a whole mile or kilometre an hour
+ * A speed measured on a calibrated road, rounded to a whole mile or kilometre an hour
  * (halves go up). The same as backend core/speed.py `measured_speed`; both read tests/data/speed_cases.json.
  */
 export const measuredSpeed = (value: number): number => Math.floor(value + 0.5);

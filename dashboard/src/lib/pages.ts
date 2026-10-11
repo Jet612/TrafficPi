@@ -1,4 +1,4 @@
-/** The pages of the dashboard, in the order of the navigation (plan.md D22). */
+/** The pages of the dashboard, in the order of the navigation. */
 export interface PageInfo {
   /** With a trailing slash: the export writes each page as a folder with an index.html. */
   href: string;

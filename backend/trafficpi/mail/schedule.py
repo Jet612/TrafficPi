@@ -1,4 +1,4 @@
-"""When the daily email goes, and which stretch of time each one covers (plan.md D32).
+"""When the daily email goes, and which stretch of time each one covers.
 
 A schedule is a time of day in the camera's time zone on some days of the week. Each day it names
 has one *instant* (a moment in ms since the epoch), worked out from the local date so that a day

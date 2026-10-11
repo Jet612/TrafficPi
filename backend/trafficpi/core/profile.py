@@ -27,7 +27,7 @@ one saved before zones existed or typed by hand, is filled in by the "before" st
 so older documents keep loading. ``schema_version`` goes up when a new kind of element appears (a
 document of an older version is filled in and loads as the newest; a document of a newer version
 is refused, with a message to update TrafficPi): 2 added stop signs, 3 the calibration that puts the
-picture in metres (and so speeds in metres a second: plan.md M6).
+picture in metres (and so speeds in metres a second).
 """
 
 from __future__ import annotations
@@ -190,7 +190,7 @@ STOP_KINDS = ["car", "truck", "bus", "motorcycle"]  # who must stop, unless a si
 
 
 class StopSignConfig(_Model):
-    """A stop line, and the stretch of road before it where a vehicle has to stop (plan.md D23).
+    """A stop line, and the stretch of road before it where a vehicle has to stop.
 
     ``approach`` is that stretch, as corners in order: a stop counts anywhere in it, so a vehicle
     that waited in a queue has stopped as much as one that waited at the line. ``a`` and ``b`` are
@@ -270,7 +270,7 @@ class CalibrationConfig(_Model):
 
     The corners go round the rectangle one after the other, either way. The side from the first
     corner to the second is ``width_m`` long (across the road) and the side from the second to the
-    third is ``length_m`` (along it). With that the picture can be put in metres (plan.md M6, D44):
+    third is ``length_m`` (along it). With that the picture can be put in metres:
     the speed of a vehicle follows from where it was on the road and when. It is only as good as
     the rectangle is big, flat and well measured; the dashboard says where speeds are believed.
     """

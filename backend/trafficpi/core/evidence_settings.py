@@ -1,9 +1,9 @@
-"""The settings that decide whether evidence of stop-sign passes is kept, and how long (D24, Q12).
+"""The settings that decide whether evidence of stop-sign passes is kept, and how long.
 
 Evidence is a picture and a short clip of a pass that needs a look (rolling, did not stop, could
 not tell), kept on this machine for a while and then deleted (the clips of rolls and of passes that
-did not stop sooner than the rest). A roll and a pass that did not stop can each be switched off
-(D33). They live in the database's settings table, like the trail settings, so that the dashboard
+did not stop sooner than the rest). A roll and a pass that did not stop can each be switched off.
+They live in the database's settings table, like the trail settings, so that the dashboard
 can change them and the vision service picks the change up when it is told to reload.
 """
 
@@ -27,7 +27,7 @@ MAX_KEEP_DAYS = 3650  # a limit on typing, not a recommendation
 MAX_CLIP_HOURS = MAX_KEEP_DAYS * 24
 MIN_MAX_MB = 50
 # While less than this is free on the disk no picture or clip is written, and the oldest are deleted
-# until there is room again (plan.md D64): the database is on the same card, and a full disk would
+# until there is room again: the database is on the same card, and a full disk would
 # stop the counting. A fixed floor, not a setting: nobody wants the counting to stop to keep a clip.
 MIN_FREE_BYTES = 1_000_000_000
 MAX_MAX_MB = 1_000_000  # a terabyte
@@ -42,7 +42,7 @@ class EvidenceSettings:
     # than ``keep_days`` when it was a roll or a pass that did not stop; the days still cap these.
     rolling_clip_hours: int = DEFAULT_ROLLING_CLIP_HOURS
     did_not_stop_clip_hours: int = DEFAULT_DID_NOT_STOP_CLIP_HOURS
-    # One switch for each outcome, beside ``enabled`` (D33). Off means no picture and no clip of
+    # One switch for each outcome, beside ``enabled``. Off means no picture and no clip of
     # that kind of pass; the pass is still judged and counted. A pass that could not be told has
     # no switch of its own and follows ``enabled``. What is already kept is not deleted.
     keep_rolling: bool = True

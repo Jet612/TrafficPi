@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2016  # the commands are single-quoted for the shell that runs them
-# Checks the accelerator and camera stack, for example right after a reboot (M0's cold-boot check).
+# Checks the accelerator and camera stack, for example right after a reboot (the cold-boot check).
 # With the systemd services running it checks them; otherwise it runs a 10 s smoke test of its own.
 # Prints PASS or FAIL per check and exits non-zero if anything failed.
 set -u
@@ -26,10 +26,10 @@ check "no Hailo errors in the kernel log"          bash -c '! sudo -n dmesg | gr
 check "bootloader is up to date"                   bash -c 'sudo -n rpi-eeprom-update | grep -q "BOOTLOADER: up to date" || { sudo -n rpi-eeprom-update | grep BOOTLOADER; exit 1; }'
 check "camera is detected"                         bash -c 'rpicam-hello --list-cameras 2>&1 | grep -q imx708'
 check "PCIe link to the accelerator is Gen 3"      bash -c 'sudo -n lspci -vv -s "$(lspci | awk "/Hailo/ {print \$1; exit}")" | grep -q "LnkSta:.*8GT/s"'
-# This board's defective RAM page is reserved at boot by an overlay (plan.md R16); only check for it
+# This board's defective RAM page is reserved at boot by an overlay; only check for it
 # where that overlay is configured. Reading the addresses in /proc/iomem needs root.
 if grep -q '^dtoverlay=trafficpi-badram' /boot/firmware/config.txt 2>/dev/null; then
-  check "the defective RAM page is reserved (R16)"   bash -c 'sudo -n grep -q "^1dfbb0000-1dfbb3fff : reserved" /proc/iomem'
+  check "the defective RAM page is reserved"   bash -c 'sudo -n grep -q "^1dfbb0000-1dfbb3fff : reserved" /proc/iomem'
 fi
 
 # With the systemd services running they own the camera and the accelerator, so a second process

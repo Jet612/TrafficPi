@@ -10,7 +10,7 @@ import type { CalibrationReport, Profile } from "./types";
 export const REPORT_DELAY_MS = 350;
 
 /**
- * What the server makes of the calibration being edited (plan.md M6): how long it finds each known
+ * What the server makes of the calibration being edited: how long it finds each known
  * distance, how many metres a pixel is at the stop lines and counting lines, and where speeds will
  * be given. `none` when the profile has no calibration; `problem` when it cannot be used, with the
  * reason; `failed` when the server could not be asked. The last report stays while the next one is

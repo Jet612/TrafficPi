@@ -1,4 +1,4 @@
-"""The daily email's tables: settings, recipients, each scheduled mail and each copy (D32)."""
+"""The daily email's tables: settings, recipients, each scheduled mail and each copy."""
 
 import pytest
 from sqlalchemy import text

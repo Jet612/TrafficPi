@@ -1228,7 +1228,7 @@ try {
       // the fastest estimated speed: in the owner's units, with when and what, and said to be an estimate
       assert.ok(stops.fastest, "the made-up street's passes were given a fastest speed");
       const fastestFact = await page.getByTestId("fact-fastest").innerText();
-      // the calibration step has taken its calibration away, and only the one in force counts (D49): an estimate again
+      // the calibration step has taken its calibration away, and only the one in force counts: an estimate again
       assert.equal(stops.fastest.calibrated, false, "no calibration is in force, so the fastest is an estimate");
       assert.match(fastestFact, /Fastest estimated speed/);
       assert.match(fastestFact, /about \d+ mph|almost still/);
@@ -2523,7 +2523,7 @@ try {
     await page.goto(`${base}/review`); // no trailing slash: the server sends it to the page
     await page.getByRole("heading", { level: 1, name: "Review" }).waitFor({ state: "attached" });
     assert.equal(pagePath(), "/review/");
-    // the History page is the Review page now (plan.md D59): the old address sends a bookmark on, and not for good
+    // the History page is the Review page now: the old address sends a bookmark on, and not for good
     const moved = await page.request.get(`${base}/history/`, { maxRedirects: 0 });
     assert.equal(moved.status(), 307);
     assert.equal(moved.headers().location, "/review/");

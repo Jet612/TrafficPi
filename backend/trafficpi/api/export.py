@@ -1,9 +1,9 @@
-"""CSV exports of what was counted and of what vehicles did at stop signs (plan.md D62).
+"""CSV exports of what was counted and of what vehicles did at stop signs.
 
 One row for each event, as the database holds it, so that the data can be looked at in a
 spreadsheet or another program. Times are given twice, in UTC and in the camera's time zone; speeds
 are in metres a second, as they are stored. A speed is marked "calibrated" only when it was
-measured under the calibration saved now (D49), and a pass a person called a false alarm is in the
+measured under the calibration saved now, and a pass a person called a false alarm is in the
 file, marked.
 
 The rows are produced a page at a time, so a year of them is never in memory at once, and every cell

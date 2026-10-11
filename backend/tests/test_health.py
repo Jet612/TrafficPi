@@ -1,4 +1,4 @@
-"""The health recorder: a sample every few seconds becomes one row a minute (plan.md M8 step 4)."""
+"""The health recorder: a sample every few seconds becomes one row a minute."""
 
 from trafficpi.vision.health import HealthRecorder, HealthRow
 

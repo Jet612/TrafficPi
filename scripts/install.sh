@@ -24,13 +24,13 @@ set -euo pipefail
 
 # What is installed in your home directory, at exactly these versions: the checksums are those
 # published with the releases, checked here against the files, so a changed download is refused.
-# (CI pins the same uv; Node is the 22 line, D4.)
+# (CI pins the same uv; Node is the 22 line.)
 UV_VERSION=0.12.24
 UV_SHA256=5231be65f496304623895dacdbf1de8504fec90303684bdf05805aa34414dd21
 NODE_VERSION=v22.23.3
 NODE_SHA256=a44aeb94849a299b22df10b9e622ec2f605c2183501bc40590705131de7c740f
 
-# The apt packages (plan.md D15: the four HailoRT ones, not the hailo-all bundle with TAPPAS).
+# The apt packages (the four HailoRT ones, not the hailo-all bundle with TAPPAS).
 HAILO_PACKAGES=(hailort hailort-pcie-driver python3-hailort hailo-models)
 # (xz-utils unpacks Node's tarball, python3 is what uv builds the virtualenv from, kmod gives lsmod.
 # Raspberry Pi OS Lite has them; naming them keeps this from depending on that.)
@@ -223,14 +223,14 @@ run_memtest() {
   say "Testing the memory ($memtest_mb MB, once)"
   if (( memtest_mb == 0 )); then note "skipped (--memtest 0)"; return; fi
   # A defective RAM page showed up on the development board only as random, hard-to-explain
-  # failures (plan.md R16). One pass over a few hundred MB is a quick look, not a guarantee.
+  # failures. One pass over a few hundred MB is a quick look, not a guarantee.
   local ok=false out
   if (( dry )); then printf '   + sudo memtester %sM 1\n' "$memtest_mb"; return; fi
   if out="$(sudo memtester "${memtest_mb}M" 1 2>&1)"; then
     ok=true
     note "memtester found nothing wrong"
   else
-    warn "memtester reported a problem; see below. A board with bad RAM gives results nobody can trust (plan.md R16)"
+    warn "memtester reported a problem; see below. A board with bad RAM gives results nobody can trust"
     printf '%s\n' "$out" | tail -n 12 | sed 's/^/      /'
   fi
   mkdir -p "$data_dir" && chmod 700 "$data_dir"

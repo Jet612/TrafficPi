@@ -136,7 +136,7 @@ class Profile(Base):
 
 
 class MailRecipient(Base):
-    """Someone who gets the daily email (plan.md D32). Removing one removes their deliveries too:
+    """Someone who gets the daily email. Removing one removes their deliveries too:
     an address that is taken off the list leaves no trace behind it."""
 
     __tablename__ = "mail_recipients"

@@ -1,4 +1,4 @@
-"""The security pass (plan.md D31): what a client that is not logged in, or a hostile one, can do.
+"""The security pass: what a client that is not logged in, or a hostile one, can do.
 
 Each test here was written to fail on the code as it was before the pass, and passes on the code
 after it (the commit messages say which gap each one closes).
@@ -343,7 +343,7 @@ def test_another_page_gets_its_own_hashes_and_not_the_first_pages(site_client: T
 def test_the_old_address_of_a_page_that_moved_sends_a_bookmark_to_the_new_one(
     site_client: TestClient, site: Path
 ) -> None:
-    """The History page became the Review page (plan.md D59). The redirect is temporary, so that a
+    """The History page became the Review page. The redirect is temporary, so that a
     browser never keeps it, and does not depend on the old files being gone from the disk."""
     (site / "history").mkdir()
     (site / "history" / "index.html").write_text("<html><body>the old page</body></html>")

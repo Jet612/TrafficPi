@@ -1,4 +1,4 @@
-"""Checking the camera's speeds against vehicles whose speed was known (plan.md M6's "done when").
+"""Checking the camera's speeds against vehicles whose speed was known.
 
 A calibration is only as good as the vehicles it has been checked against. The owner (or anyone)
 drives past the camera at a speed they know, from a GPS app or a speedometer on cruise control, and

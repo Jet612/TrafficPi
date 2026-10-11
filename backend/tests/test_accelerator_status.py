@@ -1,4 +1,4 @@
-"""What the status page says about the accelerator (plan.md M8 step 4)."""
+"""What the status page says about the accelerator."""
 
 import subprocess
 

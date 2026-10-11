@@ -789,7 +789,7 @@ export interface components {
          *
          *     The corners go round the rectangle one after the other, either way. The side from the first
          *     corner to the second is ``width_m`` long (across the road) and the side from the second to the
-         *     third is ``length_m`` (along it). With that the picture can be put in metres (plan.md M6, D44):
+         *     third is ``length_m`` (along it). With that the picture can be put in metres:
          *     the speed of a vehicle follows from where it was on the road and when. It is only as good as
          *     the rectangle is big, flat and well measured; the dashboard says where speeds are believed.
          */
@@ -1260,7 +1260,7 @@ export interface components {
         /**
          * MemoryTest
          * @description What the installer's memory test found; a bad result means the board's other results
-         *     cannot be trusted (plan.md R16).
+         *     cannot be trusted.
          */
         MemoryTest: {
             /** At Ms */
@@ -1437,8 +1437,8 @@ export interface components {
         /**
          * SpeedEstimate
          * @description The fastest speed in some time. Without a calibration it is an estimate from the vehicle's
-         *     own size, good to about 40% (plan.md D41); with one (``calibrated``) it was measured in metres
-         *     on the road, and a calibrated speed always beats an estimate, whatever their sizes (M6).
+         *     own size, good to about 40%; with one (``calibrated``) it was measured in metres
+         *     on the road, and a calibrated speed always beats an estimate, whatever their sizes.
          */
         SpeedEstimate: {
             /** At */
@@ -1497,7 +1497,7 @@ export interface components {
         };
         /**
          * SpeedStats
-         * @description How fast the vehicles counted at the counting lines were going (plan.md M6). A speed is
+         * @description How fast the vehicles counted at the counting lines were going. A speed is
          *     given only for a vehicle seen for long enough and in a part of the picture the calibration
          *     can be believed, so ``counted`` is more than ``figures.count`` and the difference is shown.
          */
@@ -1555,7 +1555,7 @@ export interface components {
         };
         /**
          * StopHoursConfig
-         * @description When stop signs are judged (plan.md D42). A PUT replaces all of it, so every member is given:
+         * @description When stop signs are judged. A PUT replaces all of it, so every member is given:
          *     a client that does not know one cannot reset it by leaving it out. Checked in full again by
          *     ``StopHours``.
          */
@@ -1645,7 +1645,7 @@ export interface components {
         };
         /**
          * StopOut
-         * @description What one vehicle did at one stop sign (plan.md D23), and what a person made of it.
+         * @description What one vehicle did at one stop sign, and what a person made of it.
          */
         StopOut: {
             /** Calibrated */
@@ -1695,7 +1695,7 @@ export interface components {
         };
         /**
          * StopSignConfig
-         * @description A stop line, and the stretch of road before it where a vehicle has to stop (plan.md D23).
+         * @description A stop line, and the stretch of road before it where a vehicle has to stop.
          *
          *     ``approach`` is that stretch, as corners in order: a stop counts anywhere in it, so a vehicle
          *     that waited in a queue has stopped as much as one that waited at the line. ``a`` and ``b`` are
@@ -1743,7 +1743,7 @@ export interface components {
         };
         /**
          * StopStats
-         * @description How vehicles did at the stop signs over some local days (plan.md D25).
+         * @description How vehicles did at the stop signs over some local days.
          */
         StopStats: {
             /** All Time */
@@ -1910,7 +1910,7 @@ export interface components {
         };
         /**
          * TrafficStats
-         * @description Vehicles counted over some local days (plan.md D25).
+         * @description Vehicles counted over some local days.
          */
         TrafficStats: {
             /** All Time */

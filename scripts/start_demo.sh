@@ -35,8 +35,8 @@ done
 mkdir -p "$logs"
 cd "$root/backend"
 printf '%s\n' "$E2E_PASSWORD" | uv run trafficpi-admin --data-dir "$data" set-password --password-stdin
-# --history-days gives the demo three earlier days of made-up trails, so that the History page has
-# days to move between.
+# --history-days gives the demo three earlier days of made-up trails, so that the Data page's Trails
+# card has days to move between.
 nohup uv run trafficpi-vision run --demo --history-days 3 --data-dir "$data" --port "$vision_port" \
   > "$logs/vision.log" 2>&1 < /dev/null &
 vision_pid=$!

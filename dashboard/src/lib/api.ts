@@ -146,7 +146,7 @@ export const api = {
     request<StopStats>("GET", `/api/stats/stops?days=${days}${sign === undefined ? "" : `&sign=${encodeURIComponent(sign)}`}`, undefined, signal),
   /** Vehicles counted over the last `days` local days, today included (0: since the first count). */
   trafficStats: (days: number, signal?: AbortSignal) => request<TrafficStats>("GET", `/api/stats/traffic?days=${days}`, undefined, signal),
-  /** When stop signs are judged (plan.md D42): what is saved, and what it means right now. */
+  /** When stop signs are judged: what is saved, and what it means right now. */
   stopHours: (signal?: AbortSignal) => request<StopHoursState>("GET", "/api/stops/hours", undefined, signal),
   /** The whole setting, which replaces what is stored; the vision service is told (and the answer says whether it could be), and the new state comes back. */
   saveStopHours: (config: StopHoursConfig) => request<StopHoursSaved>("PUT", "/api/stops/hours", config),
@@ -159,7 +159,7 @@ export const api = {
   /** Whether a document (a file being imported) is a usable profile; nothing is saved. */
   checkProfile: (document: unknown) => request<ProfileCheck>("POST", "/api/profile/check", document),
   /**
-   * What a calibration that is not saved yet means (plan.md M6): how long the map finds each known
+   * What a calibration that is not saved yet means: how long the map finds each known
    * distance, how many metres a pixel is at each probe, and where speeds will be given. A calibration
    * that makes no sense is answered with the reason, not with an error.
    */
@@ -173,7 +173,7 @@ export const api = {
   settings: (signal?: AbortSignal) => request<Settings>("GET", "/api/settings", undefined, signal),
   /** Every member of the settings, which replace what is stored. */
   saveSettings: (settings: Settings) => request<Settings>("PUT", "/api/settings", settings),
-  /** The daily email (plan.md D32): when it goes, to whom, whether a key is stored (never the key), and how the latest mails went. */
+  /** The daily email: when it goes, to whom, whether a key is stored (never the key), and how the latest mails went. */
   mail: (signal?: AbortSignal) => request<MailState>("GET", "/api/mail", undefined, signal),
   /** Every member of the schedule, which replace what is stored; the new state comes back. */
   saveMailSchedule: (schedule: MailSchedule) => request<MailState>("PUT", "/api/mail/schedule", schedule),

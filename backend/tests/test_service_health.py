@@ -1,4 +1,4 @@
-"""The vision service keeps a row of health a minute (plan.md M8 step 4)."""
+"""The vision service keeps a row of health a minute."""
 
 import threading
 import time

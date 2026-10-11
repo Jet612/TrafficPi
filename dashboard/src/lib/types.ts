@@ -26,7 +26,7 @@ export type Profile = Schemas["Profile"];
 export type LineConfig = Schemas["CountingLineConfig"];
 export type ZoneConfig = Schemas["ZoneConfig"];
 export type StopSignConfig = Schemas["StopSignConfig"];
-/** The speed calibration: a rectangle on the road with its size, and known distances that test it (plan.md D44). */
+/** The speed calibration: a rectangle on the road with its size, and known distances that test it. */
 export type CalibrationConfig = NonNullable<Profile["calibration"]>;
 export type CheckConfig = CalibrationConfig["checks"][number];
 export type CalibrationAnswer = Schemas["CalibrationAnswer"];
@@ -75,7 +75,7 @@ export interface LiveTrack {
   box: [number, number, number, number]; // x0, y0, x1, y1
   velocity: [number, number];
   confirmed: boolean;
-  /** How fast it is going in metres a second over the last second, when the camera is calibrated and the speed can be believed (plan.md M6). */
+  /** How fast it is going in metres a second over the last second, when the camera is calibrated and the speed can be believed. */
   speed_ms?: number;
 }
 

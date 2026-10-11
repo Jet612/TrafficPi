@@ -1,4 +1,4 @@
-"""The evidence endpoints: the picture and the clip that are kept of a stop (D24, M5)."""
+"""The evidence endpoints: the picture and the clip that are kept of a stop."""
 
 from collections.abc import Iterator
 from pathlib import Path

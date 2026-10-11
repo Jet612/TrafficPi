@@ -1,4 +1,4 @@
-"""The daily email's service (plan.md D32): what is due, who gets what once, retries, and tests.
+"""The daily email's service: what is due, who gets what once, retries, and tests.
 
 ``MailService.tick`` is what the API's scheduler calls about every 30 seconds, on a worker thread
 (it makes HTTP calls, so it must never run on the event loop or hold up the watchdog's heartbeat).

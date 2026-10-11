@@ -1,4 +1,4 @@
-"""The road as a flat plane: a rectangle of known size puts the picture in metres (plan.md M6)."""
+"""The road as a flat plane: a rectangle of known size puts the picture in metres."""
 
 import math
 

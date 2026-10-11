@@ -1,4 +1,4 @@
-"""systemd's notification protocol, with no dependency (plan.md D27).
+"""systemd's notification protocol, with no dependency.
 
 A unit with ``Type=notify`` says when it is ready, and with ``WatchdogSec=`` it must say now and
 then that it is still alive, or systemd kills it and starts it again. ``Restart=always`` brings

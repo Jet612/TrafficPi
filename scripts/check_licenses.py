@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Check the licences of the locked dependencies against plan.md D16.
+"""Check the licences of the locked dependencies against the project's licence policy.
 
-D16: dependencies must be permissively licensed (MIT, BSD, Apache-2.0, ISC and the like); GPL or
-AGPL needs the owner's explicit approval. This reads what each package says about itself, nothing
+The policy: dependencies must be permissively licensed (MIT, BSD, Apache-2.0, ISC and the like),
+because TrafficPi is MIT; GPL or AGPL needs the maintainer's explicit approval. This reads what each package says about itself, nothing
 more: a wheel can bundle code under another licence than its own metadata names.
 
     scripts/check_licenses.py python REQUIREMENTS    the packages listed in a `uv export` file,
@@ -24,9 +24,9 @@ from pathlib import Path
 # reason is the point of the entry: a new one is added only after reading it.
 REVIEWED: dict[str, str] = {
     "certifi": "MPL-2.0; a bundle of CA certificates used as data, not linked or modified (2026-10-09)",
-    "caniuse-lite": "CC-BY-4.0; browser-support data that Next.js and Browserslist read while the dashboard is built; not part of what is built or served (2026-10-09; not GPL, so D16's rule is not engaged)",
+    "caniuse-lite": "CC-BY-4.0; browser-support data that Next.js and Browserslist read while the dashboard is built; not part of what is built or served (2026-10-09; not GPL, so the policy against GPL is not engaged)",
     "lightningcss": "MPL-2.0; Tailwind's CSS compiler, run while the dashboard is built and not part of what is built or served; its files are not modified (2026-10-09; weak, file-level copyleft)",
-    "python-prctl": "GPL-3.0; a dependency of the apt package python3-picamera2, imported as an installed system package and not distributed or in the lock file (D3, D16)",
+    "python-prctl": "GPL-3.0; a dependency of the apt package python3-picamera2, imported as an installed system package and not distributed or in the lock file (2026-10-09)",
 }
 
 PERMISSIVE = re.compile(
@@ -101,7 +101,7 @@ def report(rows: list[tuple[str, str, str]]) -> int:
         if verdict != OK and reviewed is None:
             problems += 1
         if verdict != OK:
-            note = f"reviewed: {reviewed}" if reviewed else "NOT REVIEWED (plan.md D16)"
+            note = f"reviewed: {reviewed}" if reviewed else "NOT REVIEWED"
             print(f"{name:<{width}}  {licence or '(none given)':<40}  {verdict}: {note}")
     counts = {v: sum(1 for _, _, x in rows if x == v) for v in (OK, REVIEW, BAD)}
     print(f"{len(rows)} packages: {counts[OK]} permissive, {counts[REVIEW]} to look at, {counts[BAD]} copyleft")

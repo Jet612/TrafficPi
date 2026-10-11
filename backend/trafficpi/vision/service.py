@@ -340,7 +340,7 @@ class VisionService:
         self._tracker_config = tracker_config
         self._reload = threading.Event()
         self._detect_people = True  # read from the settings at start and on every reload
-        # When stop signs are judged (plan.md D42): read at start and on every reload. A pass
+        # When stop signs are judged: read at start and on every reload. A pass
         # outside the hours is not judged at all, so nothing about it is stored or kept.
         self._stop_hours = StopHours()
         self._stop_zone: tzinfo = UTC  # the camera's time zone, which the set hours are on
@@ -383,7 +383,7 @@ class VisionService:
         self._sampler: SystemSampler | None = None  # made when the service runs
         self._next_metrics = 0.0  # time.monotonic(): take the next reading when this has passed
 
-    # --- is it moving? (plan.md D27) --------------------------------------------------------
+    # --- is it moving? ----------------------------------------------------------------------
 
     def beat(self) -> None:
         """Note that the loop has moved. Called on every pass, and while it waits for the camera."""
@@ -708,7 +708,7 @@ class VisionService:
                     queued.observed_s,
                 )
 
-    # --- the camera's view (plan.md M7, D40) ---------------------------------------------------
+    # --- the camera's view ---------------------------------------------------------------------
 
     def _start_drift(self) -> None:
         """Begin checking that the camera still sees what it saw when the reference picture was
@@ -726,7 +726,7 @@ class VisionService:
             self._drift.close()
             self._drift = None
 
-    # --- evidence (plan.md D8, D24) ---------------------------------------------------------
+    # --- evidence ---------------------------------------------------------------------------
 
     def _load_evidence_settings(self) -> None:
         """Start or stop keeping evidence as the settings say (at start, and on every reload)."""
@@ -747,7 +747,7 @@ class VisionService:
     def _ask_for_evidence(self, event: StopEvent, event_id: int, at_ms: int) -> None:
         """A stop that needs a look gets a picture and a clip, once the seconds after it are in.
 
-        A roll and a pass that did not stop each have a switch (D33); with theirs off they are
+        A roll and a pass that did not stop each have a switch; with theirs off they are
         judged and stored as ever and get no evidence. A pass that could not be told has none.
         """
         if self._evidence is None or event.outcome == "stopped":
@@ -827,7 +827,7 @@ class VisionService:
     @property
     def evidence_skipped_for_space(self) -> int:
         """Passes since start that got no picture or clip because the disk had less free than the
-        floor (plan.md D64): 0 when all is well."""
+        floor: 0 when all is well."""
         live = self._evidence.skipped_for_space if self._evidence is not None else 0
         return self._skipped_by_finished + live
 
@@ -875,7 +875,7 @@ class VisionService:
                 MIN_FREE_BYTES // 1_000_000,
             )
 
-    # --- when stop signs are judged (plan.md D42) --------------------------------------------
+    # --- when stop signs are judged ----------------------------------------------------------
 
     def _load_stop_hours(self) -> None:
         """Read when stop signs are judged and the zone their set hours are on (the owner may
@@ -955,7 +955,7 @@ class VisionService:
             f"; it resumes {when}" if when else "",
         )
 
-    # --- trails (plan.md D21) ---------------------------------------------------------------
+    # --- trails -----------------------------------------------------------------------------
 
     def _load_detection_settings(self) -> None:
         """Read whether people are looked for (the owner may have changed it)."""
@@ -1022,7 +1022,7 @@ class VisionService:
         except Exception:
             log.exception("could not store the trails in progress")
 
-    # --- machine health (plan.md M8 step 4) ---------------------------------------------------
+    # --- machine health -----------------------------------------------------------------------
 
     def _write_health(self) -> None:
         """Store finished minutes of health; if the database is away keep them for another try,

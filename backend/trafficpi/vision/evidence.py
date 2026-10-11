@@ -1,4 +1,4 @@
-"""Evidence: a picture and a short clip of the stop-sign passes that need a look (plan.md D8, D24).
+"""Evidence: a picture and a short clip of the stop-sign passes that need a look.
 
 The service hands every frame to an :class:`EvidenceRecorder`, which keeps the last dozen seconds
 as small JPEGs in memory (and nowhere else: nothing is written to disk until something happens).
@@ -271,7 +271,7 @@ class EvidenceRecorder:
 
     def _too_full(self) -> bool:
         """Whether the disk has less free than the floor: then nothing is written, so that the
-        database on the same card is never starved of room (plan.md D64)."""
+        database on the same card is never starved of room."""
         if self._min_free <= 0:
             return False
         try:
@@ -384,7 +384,7 @@ _warned_no_ffmpeg = False
 def encode_clip(frames: Iterable[np.ndarray], fps: float, path: Path) -> bool:
     """Write BGR frames as an H.264 MP4 that any browser plays, with the system's ffmpeg.
 
-    The Pi 5 has no hardware H.264 encoder (plan.md D8), but a clip this small takes a fraction of
+    The Pi 5 has no hardware H.264 encoder, but a clip this small takes a fraction of
     a second in software. Without ffmpeg there is no clip, only the picture.
     """
     global _warned_no_ffmpeg
@@ -451,7 +451,7 @@ def clean_up(
     free_of: Callable[[Path], int] = free_bytes,
 ) -> tuple[int, int]:
     """Delete evidence older than ``keep_days``, then the oldest until the rest fits ``max_bytes``
-    and, if ``min_free_bytes`` is given, until that much is free on the disk (D64).
+    and, if ``min_free_bytes`` is given, until that much is free on the disk.
 
     A clip is also deleted once it is older than ``clip_hours`` allows for the outcome of its pass
     (``outcomes_of`` says which event ids had which outcome; a clip whose outcome is not known, or

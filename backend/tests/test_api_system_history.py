@@ -1,4 +1,4 @@
-"""GET /api/system/history: the machine's past, for the System page (plan.md M8 step 4)."""
+"""GET /api/system/history: the machine's past, for the System page."""
 
 import time
 from collections.abc import Iterator

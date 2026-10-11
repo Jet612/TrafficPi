@@ -7,7 +7,7 @@
 #
 # Why: this Pi is also the live camera. The whole suite in one go takes it to the 84 degrees where it
 # slows itself down (the API tests with Argon2 do that alone), and on 2026-10-09 the board froze and was
-# reset by its watchdog minutes after un-niced checks overlapped a stall of the camera (plan.md R19; the
+# reset by its watchdog minutes after un-niced checks overlapped a stall of the camera (the
 # cause is not proven). So each slice runs on two cores, at the lowest priority, behind the lock that
 # keeps heavy jobs from overlapping, and only once the board is below COOL_BELOW degrees (it waits at
 # most five minutes for that). The exit status is 0 when every slice passed.

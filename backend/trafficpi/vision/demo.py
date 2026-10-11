@@ -259,8 +259,8 @@ def demo_history(days: int, *, now_ms: int, tz: tzinfo, seed: int = 11) -> list[
     """Made-up trails for each of the ``days`` days before today on ``tz``'s calendar, oldest first.
 
     They run along the same two lanes as the live street, at the same speeds, so that they lie on
-    its road in the picture. For trying the History page, and the browser tests, without waiting
-    for traffic; nothing in them is real.
+    its road in the picture. For trying the Data page's Trails card, and the browser tests, without
+    waiting for traffic; nothing in them is real.
     """
     rng = random.Random(seed)
     today = datetime.fromtimestamp(now_ms / 1000, tz).date()

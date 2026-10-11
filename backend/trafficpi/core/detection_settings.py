@@ -1,4 +1,4 @@
-"""What the camera looks for, as the owner sets it in the dashboard (plan.md D34).
+"""What the camera looks for, as the owner sets it in the dashboard.
 
 The setting lives in the database's settings table, so the dashboard can change it and the vision
 service picks the change up when it is told to reload.

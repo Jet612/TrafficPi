@@ -1,4 +1,4 @@
-"""The camera-drift check inside the vision service (plan.md M7, D40)."""
+"""The camera-drift check inside the vision service."""
 
 from __future__ import annotations
 

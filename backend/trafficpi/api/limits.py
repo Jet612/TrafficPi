@@ -1,4 +1,4 @@
-"""Size limits for what a client may send (plan.md D31)."""
+"""Size limits for what a client may send."""
 
 from __future__ import annotations
 

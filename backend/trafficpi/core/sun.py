@@ -1,4 +1,4 @@
-"""Sunrise and sunset from a place and a day (plan.md D42).
+"""Sunrise and sunset from a place and a day.
 
 Stop signs can be judged only in daylight. That needs the times of sunrise and sunset where the
 camera is, for any day, with no table, no network and no library. These are the formulas of NOAA's

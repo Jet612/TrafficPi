@@ -1,5 +1,5 @@
 /**
- * How the camera is shown to a viewer who comes through Cloudflare (plan.md D28).
+ * How the camera is shown to a viewer who comes through Cloudflare.
  *
  * Cloudflare's terms let it limit a customer who uses its network for video without a paid plan,
  * and they do not say whether a Tunnel counts, so the server holds the continuous live stream back

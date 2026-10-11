@@ -1,5 +1,5 @@
 """A saved speed calibration, in words: what the map finds for each known distance and how far a
-speed can be believed at each line (plan.md M6, D44). ``trafficpi-admin calibration-report``
+speed can be believed at each line. ``trafficpi-admin calibration-report``
 prints it.
 
 It is the editor's own report (``calibration_routes.build_report``) for the profile that is saved,

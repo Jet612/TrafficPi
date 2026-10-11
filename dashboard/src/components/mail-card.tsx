@@ -35,7 +35,7 @@ const REFRESH_MS = 20_000;
 
 type Outcome = { kind: "ok" | "error"; text: string } | null;
 
-/** The daily email (plan.md D32): when it goes, to whom, the provider's key, a preview and how the latest ones went. */
+/** The daily email: when it goes, to whom, the provider's key, a preview and how the latest ones went. */
 export function MailCard() {
   const [state, setState] = useState<MailState | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);

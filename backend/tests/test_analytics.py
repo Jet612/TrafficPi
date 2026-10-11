@@ -1,4 +1,4 @@
-"""The sums behind the Data page: periods of local days, stop-sign shares, traffic (D25, M7)."""
+"""The sums behind the Data page: periods of local days, stop-sign shares, traffic."""
 
 import json
 from datetime import UTC, datetime, tzinfo
@@ -488,7 +488,7 @@ def test_a_speed_is_rounded_to_a_tenth_of_a_metre_a_second() -> None:
     assert stop_stats(rows, None, NY, PERIOD)["fastest"]["speed_ms"] == 5.8  # type: ignore[index]
 
 
-# --- speeds measured on a calibrated road (plan.md M6) -------------------------------------------
+# --- speeds measured on a calibrated road --------------------------------------------------------
 
 
 def test_a_measured_speed_is_the_speed_in_metres_a_second_as_it_is() -> None:
@@ -605,7 +605,7 @@ def test_an_outcome_that_did_not_happen_has_no_share_and_a_missing_one_is_none()
     }
 
 
-# --- the speeds of the vehicles counted (plan.md M6) --------------------------------------------
+# --- the speeds of the vehicles counted ---------------------------------------------------------
 
 MPH = 2.2369362920544
 

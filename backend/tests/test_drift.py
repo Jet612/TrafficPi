@@ -1,4 +1,4 @@
-"""The camera-drift check (plan.md M7, D40): the estimate, and the monitor around it."""
+"""The camera-drift check: the estimate, and the monitor around it."""
 
 from __future__ import annotations
 

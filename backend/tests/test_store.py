@@ -539,7 +539,7 @@ def test_wall_clock_maps_monotonic_to_utc_and_follows_clock_steps() -> None:
     assert clock.epoch_ms(mono[0]) == wall[0] // 1_000_000
 
 
-# --- the speeds of a calibrated camera (plan.md M6) -----------------------------------------------
+# --- the speeds of a calibrated camera ------------------------------------------------------------
 
 
 def test_a_count_with_a_measured_speed_keeps_it_and_the_calibration_it_came_from(

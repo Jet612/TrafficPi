@@ -1,4 +1,4 @@
-"""What the trails endpoints return: a day by the hour, and the paths themselves (plan.md M4b).
+"""What the trails endpoints return: a day by the hour, and the paths themselves.
 
 Days and hours follow the configured time zone, as everywhere else in the dashboard: "9 am" is
 what a person standing at the intersection would call it, and a day is 23 or 25 hours long when

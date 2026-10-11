@@ -201,7 +201,7 @@ def test_loading_from_a_file(tmp_path: Path) -> None:
         load_profile_file(path)
 
 
-# --- stop signs (plan.md D23) -------------------------------------------------------------
+# --- stop signs ---------------------------------------------------------------------------
 
 STOP: dict[str, Any] = {
     "id": "elm",
@@ -298,7 +298,7 @@ def test_there_is_a_limit_to_the_stop_signs_too() -> None:
         parse_profile({"stop_signs": signs})
 
 
-# --- the calibration that puts the picture in metres (plan.md M6) -----------------------------
+# --- the calibration that puts the picture in metres ------------------------------------------
 
 # A rectangle across a road 7 m wide and 30 m long, seen from a camera standing to one side.
 CALIBRATION: dict[str, Any] = {

@@ -7,7 +7,7 @@
 #
 #   --memtest MB          test that much RAM once with memtester (default 512; 0 skips)
 #   --baseline SECONDS    run the camera and the model with no rules for that long and print what it
-#                         cost (default 600; 0 skips): the figures of plan.md §7 to compare with
+#                         cost (default 600; 0 skips): the figures in docs/accuracy.md to compare with
 #   --hardware-tests      run the tests that need the hardware (pytest --hardware)
 #   --clip FOLDER         a folder made by `trafficpi-vision record` (clip.mp4 and profile.json in
 #                         it): run the clip through each of the three models, compare them, and
@@ -69,7 +69,7 @@ sudo systemctl stop trafficpi-vision
 sleep 5
 
 if (( memtest_mb > 0 )); then
-  echo "== memtester ${memtest_mb}M, one pass (a line with FAILURE means a bad page: plan.md R16)"
+  echo "== memtester ${memtest_mb}M, one pass (a line with FAILURE means a bad page)"
   sudo memtester "${memtest_mb}M" 1 2>&1 | tail -30
 fi
 

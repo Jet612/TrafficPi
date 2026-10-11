@@ -1,4 +1,4 @@
-"""The settings that decide which trails are saved and for how long (plan.md D21, Q9, Q10).
+"""The settings that decide which trails are saved and for how long.
 
 They live in the database's settings table, so the dashboard can change them and the vision
 service picks the change up when it is told to reload.

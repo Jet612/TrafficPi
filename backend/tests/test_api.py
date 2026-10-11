@@ -678,7 +678,7 @@ def test_settings_default_save_and_validate(logged_in: TestClient, vision: FakeV
         3,
         48,
     )
-    # and a picture and clip are kept of both kinds of pass, until a switch is turned off (D33)
+    # and a picture and clip are kept of both kinds of pass, until a switch is turned off
     assert (first["evidence_keep_rolling"], first["evidence_keep_did_not_stop"]) == (True, True)
     body = settings(
         timezone="Europe/Paris",

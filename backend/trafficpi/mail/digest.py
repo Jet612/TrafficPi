@@ -1,4 +1,4 @@
-"""What the daily email says (plan.md D32): the numbers of a stretch of time, in text and in HTML.
+"""What the daily email says: the numbers of a stretch of time, in text and in HTML.
 
 The sums are the Data page's (``api/analytics.py``), taken over the stretch between two scheduled
 times instead of whole local days, so that the email and the dashboard cannot disagree: the same
@@ -53,7 +53,7 @@ class DigestInput:
     kind: Literal["daily", "test"] = "daily"
     units: str = "mph"  # "mph" or "kmh": how a speed is told
     # The hours stop signs are judged in, in words ("from 30 minutes before sunrise to ..."), or
-    # empty when they are judged at every hour (plan.md D42): what is outside them is not in the
+    # empty when they are judged at every hour: what is outside them is not in the
     # numbers, and a quiet night must not be read as a safe one.
     judged_hours: str = ""
 

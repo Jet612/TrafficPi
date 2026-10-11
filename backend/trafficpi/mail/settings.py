@@ -2,8 +2,8 @@
 
 The schedule lives in the database's settings table, like the other settings, so that the dashboard
 can change it and the API's scheduler reads the change at its next look (no restart). The provider's
-key does not: it is kept in a file of its own, readable by its owner only, beside the session key
-(plan.md D32), so that it is never in a settings dump, an API answer or a log line.
+key does not: it is kept in a file of its own, readable by its owner only, beside the session key,
+so that it is never in a settings dump, an API answer or a log line.
 """
 
 from __future__ import annotations

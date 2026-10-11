@@ -329,7 +329,7 @@ describe("stop signs", () => {
   });
 });
 
-describe("a vehicle's label with its speed (plan.md M6)", () => {
+describe("a vehicle's label with its speed", () => {
   const truck = { id: 12, label: "truck", score: 0.88, speed_ms: 12.5 };
 
   it("adds the measured speed in the units, without an about", () => {

@@ -1,4 +1,4 @@
-"""What the status page says about the machine around the services (plan.md M8 step 4)."""
+"""What the status page says about the machine around the services."""
 
 import json
 import os

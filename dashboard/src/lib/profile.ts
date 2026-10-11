@@ -46,7 +46,7 @@ export const DEFAULT_STOP_CLASSES = DEFAULT_LINE_CLASSES;
 /** The kinds that can be told to stop. People are not among them: they cross the road. */
 export const STOPPABLE_CLASSES: readonly string[] = ["car", "truck", "bus", "motorcycle", "bicycle"];
 
-/** What counts as a stop to begin with (plan.md D23): the server fills in the same when they are left out. */
+/** What counts as a stop to begin with: the server fills in the same when they are left out. */
 export const STOP_DEFAULTS = { hold_s: 1.0, still_radius: 0.08, roll_speed: 0.7, min_observed_s: 0.8 } as const;
 export type StopNumber = keyof typeof STOP_DEFAULTS;
 /** The range the server takes for each number (what the form allows), and what each is called. */

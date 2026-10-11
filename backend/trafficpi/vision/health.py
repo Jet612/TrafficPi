@@ -1,7 +1,7 @@
 """One row of machine health a minute, from the samples the vision service takes every few seconds.
 
 The System page shows the temperature, the load and the frame rate *now*; this keeps what they were,
-so that a board that throttled at half past one can be asked about at four (plan.md M8 step 4, R13).
+so that a board that throttled at half past one can be asked about at four.
 A minute is the right size: a day is 1,440 rows of a few dozen bytes, and nothing that matters
 happens faster. The recorder is plain arithmetic with no hardware and no database; the service feeds
 it and stores what comes out.

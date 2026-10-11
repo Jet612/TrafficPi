@@ -161,7 +161,7 @@ def test_forgetting_a_track_clears_its_memory() -> None:
     assert rule.update(1, [track(1, 0.5, 0.55)]) == []  # nothing remembered to cross from
 
 
-# --- the speed of a calibrated camera (plan.md M6) ------------------------------------------------
+# --- the speed of a calibrated camera -------------------------------------------------------------
 
 
 def test_a_count_carries_the_speed_the_meter_measured_as_the_vehicle_crossed() -> None:

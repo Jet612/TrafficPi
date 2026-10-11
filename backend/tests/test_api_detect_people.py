@@ -1,4 +1,4 @@
-"""The Settings API carries the switch for looking for people (plan.md D34)."""
+"""The Settings API carries the switch for looking for people."""
 
 from collections.abc import Iterator
 from pathlib import Path

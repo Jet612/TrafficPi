@@ -1,4 +1,4 @@
-"""The daily email's API: the card in Settings, the key, tests and the preview (plan.md D32)."""
+"""The daily email's API: the card in Settings, the key, tests and the preview."""
 
 import logging
 import stat

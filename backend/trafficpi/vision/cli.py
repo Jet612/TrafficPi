@@ -540,7 +540,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     )
     # Under systemd (Type=notify, WatchdogSec=) the service says when it is up and, while its
     # camera loop moves, that it is alive; a loop stuck in a call that never returns stops the
-    # messages and systemd restarts the service (plan.md D27). By hand none of this sends anything.
+    # messages and systemd restarts the service. By hand none of this sends anything.
     period = watchdog_period()
     heartbeat = Heartbeat(
         service.alive,
@@ -625,7 +625,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=0,
         metavar="N",
         help="with --demo: if the demo has no trails yet, make up some for each of the N days "
-        "before today, so that the History page has something to show at once",
+        "before today, so that the Data page's Trails card has something to show at once",
     )
     run.set_defaults(func=cmd_run)
 
@@ -699,9 +699,9 @@ def entry() -> NoReturn:
     """The console script: run :func:`main`, then leave without HailoRT's native exit code.
 
     HailoRT 4.23.0 on this platform crashes while the process exits (a jump into unmapped memory
-    inside libhailort, reproduced after the live-view server had run; see plan.md). Everything we
-    own has been flushed and closed by then, so exit directly and let the operating system clean
-    up, which is what ``HailoDetector.close`` already relies on.
+    inside libhailort, reproduced after the live-view server had run; see Troubleshooting in
+    docs/dev-setup.md). Everything we own has been flushed and closed by then, so exit directly and
+    let the operating system clean up, which is what ``HailoDetector.close`` already relies on.
     """
     try:
         code = main()

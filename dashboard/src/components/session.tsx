@@ -10,7 +10,7 @@ interface Session {
   username: string | null;
   /** Whether a user exists at all; false means the password has not been set yet. */
   configured: boolean | null;
-  /** Whether this page was reached through Cloudflare (plan.md D28). */
+  /** Whether this page was reached through Cloudflare. */
   remote: boolean;
   /** Whether this viewer may open the continuous live video: always at home, from outside only if the owner allowed it. */
   liveVideo: boolean;

@@ -1,4 +1,4 @@
-"""Trails: the path each vehicle took, saved when its track ends (plan.md D21).
+"""Trails: the path each vehicle took, saved when its track ends.
 
 A trail is the ground point of a confirmed track (the middle of the bottom edge of its box, where
 the vehicle meets the road: the point zones and counting lines judge by), sampled about five times

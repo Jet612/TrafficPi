@@ -36,7 +36,7 @@ class CompiledProfile:
     counting_lines: list[CountingLine]
     detection_filter: DetectionFilter | None  # None: no zones, every detection is looked at
     stop_signs: list[StopSign]
-    calibration: GroundCalibration | None = None  # None: no speeds in metres (plan.md M6)
+    calibration: GroundCalibration | None = None  # None: no speeds in metres
 
 
 def counting_line(config: CountingLineConfig) -> CountingLine:

@@ -416,7 +416,7 @@ export function resetStopNumbers(profile: Profile, id: string): Profile {
   );
 }
 
-// --- the speed calibration (plan.md M6) --------------------------------------------------------
+// --- the speed calibration ---------------------------------------------------------------------
 
 /**
  * A speed calibration: a rectangle laid on the road in the picture, with a width and a length for

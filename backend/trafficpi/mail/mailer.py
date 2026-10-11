@@ -1,4 +1,4 @@
-"""Sending a mail (plan.md D32): the interface, the Resend sender, and a sender that writes files.
+"""Sending a mail: the interface, the Resend sender, and a sender that writes files.
 
 A ``Mailer`` takes one message for one recipient and says what became of it: ``sent``, ``retry``
 (the network, a rate limit or the provider's own trouble: try again later) or ``failed`` (the

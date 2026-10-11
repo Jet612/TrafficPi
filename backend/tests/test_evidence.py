@@ -649,7 +649,7 @@ def test_no_hours_given_means_the_old_behaviour(tmp_path: Path) -> None:
     assert clip.exists()
 
 
-# --- the disk floor (plan.md D64) ---------------------------------------------------------------
+# --- the disk floor -----------------------------------------------------------------------------
 
 
 def test_no_evidence_is_written_while_the_disk_has_less_free_than_the_floor(

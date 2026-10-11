@@ -81,7 +81,7 @@ class EventRow:
 
 @dataclass(frozen=True, slots=True)
 class StopStatRow:
-    """What the sums over stop events need of one of them (the Data page, plan.md D25)."""
+    """What the sums over stop events need of one of them (the Data page)."""
 
     occurred_at: int  # ms since the epoch, UTC
     kind: str  # the vehicle's class label; "" if the event has none
@@ -92,7 +92,7 @@ class StopStatRow:
     min_speed: float  # in the vehicle's own sizes a second; -1 if it was not measured
     observed_s: float
     max_speed: float = -1.0  # the fastest it went, the same units; -1 if it was not measured
-    # With a calibrated camera (plan.md M6): the same, measured in metres a second; -1 if the
+    # With a calibrated camera: the same, measured in metres a second; -1 if the
     # camera was not calibrated, or the speed could not be believed.
     min_speed_ms: float = -1.0
     max_speed_ms: float = -1.0
@@ -102,7 +102,7 @@ class StopStatRow:
 
 @dataclass(frozen=True, slots=True)
 class SpeedRow:
-    """What the speed sums need of a count that has a measured speed (plan.md M6)."""
+    """What the speed sums need of a count that has a measured speed."""
 
     occurred_at: int  # ms since the epoch, UTC
     kind: str  # the vehicle's class label; "" if the event has none
@@ -260,7 +260,7 @@ class Store:
     def record_stop(
         self, event: StopEvent, occurred_at_ms: int, *, evidence_path: str | None = None
     ) -> int:
-        """Store what a vehicle did at a stop sign (plan.md D23); returns the event id.
+        """Store what a vehicle did at a stop sign; returns the event id.
 
         The sign's id is kept where a count keeps its line's, and the outcome and the numbers
         behind it are the event's details. A stop is not a count, so no totals change.
@@ -736,7 +736,7 @@ class Store:
             ).one()
             return None if first is None else (first, last)
 
-    # --- machine health, a row a minute (plan.md M8 step 4) -------------------------------------
+    # --- machine health, a row a minute ---------------------------------------------------------
 
     def add_health(self, rows: Sequence[HealthRow]) -> None:
         """Store minutes of health; a minute that is already there is replaced."""
@@ -907,7 +907,7 @@ class Store:
         self.set_setting(ev.KEEP_DID_NOT_STOP_KEY, settings.keep_did_not_stop)
 
     def get_stop_hours(self) -> StopHours:
-        """When stop signs are judged (plan.md D42); nothing usable stored is no limit at all."""
+        """When stop signs are judged; nothing usable stored is no limit at all."""
         return read_stop_hours(self.get_setting)
 
     def set_stop_hours(self, hours: StopHours) -> None:

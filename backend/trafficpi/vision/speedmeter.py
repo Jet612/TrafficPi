@@ -1,4 +1,4 @@
-"""Speeds in metres a second: where each vehicle is on the road and how fast it moves (plan.md M6).
+"""Speeds in metres a second: where each vehicle is on the road and how fast it moves.
 
 Between the tracker and the rules sits a speed meter, once the camera is calibrated
 (``core/ground``). For every track in every frame it puts the point where the vehicle meets the

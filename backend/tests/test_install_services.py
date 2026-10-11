@@ -1,5 +1,5 @@
 """scripts/install_services.sh, as far as it can be tried without changing the machine: its
-checks of what it is given, and what a dry run says it would do (plan.md D30)."""
+checks of what it is given, and what a dry run says it would do."""
 
 import shutil
 import subprocess

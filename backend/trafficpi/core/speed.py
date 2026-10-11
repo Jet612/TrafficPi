@@ -1,4 +1,4 @@
-"""A speed in a vehicle's own sizes a second, put in real units: a rough estimate (plan.md D41).
+"""A speed in a vehicle's own sizes a second, put in real units: a rough estimate.
 
 The stop rule (``vision/rules/stop_sign.py``) measures how fast a vehicle moves in its own *sizes*
 a second, a size being the geometric mean of the width and the height of its box in the picture.
@@ -11,7 +11,7 @@ size as its length, as the Data page first did, overstated every speed about 1.8
 
 An estimate made this way is good to about 40%: the view angle, the box (which is never exact)
 and the kind of car all matter. It is shown as "about", rounded to what it can claim, and the
-pages say so. A real figure needs a calibration (plan.md M6): a speed measured on a calibrated
+pages say so. A real figure needs a calibration: a speed measured on a calibrated
 road (``core/ground``) is in metres a second already, needs no size, and is shown to a whole mile
 or kilometre an hour, without the "about", and marked as measured.
 """
@@ -36,8 +36,8 @@ MPS_TO_KMH = 3.6
 
 # What a speed on a page or in the mail is worth, in a sentence, for each kind of speed. The
 # dashboard says the same words (lib/speed.ts); tests/data/speed_cases.json holds them for both, so
-# that they cannot drift. When a calibration has been checked against vehicles of known speed
-# (plan.md M6's "done when"), MEASURED_CAVEAT is where its error band goes.
+# that they cannot drift. When a calibration has been checked against vehicles of known speed,
+# MEASURED_CAVEAT is where its error band goes.
 ESTIMATE_CAVEAT = (
     "A speed is an estimate: how fast a vehicle crossed the picture, compared with its own size. "
     "It is good to about 40% and is not a measurement."

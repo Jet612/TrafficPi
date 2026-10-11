@@ -1,4 +1,4 @@
-"""systemd's notification protocol and the heartbeat built on it (plan.md D27)."""
+"""systemd's notification protocol and the heartbeat built on it."""
 
 import logging
 import os

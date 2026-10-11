@@ -44,7 +44,7 @@ const PREVIEW_DELAY_MS = 400;
 type Outcome = { kind: "ok" | "error"; text: string } | null;
 
 /**
- * When stop signs are judged (plan.md D42): only in daylight, which follows the seasons, and/or
+ * When stop signs are judged: only in daylight, which follows the seasons, and/or
  * only at set times of the day on chosen days. Outside the hours a pass is not judged at all. The
  * sun's times for a place are shown as it is typed.
  */

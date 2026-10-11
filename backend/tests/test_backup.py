@@ -1,4 +1,4 @@
-"""Backup and restore of the database and the files beside it (plan.md D29)."""
+"""Backup and restore of the database and the files beside it."""
 
 import io
 import json

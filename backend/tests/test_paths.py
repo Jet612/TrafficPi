@@ -62,7 +62,7 @@ def test_a_variable_set_for_the_services_reaches_all_three(
     assert admin_parser().parse_args(["set-password"]).data_dir == tmp_path / "chosen"
 
 
-# --- the data directory is private (plan.md D31) ----------------------------------------------
+# --- the data directory is private ------------------------------------------------------------
 
 
 def test_a_new_data_directory_is_private_from_the_start(tmp_path: Path) -> None:

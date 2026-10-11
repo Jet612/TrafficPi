@@ -1,4 +1,4 @@
-"""The stop endpoints: what vehicles did at stop signs, and what a person made of it (D23, M5)."""
+"""The stop endpoints: what vehicles did at stop signs, and what a person made of it."""
 
 from collections.abc import Iterator
 from pathlib import Path
@@ -117,8 +117,8 @@ def test_a_pass_measured_on_a_calibrated_road_comes_back_with_its_speeds(
 def test_a_pass_says_whether_its_speeds_are_of_the_calibration_in_force(
     client: TestClient, store: Store
 ) -> None:
-    """The pages show a measured speed only if it was measured under the calibration saved now
-    (plan.md D49); a pass of an earlier calibration still carries its speeds, and says it is not."""
+    """The pages show a measured speed only if it was measured under the calibration saved now;
+    a pass of an earlier calibration still carries its speeds, and says it is not."""
 
     def measured(calibration: str, at: int) -> int:
         event = StopEvent(

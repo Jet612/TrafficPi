@@ -1,4 +1,4 @@
-"""The trails endpoints: a day by the hour, and the paths themselves (plan.md M4b)."""
+"""The trails endpoints: a day by the hour, and the paths themselves."""
 
 import logging
 from collections.abc import Iterator

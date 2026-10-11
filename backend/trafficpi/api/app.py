@@ -133,7 +133,7 @@ class ApiContext:
     vision: VisionClient
     clock: WallClock
     dummy_hash: str  # verified against when a username does not exist, so timing does not tell
-    mail: MailStore  # the daily email's settings and tables (plan.md D32)
+    mail: MailStore  # the daily email's settings and tables
     mail_service: MailService  # what is due, who gets what once, tests, the preview
     # Set when the server starts shutting down, so open streams end and shutdown need not wait.
     stopping: threading.Event = field(default_factory=threading.Event)
@@ -167,7 +167,7 @@ def _by_https(request: Request) -> bool:
 
 def _via_cloudflare(request: Request) -> bool:
     """Whether the request came through Cloudflare, which puts these headers on every request it
-    passes to the origin. This only holds back bandwidth (plan.md D28); it is no login. A client
+    passes to the origin. This only holds back bandwidth; it is no login. A client
     on the LAN that writes the header itself only restricts itself."""
     return "cf-ray" in request.headers or "cf-connecting-ip" in request.headers
 
@@ -410,7 +410,7 @@ def create_app(
         return response
 
     # Added last, so it is the outermost layer: a body that is too large is refused before the
-    # layers inside it (or the application) have read any of it (plan.md D31).
+    # layers inside it (or the application) have read any of it.
     app.add_middleware(
         BodyLimit,
         default=DEFAULT_BODY_BYTES,
@@ -680,7 +680,7 @@ def create_app(
             excluded=len(every) - len(rows),
         )
 
-    # --- exports (plan.md D62) ---------------------------------------------------------------
+    # --- exports -----------------------------------------------------------------------------
 
     def sign_names() -> dict[str, str]:
         stored = ctx.store.get_profile()
@@ -766,7 +766,7 @@ def create_app(
             for e in ctx.store.recent_events(limit=limit, before_id=before_id, type=type)
         ]
 
-    # --- stops (plan.md D23, M5) -----------------------------------------------------------
+    # --- stops -----------------------------------------------------------------------------
 
     @app.get("/api/stops", response_model=list[StopOut])
     def stops(
@@ -856,7 +856,7 @@ def create_app(
         except OSError:
             return None
 
-    # --- trails (plan.md M4b) --------------------------------------------------------------
+    # --- trails ----------------------------------------------------------------------------
 
     @app.get("/api/trails/day", response_model=TrailDay)
     def trails_day(user: User, day: Annotated[date | None, Query()] = None) -> TrailDay:

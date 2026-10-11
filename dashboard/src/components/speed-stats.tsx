@@ -19,7 +19,7 @@ function leftOutText(stats: SpeedStats): string | null {
 }
 
 /**
- * How fast the vehicles that the counting lines counted were going (plan.md M6): the figures that
+ * How fast the vehicles that the counting lines counted were going: the figures that
  * a speed study is summed up by, a histogram, and the same by counting line and by hour. A speed is
  * given only for a vehicle seen for long enough in a part of the picture the calibration can be
  * believed, so the page says how many of the vehicles counted have one.

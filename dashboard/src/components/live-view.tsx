@@ -54,7 +54,7 @@ const sameReason = (a: ReturnType<typeof selectNoPicture>, b: ReturnType<typeof 
 
 /**
  * A still picture, fetched again every few seconds: what a viewer who comes through Cloudflare sees
- * when the owner has not allowed live video for them (plan.md D28). The component is not mounted
+ * when the owner has not allowed live video for them. The component is not mounted
  * while the page is hidden, so nothing is fetched then.
  */
 function StillPicture({

@@ -1,5 +1,5 @@
 """A calibrated camera through the whole of the vision pipeline: the tracker, the speed meter and
-the rules, against a pretend camera that knows the truth (plan.md M6)."""
+the rules, against a pretend camera that knows the truth."""
 
 import math
 from collections.abc import Sequence

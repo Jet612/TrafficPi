@@ -1,4 +1,4 @@
-"""The road as a flat plane: the picture put in metres (plan.md M6, D44).
+"""The road as a flat plane: the picture put in metres.
 
 A camera sees a flat road through a perspective, so a distance in the picture means more metres the
 further away it is. A *calibration* says where four points of the picture are on the road, as the
@@ -30,7 +30,7 @@ import numpy as np
 
 Point = tuple[float, float]
 
-# What the accuracy estimate assumes a careful person gets wrong (plan.md D44). The picture is taken
+# What the accuracy estimate assumes a careful person gets wrong. The picture is taken
 # to be 16:9 with 1280 pixels across, and a corner is placed to within 3 pixels; a length measured
 # with a tape or read off a map is out by 2% (1 sigma, each of the two).
 PICTURE_ASPECT = 16 / 9

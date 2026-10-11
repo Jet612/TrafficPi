@@ -1,4 +1,4 @@
-/** The files the Data page can download, as CSV (plan.md D62). */
+/** The files the Data page can download, as CSV. */
 export type ExportKind = "counts" | "passes";
 
 /**

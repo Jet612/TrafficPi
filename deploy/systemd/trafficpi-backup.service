@@ -1,6 +1,6 @@
 # TrafficPi nightly backup: started only by trafficpi-backup.timer, and only if you asked for it
 # (scripts/install_services.sh --backup-at). It writes one .tar.gz of the database and the files
-# beside it (plan.md D29) and keeps the newest few; the services go on running meanwhile, because
+# beside it and keeps the newest few; the services go on running meanwhile, because
 # the copy of the database is a snapshot. @NAME@ placeholders are filled in by that script.
 [Unit]
 Description=Back up the TrafficPi database

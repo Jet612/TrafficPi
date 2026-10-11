@@ -1,4 +1,4 @@
-"""The owner can switch off looking for people altogether (plan.md D34)."""
+"""The owner can switch off looking for people altogether."""
 
 import logging
 

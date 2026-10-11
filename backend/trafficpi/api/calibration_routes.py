@@ -1,4 +1,4 @@
-"""What a calibration means: the endpoint behind the calibration editor (plan.md M6, D44).
+"""What a calibration means: the endpoint behind the calibration editor.
 
 The editor shows a rectangle on the road and a few known distances, and has to say what follows
 from them: how long the map finds each known distance, how many metres a pixel is where the stop

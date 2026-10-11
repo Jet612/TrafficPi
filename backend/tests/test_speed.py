@@ -1,4 +1,4 @@
-"""A speed in a vehicle's own sizes a second, put in real units: a rough estimate (plan.md D41)."""
+"""A speed in a vehicle's own sizes a second, put in real units: a rough estimate."""
 
 import json
 from pathlib import Path

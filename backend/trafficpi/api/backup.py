@@ -1,4 +1,4 @@
-"""Backup and restore of the database and the files beside it (plan.md D29).
+"""Backup and restore of the database and the files beside it.
 
 A backup is one ``.tar.gz``, readable by its owner only (it holds the password hash, the key that
 signs the sessions and the email provider's key): a ``manifest.json``, a consistent copy of the
@@ -32,7 +32,7 @@ from trafficpi.db.store import open_store
 FORMAT = 1  # of the archive; a restore refuses a newer one
 DATABASE = "trafficpi.db"
 SECRET = "secret.key"
-MAIL_KEY = "mail.key"  # the email provider's key (plan.md D32), if one was set
+MAIL_KEY = "mail.key"  # the email provider's key, if one was set
 REFERENCE = reference_file(Path()).name
 EVIDENCE = evidence_dir(Path()).name
 MANIFEST = "manifest.json"

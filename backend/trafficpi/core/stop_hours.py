@@ -1,4 +1,4 @@
-"""When stop signs are judged (plan.md D42).
+"""When stop signs are judged.
 
 The hours in which stop signs are judged can be limited. Outside them a vehicle is not judged at
 all: no row in the database, no picture, no clip, nothing on the Data page or in the email. The

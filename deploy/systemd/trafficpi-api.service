@@ -8,7 +8,7 @@ After=network.target
 [Service]
 # The server says READY=1 once it listens, and sends WATCHDOG=1 while its event loop runs and a
 # worker thread of its pool takes a job. If that stops for WatchdogSec, systemd kills it and
-# Restart= starts it again (plan.md D27); Restart=always alone only helps after a crash.
+# Restart= starts it again; Restart=always alone only helps after a crash.
 Type=notify
 NotifyAccess=main
 WatchdogSec=45

@@ -1,4 +1,4 @@
-"""Stop-sign monitoring: did a vehicle stop before the line? (plan.md M5)
+"""Stop-sign monitoring: did a vehicle stop before the line?
 
 A stop sign is two things drawn on the picture: an *approach zone*, the stretch of road where a
 stop counts, and a *stop line* that ends it. A vehicle is followed while its ground point is in the

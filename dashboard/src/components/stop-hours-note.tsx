@@ -13,7 +13,7 @@ const REFRESH_MS = 60_000;
  * Where passes are shown: one chip saying that stop signs are judged only at some hours, and until
  * when that holds ("Judging paused until 06:45"), so that a quiet night is not taken for a street with
  * no traffic. The hours themselves are in its tooltip and, in full, on the Setup page a link away.
- * Nothing at all when every hour counts (plan.md D42).
+ * Nothing at all when every hour counts.
  */
 export function StopHoursNote({ className }: { className?: string }) {
   const hours = usePoll((signal) => api.stopHours(signal), REFRESH_MS);

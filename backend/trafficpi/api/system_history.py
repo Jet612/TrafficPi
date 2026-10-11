@@ -3,8 +3,7 @@
 The vision service stores a row of health a minute (``vision/health.py``). A month of them is far
 more than a chart can show, so the minutes are gathered into at most 240 points; the episodes
 (the board slowing itself down, under-voltage, the camera away, the record having a hole) are
-worked out from the minutes themselves, so that a short one is not lost in an average (plan.md
-M8 step 4, R13).
+worked out from the minutes themselves, so that a short one is not lost in an average.
 """
 
 from __future__ import annotations

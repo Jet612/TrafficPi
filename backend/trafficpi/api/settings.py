@@ -65,7 +65,7 @@ class ApiSettings:
     # is turned away with a 503 instead of waiting.
     hashing_slots: int = 2
 
-    # How the daily email is sent (plan.md D32): "resend", the real thing, or "file", which writes
+    # How the daily email is sent: "resend", the real thing, or "file", which writes
     # each mail into ``outbox`` instead, for the demo, the browser test and for trying it out.
     # `--mail-transport` or TRAFFICPI_MAIL_TRANSPORT; anything else is "resend".
     mail_transport: str = field(

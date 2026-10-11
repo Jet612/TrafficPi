@@ -285,7 +285,7 @@ def test_run_tells_systemd_it_is_ready_and_keeps_the_watchdog_fed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Under Type=notify with WatchdogSec the service must say READY=1 once it is up, then ping
-    for as long as its camera loop moves, and keep systemd's status line current (D27)."""
+    for as long as its camera loop moves, and keep systemd's status line current."""
     monkeypatch.setattr(cli, "_make_detector", lambda args: pytest.fail("the demo needs none"))
     monkeypatch.setenv("TRAFFICPI_DATA_DIR", str(tmp_path / "data"))
     systemd = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)

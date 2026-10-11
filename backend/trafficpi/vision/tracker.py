@@ -54,7 +54,7 @@ class TrackUpdate:
     confirmed: bool
     # Where it is on the road, in metres across and along the calibrated rectangle, and how fast
     # it is going, in metres a second over the last second: both filled in after the tracker, by
-    # the speed meter, and only when the camera is calibrated (plan.md M6). The speed is None when
+    # the speed meter, and only when the camera is calibrated. The speed is None when
     # it cannot be believed: too little seen of the vehicle, a jump of the track, or a part of the
     # picture the calibration does not reach.
     ground: tuple[float, float] | None = None

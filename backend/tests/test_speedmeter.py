@@ -1,4 +1,4 @@
-"""Speeds in metres a second from where a vehicle is on the road (plan.md M6)."""
+"""Speeds in metres a second from where a vehicle is on the road."""
 
 import math
 from dataclasses import replace

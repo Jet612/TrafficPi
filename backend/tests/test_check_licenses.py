@@ -1,4 +1,4 @@
-"""scripts/check_licenses.py: the licence check of plan.md D16."""
+"""scripts/check_licenses.py: the check of the dependencies against the project's licence policy."""
 
 import importlib.util
 import json
@@ -55,7 +55,7 @@ def test_permissive_licences_pass(checker: ModuleType, licence: str) -> None:
     ],
 )
 def test_copyleft_licences_fail(checker: ModuleType, licence: str) -> None:
-    """GPL and AGPL need the owner's approval (D16), and "A AND B" is as bad as the worse."""
+    """GPL and AGPL need the maintainer's approval, and "A AND B" is as bad as the worse."""
     assert checker.classify(licence) == checker.BAD, licence
 
 
@@ -125,7 +125,7 @@ def test_a_run_fails_for_a_licence_nobody_has_looked_at(
 def test_every_reviewed_entry_says_why(checker: ModuleType) -> None:
     for name, reason in checker.REVIEWED.items():
         assert len(reason) > 30, name  # a reason, not a word
-        assert "2026-" in reason or "D16" in reason, name  # dated, or tied to the decision
+        assert "2026-" in reason, name  # dated, so that a reader knows when it was looked at
 
 
 def test_the_pnpm_listing_is_read_as_licence_to_packages(

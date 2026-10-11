@@ -1,8 +1,8 @@
-"""The thread that looks at the daily email every half minute (plan.md D32).
+"""The thread that looks at the daily email every half minute.
 
 A thread of its own, not a task on the event loop: a look makes HTTP calls that can wait up to
 fifteen seconds each, and the loop must never be held up by that (nor the watchdog's heartbeat,
-which needs it, plan.md D27). It is a daemon thread, so that a look in progress never keeps the
+which needs it). It is a daemon thread, so that a look in progress never keeps the
 process from stopping: a copy that was being sent is claimed but unfinished, the claim is given
 back two minutes after the next start, and the copy's idempotency key makes a repeat harmless.
 """

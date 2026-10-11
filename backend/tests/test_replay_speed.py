@@ -1,4 +1,4 @@
-"""A calibration tried on a recorded clip, with no camera (plan.md M6)."""
+"""A calibration tried on a recorded clip, with no camera."""
 
 import json
 from pathlib import Path

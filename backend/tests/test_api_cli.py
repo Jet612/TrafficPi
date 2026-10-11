@@ -186,7 +186,7 @@ def test_a_shutdown_signal_tells_the_app_to_end_its_streams(tmp_path: Path) -> N
     assert app.state.ctx.stopping.is_set() and server.should_exit
 
 
-# --- who is believed about the client's address (plan.md D31) -------------------------------------
+# --- who is believed about the client's address ---------------------------------------------------
 
 
 def settings_for(*argv: str) -> ApiSettings:
@@ -226,7 +226,7 @@ def test_the_environment_can_do_the_same_so_that_a_unit_needs_no_new_command_lin
     assert settings_for().trust_proxy_headers is False
 
 
-# --- telling systemd it is up, and that it still answers (plan.md D27) ---------------------------
+# --- telling systemd it is up, and that it still answers -----------------------------------------
 
 
 def serve_in_thread(
@@ -310,7 +310,7 @@ def test_an_exhausted_thread_pool_stops_the_pings_though_the_event_loop_runs(
         systemd.close()
 
 
-# --- backup and restore from the command line (plan.md D29) ---------------------------------------
+# --- backup and restore from the command line -----------------------------------------------------
 
 
 def a_data_dir_with_something_in_it(path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:

@@ -1,4 +1,4 @@
-"""trafficpi-admin's commands for the daily email: the key, and what the mail would say (D32)."""
+"""trafficpi-admin's commands for the daily email: the key, and what the mail would say."""
 
 import io
 import stat

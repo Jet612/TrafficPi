@@ -81,7 +81,7 @@ class Server(uvicorn.Server):
     showing; the app ends them on this signal instead of making shutdown wait for them.
 
     Under systemd (Type=notify, WatchdogSec=) it says READY=1 once it listens, and while it still
-    answers it sends WATCHDOG=1 (plan.md D27): a server whose event loop is blocked, or whose
+    answers it sends WATCHDOG=1: a server whose event loop is blocked, or whose
     thread pool is used up so that no request that touches the database can run, goes quiet and
     is restarted. By hand none of this sends anything.
     """

@@ -1,4 +1,4 @@
-"""The Data page's endpoints: stop-sign shares and traffic over local days (plan.md D25, M7)."""
+"""The Data page's endpoints: stop-sign shares and traffic over local days."""
 
 from collections.abc import Iterator
 from datetime import datetime
@@ -349,7 +349,7 @@ def test_the_estimate_is_in_metres_a_second_whatever_units_the_owner_chose(
     assert body["units"] == "kmh" and body["fastest"]["speed_ms"] == 10.0
 
 
-# --- the speeds of the vehicles counted (plan.md M6) --------------------------------------------
+# --- the speeds of the vehicles counted ---------------------------------------------------------
 
 
 def counted(

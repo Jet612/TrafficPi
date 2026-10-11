@@ -9,7 +9,7 @@ import { StatusBadge } from "@/components/ui/status";
 import { describeChecks, describeMove, describeReason, describeSize, describeTurn, driftLabel, driftLevel, sameDrift } from "@/lib/drift";
 import { useNow } from "@/lib/hooks";
 
-/** Whether the camera still sees what it saw when the reference picture was kept (plan.md D40). */
+/** Whether the camera still sees what it saw when the reference picture was kept. */
 export function DriftCard() {
   const drift = useLiveSelector(selectDrift, sameDrift);
   const now = useNow(30_000);

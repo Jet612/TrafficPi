@@ -1,4 +1,4 @@
-"""The built dashboard, and the Content-Security-Policy each of its pages is sent with (D31).
+"""The built dashboard, and the Content-Security-Policy each of its pages is sent with.
 
 Next.js writes three inline ``<script>`` elements into every exported page (its start-up code and
 the page's data), so a policy that allows scripts from the page itself has to allow inline ones too,

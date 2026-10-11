@@ -1,5 +1,5 @@
 /**
- * The speed calibration as the zone editor sees it (plan.md M6, D44): a rectangle on the road with
+ * The speed calibration as the zone editor sees it: a rectangle on the road with
  * its width and length, and known distances that test it. What lives here is what can be said
  * without asking the server: a first rectangle, the checks the server also makes (so that "Save"
  * does not fail for no visible reason), lengths in metres or feet, and which cells of the picture

@@ -1,4 +1,4 @@
-"""The vision service tells the watchdog whether its loop is moving (plan.md D27)."""
+"""The vision service tells the watchdog whether its loop is moving."""
 
 import threading
 import time

@@ -1,5 +1,5 @@
-"""The vision service with a calibrated camera: speeds on counts and stops, and what is shown live
-(plan.md M6)."""
+"""The vision service with a calibrated camera: speeds on counts and stops, and what is shown
+live."""
 
 import json
 from typing import Any

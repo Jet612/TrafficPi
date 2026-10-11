@@ -1,5 +1,5 @@
 """Real detections through the real rules: 103 seconds of a daylight afternoon at the camera's own
-three-way stop (plan.md §7, M2 and M5), replayed with the profile saved on the camera.
+three-way stop, replayed with the profile saved on the camera.
 
 ``tests/data/street_daylight_103s.jsonl.gz`` is the start of a 12-minute recording made with
 ``trafficpi-vision record`` at 17:22 on 2026-10-10 (yolov8s on the Hailo-8L, 30 frames a second),

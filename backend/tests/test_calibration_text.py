@@ -1,5 +1,5 @@
 """``trafficpi-admin calibration-report``: what a saved speed calibration is expected to give,
-in words (plan.md M6, D44)."""
+in words."""
 
 from pathlib import Path
 from typing import Any

@@ -177,7 +177,7 @@ def test_a_pass_measured_on_a_calibrated_road_has_its_speeds_in_the_caption(
     unit: str,
 ) -> None:
     """A car at 9 m/s (20 mph, 32 km/h) through the calibrated stop sign: the picture says how fast,
-    in the owner's units, and that the calibration is not checked (D46, MEASURED_CAVEAT)."""
+    in the owner's units, and that the calibration is not checked (``MEASURED_CAVEAT``)."""
     store.set_profile(calibrated_profile())
     store.set_setting("units", units)
     run(calibrated_drive(9.0, 8.0) + AFTER, store, tmp_path, recorder)
@@ -210,7 +210,7 @@ def test_the_time_in_the_caption_is_the_cameras(
     assert job.caption.endswith(local.strftime("%Y-%m-%d %H:%M:%S"))
 
 
-# --- one switch for each outcome (D33) ------------------------------------------------------------
+# --- one switch for each outcome ------------------------------------------------------------------
 
 ROLLED = (ROLLING_STOP, "rolling", "keep_rolling")
 DID_NOT_STOP = (STRAIGHT_THROUGH, "did_not_stop", "keep_did_not_stop")
@@ -602,7 +602,7 @@ def test_the_recorder_is_stopped_when_the_service_is(
     assert not recorder._thread.is_alive()
 
 
-# --- the disk floor (plan.md D64) ---------------------------------------------------------------
+# --- the disk floor -----------------------------------------------------------------------------
 
 
 def test_a_pass_gets_no_evidence_while_the_disk_is_too_full_and_is_still_judged_and_counted(

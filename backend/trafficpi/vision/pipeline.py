@@ -1,4 +1,4 @@
-"""The capture-and-detect loop, with the measurements the plan's performance targets need."""
+"""The capture-and-detect loop, with the measurements (rate, latency, load) it is judged by."""
 
 from __future__ import annotations
 

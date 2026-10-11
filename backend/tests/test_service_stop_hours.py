@@ -1,4 +1,4 @@
-"""Stop signs are judged only in the hours the owner sets (plan.md D42).
+"""Stop signs are judged only in the hours the owner sets.
 
 A drive is placed at a chosen date and time of day through the service's timestamp hook, so that
 "noon" and "night" are the same on every machine and in every season of the year.

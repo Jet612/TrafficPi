@@ -10,8 +10,8 @@ Wants=time-sync.target
 [Service]
 # The service says READY=1 once its web server is up, and sends WATCHDOG=1 only while its camera
 # loop is moving. A call into the camera, the accelerator or the database that never returns stops
-# the messages, and after WatchdogSec systemd kills the service and Restart= starts it again
-# (plan.md D27). The loop counts as stuck after 30 s, so a hang is noticed within about 1.5 minutes.
+# the messages, and after WatchdogSec systemd kills the service and Restart= starts it again.
+# The loop counts as stuck after 30 s, so a hang is noticed within about 1.5 minutes.
 Type=notify
 NotifyAccess=main
 WatchdogSec=60
@@ -23,7 +23,7 @@ WorkingDirectory=@INSTALL_DIR@/backend
 Environment=TRAFFICPI_DATA_DIR=@DATA_DIR@
 ExecStart=@INSTALL_DIR@/backend/.venv/bin/trafficpi-vision run
 # The service retries a broken camera by itself and exits with an error after five minutes
-# without one (plan.md D17); this starts it again with libcamera in a clean state. A stop
+# without one; this starts it again with libcamera in a clean state. A stop
 # (SIGTERM) ends in a second or two and is not restarted.
 Restart=always
 RestartSec=5

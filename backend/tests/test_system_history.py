@@ -1,5 +1,4 @@
-"""What the System page can say about the past: points to chart, and episodes worth a sentence
-(plan.md M8 step 4, R13)."""
+"""What the System page can say about the past: points to chart, and episodes worth a sentence."""
 
 import pytest
 

@@ -9,8 +9,8 @@ import type { LiveSnapshot } from "@/lib/live";
 export const selectDrift = (snapshot: LiveSnapshot): DriftStatus | null => snapshot.state?.drift ?? null;
 
 /**
- * A notice on every page while the camera's view has moved since the reference picture was kept
- * (plan.md D40). The lines, zones and stop signs are drawn on that picture, so they no longer fit
+ * A notice on every page while the camera's view has moved since the reference picture was kept.
+ * The lines, zones and stop signs are drawn on that picture, so they no longer fit
  * the street; the notice goes when the view is back, or when a new picture is kept.
  */
 export function DriftBanner() {

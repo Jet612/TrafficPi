@@ -1,4 +1,4 @@
-"""Sunrise and sunset from a place and a day (plan.md D42), checked against the Naval Observatory's.
+"""Sunrise and sunset from a place and a day, checked against the Naval Observatory's.
 
 ``data/sun_cases.json`` holds what the U.S. Naval Observatory's service answered for 24 places and
 days, word for word (see the file for where it came from). The formulas under test are NOAA's, good

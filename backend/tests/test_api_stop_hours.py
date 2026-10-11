@@ -1,4 +1,4 @@
-"""The endpoints behind the Stop-sign hours card (plan.md D42)."""
+"""The endpoints behind the Stop-sign hours card."""
 
 from collections.abc import Iterator
 from datetime import datetime

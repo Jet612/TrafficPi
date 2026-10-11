@@ -1,4 +1,4 @@
-"""Checking the camera's speeds against vehicles of known speed (plan.md M6's "done when")."""
+"""Checking the camera's speeds against vehicles of known speed."""
 
 from datetime import date, datetime
 from pathlib import Path

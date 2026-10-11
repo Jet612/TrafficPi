@@ -1,4 +1,4 @@
-"""CSV exports of the counts and of the passes at the stop signs (plan.md D62, M7)."""
+"""CSV exports of the counts and of the passes at the stop signs."""
 
 import csv
 import io

@@ -204,7 +204,7 @@
       },
       "CalibrationConfig": {
         "additionalProperties": false,
-        "description": "Four points of the picture that are the corners of a rectangle on the road, and its size.\n\nThe corners go round the rectangle one after the other, either way. The side from the first\ncorner to the second is ``width_m`` long (across the road) and the side from the second to the\nthird is ``length_m`` (along it). With that the picture can be put in metres (plan.md M6, D44):\nthe speed of a vehicle follows from where it was on the road and when. It is only as good as\nthe rectangle is big, flat and well measured; the dashboard says where speeds are believed.",
+        "description": "Four points of the picture that are the corners of a rectangle on the road, and its size.\n\nThe corners go round the rectangle one after the other, either way. The side from the first\ncorner to the second is ``width_m`` long (across the road) and the side from the second to the\nthird is ``length_m`` (along it). With that the picture can be put in metres:\nthe speed of a vehicle follows from where it was on the road and when. It is only as good as\nthe rectangle is big, flat and well measured; the dashboard says where speeds are believed.",
         "properties": {
           "checks": {
             "items": {
@@ -1538,7 +1538,7 @@
         "type": "object"
       },
       "MemoryTest": {
-        "description": "What the installer's memory test found; a bad result means the board's other results\ncannot be trusted (plan.md R16).",
+        "description": "What the installer's memory test found; a bad result means the board's other results\ncannot be trusted.",
         "properties": {
           "at_ms": {
             "title": "At Ms",
@@ -2022,7 +2022,7 @@
         "type": "object"
       },
       "SpeedEstimate": {
-        "description": "The fastest speed in some time. Without a calibration it is an estimate from the vehicle's\nown size, good to about 40% (plan.md D41); with one (``calibrated``) it was measured in metres\non the road, and a calibrated speed always beats an estimate, whatever their sizes (M6).",
+        "description": "The fastest speed in some time. Without a calibration it is an estimate from the vehicle's\nown size, good to about 40%; with one (``calibrated``) it was measured in metres\non the road, and a calibrated speed always beats an estimate, whatever their sizes.",
         "properties": {
           "at": {
             "title": "At",
@@ -2190,7 +2190,7 @@
         "type": "object"
       },
       "SpeedStats": {
-        "description": "How fast the vehicles counted at the counting lines were going (plan.md M6). A speed is\ngiven only for a vehicle seen for long enough and in a part of the picture the calibration\ncan be believed, so ``counted`` is more than ``figures.count`` and the difference is shown.",
+        "description": "How fast the vehicles counted at the counting lines were going. A speed is\ngiven only for a vehicle seen for long enough and in a part of the picture the calibration\ncan be believed, so ``counted`` is more than ``figures.count`` and the difference is shown.",
         "properties": {
           "all_time": {
             "title": "All Time",
@@ -2378,7 +2378,7 @@
         "type": "object"
       },
       "StopHoursConfig": {
-        "description": "When stop signs are judged (plan.md D42). A PUT replaces all of it, so every member is given:\na client that does not know one cannot reset it by leaving it out. Checked in full again by\n``StopHours``.",
+        "description": "When stop signs are judged. A PUT replaces all of it, so every member is given:\na client that does not know one cannot reset it by leaving it out. Checked in full again by\n``StopHours``.",
         "properties": {
           "after_sunset_min": {
             "maximum": 180.0,
@@ -2660,7 +2660,7 @@
         "type": "object"
       },
       "StopOut": {
-        "description": "What one vehicle did at one stop sign (plan.md D23), and what a person made of it.",
+        "description": "What one vehicle did at one stop sign, and what a person made of it.",
         "properties": {
           "calibrated": {
             "title": "Calibrated",
@@ -2839,7 +2839,7 @@
       },
       "StopSignConfig": {
         "additionalProperties": false,
-        "description": "A stop line, and the stretch of road before it where a vehicle has to stop (plan.md D23).\n\n``approach`` is that stretch, as corners in order: a stop counts anywhere in it, so a vehicle\nthat waited in a queue has stopped as much as one that waited at the line. ``a`` and ``b`` are\nthe ends of the stop line. ``direction`` is the way across it that goes through the sign:\n1 from the left of the line's own direction (``a`` to ``b``, as on screen with y pointing\ndown) to its right, -1 the other way; a vehicle crossing the other way came out of the\nintersection and is not judged. ``classes`` are the kinds that must stop. A vehicle has\nstopped if it is still for ``hold_s`` seconds, moving less than ``still_radius`` of its own\nsize meanwhile; it is rolling if it slowed below ``roll_speed`` of its own sizes a second but\nnever held still; it cannot be judged if it was watched for less than ``min_observed_s`` seconds\nbefore the line.",
+        "description": "A stop line, and the stretch of road before it where a vehicle has to stop.\n\n``approach`` is that stretch, as corners in order: a stop counts anywhere in it, so a vehicle\nthat waited in a queue has stopped as much as one that waited at the line. ``a`` and ``b`` are\nthe ends of the stop line. ``direction`` is the way across it that goes through the sign:\n1 from the left of the line's own direction (``a`` to ``b``, as on screen with y pointing\ndown) to its right, -1 the other way; a vehicle crossing the other way came out of the\nintersection and is not judged. ``classes`` are the kinds that must stop. A vehicle has\nstopped if it is still for ``hold_s`` seconds, moving less than ``still_radius`` of its own\nsize meanwhile; it is rolling if it slowed below ``roll_speed`` of its own sizes a second but\nnever held still; it cannot be judged if it was watched for less than ``min_observed_s`` seconds\nbefore the line.",
         "properties": {
           "a": {
             "maxItems": 2,
@@ -2952,7 +2952,7 @@
         "type": "object"
       },
       "StopStats": {
-        "description": "How vehicles did at the stop signs over some local days (plan.md D25).",
+        "description": "How vehicles did at the stop signs over some local days.",
         "properties": {
           "all_time": {
             "title": "All Time",
@@ -3445,7 +3445,7 @@
         "type": "object"
       },
       "TrafficStats": {
-        "description": "Vehicles counted over some local days (plan.md D25).",
+        "description": "Vehicles counted over some local days.",
         "properties": {
           "all_time": {
             "title": "All Time",

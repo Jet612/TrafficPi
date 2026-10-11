@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2317,SC2329  # the check functions below are run by name, through `check` (older shellcheck calls this SC2317)
-# Look for known weaknesses and unwelcome licences in the locked dependencies (plan.md M8 step 8).
+# Look for known weaknesses and unwelcome licences in the locked dependencies.
 #
 #   scripts/audit_deps.sh              all three checks
 #   scripts/audit_deps.sh python       known weaknesses in the locked Python packages (pip-audit)
 #   scripts/audit_deps.sh dashboard    known weaknesses in the dashboard's packages (pnpm audit)
-#   scripts/audit_deps.sh licences     licences against plan.md D16 (scripts/check_licenses.py)
+#   scripts/audit_deps.sh licences     licences against the licence policy (scripts/check_licenses.py)
 #
 # It needs the network (the advisory databases of PyPI and npm), and the locked packages installed:
 # `uv sync --locked` in backend/ and `pnpm install --frozen-lockfile` in dashboard/. The exit status
@@ -53,5 +53,5 @@ check() { # check NAME FUNCTION: run it, say PASS or FAIL, and show what it said
 
 [[ "$want" == all || "$want" == python ]] && check "known weaknesses in the locked Python packages" python_weaknesses
 [[ "$want" == all || "$want" == dashboard ]] && check "known weaknesses in the dashboard's packages" dashboard_weaknesses
-[[ "$want" == all || "$want" == licences ]] && check "licences against plan.md D16" licences
+[[ "$want" == all || "$want" == licences ]] && check "licences against the licence policy" licences
 exit "$failed"

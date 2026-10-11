@@ -475,7 +475,7 @@ def test_a_slow_jerky_crawl_still_has_a_fastest_speed() -> None:
     assert fastest(samples(pts), SIGN) == pytest.approx(0.032 / (0.5 * 0.17))
 
 
-# --- the speeds of a calibrated camera (plan.md M6) -----------------------------------------------
+# --- the speeds of a calibrated camera ------------------------------------------------------------
 
 
 def measured_run(

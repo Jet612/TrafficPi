@@ -1,4 +1,4 @@
-"""Viewers who come through Cloudflare (plan.md D28, D11, R11).
+"""Viewers who come through Cloudflare.
 
 Cloudflare's terms let it limit a customer who uses its CDN without a paid plan for video, and they
 do not say whether a Tunnel counts, so the continuous live stream is held back from viewers who
@@ -133,7 +133,7 @@ def test_the_owner_can_allow_the_stream_for_remote_viewers(client: TestClient) -
 
 
 def test_everything_else_works_for_remote_viewers(client: TestClient) -> None:
-    """Stats, snapshots and the live socket's data are not video; clips follow Q16 (allowed)."""
+    """Stats, snapshots and the live socket's data are not video; short clips are let through."""
     for path in ("/api/status", "/api/stats/today", "/api/settings", "/api/events"):
         assert client.get(path, headers=CLOUDFLARE).status_code == 200, path
     snapshot = client.get("/api/snapshot.jpg", headers=CLOUDFLARE)

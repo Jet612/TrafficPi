@@ -1,6 +1,6 @@
-"""The daily email's endpoints (plan.md D32): the card in Settings, the key, tests, the preview.
+"""The daily email's endpoints: the card in Settings, the key, tests, the preview.
 
-Every one needs the login (D10, D31), changes are subject to the same-origin check as every other,
+Every one needs the login, changes are subject to the same-origin check as every other,
 and bodies to the same size limit. The provider's key is write-only: it is stored in a file of its
 own (``mail.key``), and no answer, error or log line ever holds it. The blocking work (the database,
 and above all a test mail's call to the provider) runs in the thread pool, as the endpoints are

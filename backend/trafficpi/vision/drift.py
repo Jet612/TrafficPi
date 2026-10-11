@@ -1,4 +1,4 @@
-"""Has the camera's view moved since the reference picture was kept? (plan.md M7, D40)
+"""Has the camera's view moved since the reference picture was kept?
 
 The lines, zones and stop signs are drawn on the reference picture, so they are right only while
 the camera sees what it saw then. A knock, a gust, a loosened screw or a hand that turns it, and

@@ -1,5 +1,5 @@
 /**
- * The speeds of the vehicles counted, as the Data page shows them (plan.md M6): rows for the
+ * The speeds of the vehicles counted, as the Data page shows them: rows for the
  * histogram, and words for the figures. The sums are the server's (`GET /api/stats/speeds`), in the
  * owner's units; a speed measured on a calibrated road is shown to the whole mile or kilometre an
  * hour, without an "about" (`measuredSpeed`).

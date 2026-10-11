@@ -1,4 +1,4 @@
-"""The sums behind the Data page (plan.md D25, M7): stop-sign behaviour and traffic over local days.
+"""The sums behind the Data page: stop-sign behaviour and traffic over local days.
 
 Days, hours and weekdays follow the configured time zone, as in ``stats.py``: "7 days" is today and
 the six days before it, each from local midnight, and "the 8 am hour" is the one a person at the
@@ -45,8 +45,8 @@ def window_period(
     start_ms: int, end_ms: int, tz: ZoneInfo, previous_start_ms: int | None = None
 ) -> Period:
     """Any stretch of time ``[start_ms, end_ms)`` as a ``Period``, for sums over something other
-    than whole local days: the daily email's period runs from one scheduled time to the next
-    (plan.md D32). ``days`` counts the local dates it touches, which the per-day sums run over."""
+    than whole local days: the daily email's period runs from one scheduled time to the next.
+    ``days`` counts the local dates it touches, which the per-day sums run over."""
     first = datetime.fromtimestamp(start_ms / 1000, tz).date()
     last = datetime.fromtimestamp(max(start_ms, end_ms - 1) / 1000, tz).date()
     return Period(
@@ -198,7 +198,7 @@ def stop_stats(
     Passes a person called false alarms are left out of every share and counted on their own.
 
     ``judged`` says whether a pass at an instant (ms) is inside the hours in which stop signs are
-    judged now (plan.md D42). Passes recorded before the hours were limited, or under other hours,
+    judged now. Passes recorded before the hours were limited, or under other hours,
     stay in the sums; ``outside_hours`` counts the ones the hours turn away today. Without it, none.
     """
     local = _LocalTimes(tz)
@@ -350,7 +350,7 @@ def traffic_stats(
     }
 
 
-# --- the speeds of the vehicles counted (plan.md M6) --------------------------------------------
+# --- the speeds of the vehicles counted ---------------------------------------------------------
 
 SPEED_BIN = 5.0  # the histogram's bars are this wide, in miles or kilometres an hour, from zero
 MAX_SPEED_BINS = 40  # so nothing is drawn beyond 200: a faster vehicle is in the last bar

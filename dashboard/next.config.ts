@@ -1,6 +1,6 @@
 import type { NextConfig } from "next";
 
-// The dashboard is exported as static files and served by the API (plan.md D2), so there is no
+// The dashboard is exported as static files and served by the API, so there is no
 // Node server on the Pi at run time. `next dev` proxies /api to a running API for development.
 const development = process.env.NODE_ENV === "development";
 
