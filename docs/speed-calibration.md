@@ -1,6 +1,6 @@
 # Calibrating speeds
 
-TrafficPi can say how fast a vehicle was going, in miles or kilometres an hour, once the camera has been told how big a piece of the road is. This page is how to tell it, what you get, and how to find out how far to trust it. The design and its reasons are in [plan.md](../plan.md) (D44 to D46); this page is the practice.
+TrafficPi can say how fast a vehicle was going, in miles or kilometres an hour, once the camera has been told how big a piece of the road is. This page is how to tell it, what you get, and how to find out how far to trust it.
 
 **What it is not.** It is not a certified speed-measurement device, and a speed it gives must not be used as evidence against anyone. Until a calibration has been checked against vehicles of a known speed ("Checking it", below), every page that shows a speed says so, in the words "has not yet been checked against a vehicle of known speed". Before a calibration is drawn there are only the rough estimates of the Data page's stop-sign section, which are good to about 40% and say "about" and "estimate".
 
@@ -117,7 +117,7 @@ Ten or more passes, at several speeds, are what a band should rest on; the comma
 
 How to read it. The first known distance lies below the rectangle, nearer the camera, where the map is stretched beyond the corners that made it: its +5.1% is the place with the most doubt, and the one that stays inside what is expected of it. The second lies inside the rectangle and is within 1%. At the counting lines a speed is expected to be right to about 4% (Left Counter) and 7% (Right Counter, which lies past the rectangle's right edge), so 25 mph at the Left Counter is expected to be between about 24 and 26 mph, and the Right Counter's readings are less certain than the Left's. These are one standard deviation: about one reading in three is expected to be further out than that.
 
-What would make it a measured band: ten or more passes of a vehicle of known speed at several speeds, in both directions, and `trafficpi-admin speed-check` (above). The table that prints is what goes here, with the date, the calibration's name, the speeds and the number of passes; the pages' sentence (`MEASURED_CAVEAT` in `backend/trafficpi/core/speed.py` and `dashboard/src/lib/speed.ts`, kept equal by `backend/tests/data/speed_cases.json`) is then replaced by the band; and plan.md M6 is marked done. Until then M6 is built and in use, and not checked.
+What would make it a measured band: ten or more passes of a vehicle of known speed at several speeds, in both directions, and `trafficpi-admin speed-check` (above). The table that prints is what goes here, with the date, the calibration's name, the speeds and the number of passes; the pages' sentence (`MEASURED_CAVEAT` in `backend/trafficpi/core/speed.py` and `dashboard/src/lib/speed.ts`, kept equal by `backend/tests/data/speed_cases.json`) is then replaced by the band. Until then the speed measurement is built and in use, and not checked.
 
 ## When the camera is moved
 

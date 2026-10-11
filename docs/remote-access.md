@@ -20,7 +20,7 @@ The reason is Cloudflare's terms. When this was written (2026-10-09), the CDN se
 
 - The switch is **Setup → Settings → Viewers who come through Cloudflare → Allow live video…**. It is off.
 - A request counts as coming through Cloudflare if it carries Cloudflare's `CF-Ray` or `CF-Connecting-IP` header. That holds back bandwidth; it is not a login. Someone on your LAN who writes that header only gives themselves the still picture.
-- The short clips of stop-sign passes (nine seconds, 640 by 360, about 50 KB) are shown to remote viewers like any picture. If you would rather hold them back as well, say so: it is one condition in `trafficpi/api/app.py` (plan.md Q16).
+- The short clips of stop-sign passes (nine seconds, 640 by 360, about 50 KB) are shown to remote viewers like any picture. If you would rather hold them back as well, say so: it is one condition in `trafficpi/api/app.py`.
 
 ## Using a VPN instead (Tailscale)
 

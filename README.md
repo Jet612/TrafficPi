@@ -2,6 +2,8 @@
 
 **AI-powered traffic monitoring and analytics, built with Raspberry Pi.**
 
+[![CI](https://github.com/Jet612/TrafficPi/actions/workflows/ci.yml/badge.svg)](https://github.com/Jet612/TrafficPi/actions/workflows/ci.yml)
+
 TrafficPi is an open-source traffic monitoring system that uses computer vision and edge AI to detect, track, and analyze vehicles in real time.
 
 ![The Live page: vehicles boxed and labelled on the camera picture, with the counting lines and the day's counts](docs/images/live.png)
@@ -36,7 +38,7 @@ flowchart LR
 
 ### Problems solved along the way
 
-Short versions; the reasoning is in [plan.md](plan.md)'s decision log.
+Short versions; [docs/dev-setup.md](docs/dev-setup.md) and [docs/operations.md](docs/operations.md) have the details.
 
 - **Random crashes that were a defective RAM page.** Programs crashed or computed wrong results at random. A memory scan found one bad physical page; a device-tree overlay now keeps the kernel from using it, and a boot check confirms it.
 - **A native library that crashes when it is closed.** HailoRT crashes a thread on teardown and again in its own exit code. The detector is never closed in a running process, and the service leaves through `os._exit`.
@@ -45,9 +47,30 @@ Short versions; the reasoning is in [plan.md](plan.md)'s decision log.
 - **Speed from one camera.** A homography from a measured rectangle on the road, an error estimate found by shaking the inputs, and pages that say the calibration has not been checked against vehicles of known speed until it has.
 - **Privacy.** No plate reading, no face recognition; evidence is small, expires, and can be switched off.
 
-More: [docs/showcase.md](docs/showcase.md) (how to present the project), [docs/operations.md](docs/operations.md) and [docs/security.md](docs/security.md).
+### Getting started
 
-**Project Status:** In development, and running on one Raspberry Pi 5 with a Hailo-8L and a Camera Module 3. It counts vehicles at counting lines, watches stop signs (a picture and a short clip of every pass that needs review), keeps the paths vehicles took, and shows all of it in a password-protected dashboard that also reports on the machine's health. It can e-mail a daily report of how the stop signs did (built, and tried with a stand-in sender; not yet with a real mail provider's key). Speed measurement is built but not yet checked: once the camera is calibrated on the Setup page ([docs/speed-calibration.md](docs/speed-calibration.md)) it gives each counted vehicle's speed and the stop-sign passes' speeds, and until a calibration has been checked against vehicles of known speed every page says so; before that, the Data page and the e-mail give a rough estimate of the fastest speed at a stop sign, good to about 40%. A release is not done. [docs/install.md](docs/install.md) takes a blank Raspberry Pi OS Lite card to a working system, but has not yet been tried on a clean image. See [plan.md](plan.md) for the roadmap and [todo.md](todo.md) for current tasks.
+**On a Raspberry Pi 5** with an AI HAT+ (Hailo-8L) and a Camera Module 3: flash Raspberry Pi OS Lite (64-bit, Debian 13), bring it up to date, and run
+
+```
+git clone https://github.com/Jet612/TrafficPi.git
+cd TrafficPi
+scripts/install.sh
+```
+
+then open `http://<the Pi>.local:8000`. [docs/install.md](docs/install.md) lists what you need and what the installer does, step by step.
+
+**Without the hardware**, the same tracker, rules, database, API and dashboard run on a made-up street of drawn vehicles, on a laptop: [CONTRIBUTING.md](CONTRIBUTING.md) has the commands and [docs/dev-setup.md](docs/dev-setup.md) the details.
+
+More: [docs/operations.md](docs/operations.md) (running it), [docs/security.md](docs/security.md), [docs/accuracy.md](docs/accuracy.md) (what has been measured) and [docs/showcase.md](docs/showcase.md) (how to present the project).
+
+**Project status:** In development, and running on one Raspberry Pi 5 with a Hailo-8L and a Camera Module 3. It counts vehicles at counting lines, watches stop signs (a picture and a short clip of every pass that needs review), keeps the paths vehicles took, and shows all of it in a password-protected dashboard that also reports on the machine's health. It can e-mail a daily report of how the stop signs did. There is no tagged release yet, and some of what is built has not been proven:
+
+- **Speeds.** Speed measurement is built but not yet checked against vehicles of known speed. Once the camera is calibrated on the Setup page ([docs/speed-calibration.md](docs/speed-calibration.md)) it gives each counted vehicle's speed and the stop-sign passes' speeds, and until a calibration has been checked every page says so. Before a calibration, the Data page and the e-mail give a rough estimate of the fastest speed at a stop sign, good to about 40%.
+- **A clean install.** [docs/install.md](docs/install.md) takes a blank Raspberry Pi OS Lite card to a working system, but has not yet been tried on a clean image: it has been run on the development Pi, and its package names checked against a clean Debian root.
+- **E-mail and remote access.** The daily e-mail was tried with a stand-in sender and not yet with a real mail provider's key; the Cloudflare route for remote access is written from its documentation and has not been tried with a real account.
+- **Conditions.** The accuracy check is one 12-minute daylight clip of one street ([docs/accuracy.md](docs/accuracy.md)). Rain, low sun, glare, night and busy traffic have not been measured.
+
+Not built, and listed as later work: several cameras at once, RTSP cameras, lane zones, a red-light mode, a night mode, the Hailo-10H (AI HAT+ 2), PostgreSQL, LAN TLS, MQTT or Home Assistant, and other languages.
 
 ---
 
@@ -57,7 +80,7 @@ TrafficPi processes video from a connected camera using AI-powered object detect
 
 TrafficPi is designed to be configurable rather than hardcoded for one intersection.
 
-Users will be able to customize their camera configuration directly from a web dashboard, defining road boundaries, monitoring zones, virtual stop lines, and traffic rules without writing code.
+Users customize their camera configuration directly from the web dashboard, defining road boundaries, monitoring zones, virtual stop lines, and traffic rules without writing code.
 
 ### Key Features
 
@@ -68,7 +91,7 @@ Users will be able to customize their camera configuration directly from a web d
 - **Stop-Sign Monitoring:** Identify vehicles that may have failed to stop at a configured stop line, around the clock or only in the hours you choose (in daylight, or at set times of day).
 - **Custom Detection Zones:** Visually configure roads, lanes, intersections, and monitoring areas.
 - **Web Dashboard:** View live traffic statistics, historical trends, camera feeds, and recorded events.
-- **Remote Access:** Securely access the dashboard from outside the local network.
+- **Remote Access:** Reach the dashboard from outside the local network through a VPN or a Cloudflare Tunnel, as [docs/remote-access.md](docs/remote-access.md) describes.
 - **Daily Email Report:** Optionally e-mail a short report each day, with the number of vehicles that did not stop at the stop signs as its headline (numbers only; no pictures or clips are sent).
 - **Local Processing:** Perform AI inference on the Raspberry Pi without sending continuous video to a cloud AI provider.
 
@@ -128,30 +151,30 @@ Users can review live monitoring data, explore historical traffic patterns, conf
 
 Every camera installation is different. Camera height, viewing angle, road layout, traffic controls, and monitoring goals all affect how traffic should be analyzed.
 
-Rather than relying on predefined intersection layouts, TrafficPi will provide a visual configuration editor.
+Rather than relying on predefined intersection layouts, TrafficPi provides a visual configuration editor.
 
 ### Visual Zone Editor
 
-Users will be able to open a camera preview and configure monitoring areas by drawing directly on the image.
+The Setup page opens a camera preview, and monitoring areas are configured by drawing directly on the image.
 
-Supported configuration elements are planned to include:
+The elements (lane zones are planned and not built yet):
 
 | Element | Purpose |
 |---|---|
 | Detection Zone | Define where objects should be detected and monitored. |
 | Counting Line | Count vehicles crossing a virtual line in a configured direction. |
 | Stop Line | Define where vehicles must stop for stop-sign monitoring. |
-| Lane Zone | Separate traffic into individual lanes and directions. |
+| Lane Zone | Separate traffic into individual lanes and directions. (Planned.) |
 | Speed Calibration | Configure real-world measurements and perspective correction. |
 | Exclusion Zone | Ignore irrelevant areas, such as sidewalks or nearby parking lots. |
 
 Users can drag, resize, reposition, and remove zones through the interface.
 
-Camera configurations will be saved and automatically loaded when the monitoring service restarts.
+Camera configurations are saved as a versioned profile, with undo, and loaded automatically when the monitoring service starts; a running service picks up a saved change without a restart.
 
 ### Monitoring Modes
 
-TrafficPi will support different monitoring modes that can be configured for each camera. Modes are not mutually exclusive; a camera profile can enable any combination of them.
+TrafficPi has three monitoring modes. They are not mutually exclusive; a camera profile can enable any combination of them.
 
 **Traffic Counting Mode**
 
@@ -179,15 +202,15 @@ Speed measurements are estimates and require calibration and validation.
 
 ### Camera Profiles
 
-Each camera will have its own configuration profile containing its source, zones, rules, calibration data, and settings.
+A camera's configuration is one profile: its zones, rules, calibration data, and settings. One active camera is supported.
 
-For example:
+These are the kinds of setup the same software suits, for example:
 
 - **Residential Intersection:** Vehicle counting and stop-sign monitoring.
 - **Main Road:** Vehicle counting, direction tracking, and speed estimation.
 - **Parking Entrance:** Vehicle counting and entry/exit tracking.
 
-Profiles are intended to be reusable, with import/export support planned for sharing configurations and backing up settings.
+A profile can be exported from the Setup page as a JSON file and imported again, to share a configuration or keep a copy; backups of the database include it.
 
 This allows the same TrafficPi software to serve different locations without custom code changes.
 
@@ -195,54 +218,52 @@ This allows the same TrafficPi software to serve different locations without cus
 
 ## Web Dashboard
 
-TrafficPi will include a responsive web interface built with modern web technologies.
+TrafficPi includes a responsive web interface built with modern web technologies.
 
 ### Dashboard Overview
 
-The main dashboard will display important metrics, including:
+The dashboard displays important metrics, including:
 
 - Total vehicles detected today
 - Vehicles detected per hour
-- Average estimated vehicle speed
+- Estimated vehicle speeds (average, median, 85th percentile and fastest)
 - Vehicle classification breakdown
 - Suspected traffic violation counts
 - Traffic direction distribution
 - Camera and AI processor status
 
-Interactive charts will allow users to analyze trends over selectable date ranges.
+Interactive charts show trends over a selectable period: today, 7, 30 or 90 days, or all time.
 
 The **Data** page does this for the stop signs and the traffic. Over today, 7, 30 or 90 days, or all time, it shows the share of vehicles that stopped, rolled through, did not stop or were unclear (the program could not tell), and how far each share moved since the days before; the busiest hour and day, and the hour and the kind of vehicle with the lowest stop rate; charts by hour of the day, day, day of the week, kind of vehicle and stop sign (each also as a table); how long a typical stop lasts and how slowly a typical roll goes; how many of the passes you have reviewed were false alarms; and the vehicles counted, by hour, day, kind and counting line.
 
 ### Live Camera View
 
-The dashboard will provide a camera preview with optional overlays for:
+The Live page provides a camera preview with optional overlays for:
 
 - Vehicle bounding boxes
 - Tracking IDs
 - Detection and counting zones
 - Stop lines
-- Lane boundaries
 - Estimated vehicle speeds
 
 Users can toggle visual overlays on or off.
 
 ### Events and History
 
-Detected events will be stored for review.
+Stop-sign passes are stored for review. The Review page lists them newest first, filtered by period, by outcome (stopped, rolled through, did not stop, unclear) and by whether they have been reviewed, and each pass can be confirmed or called a false alarm. The counts and the passes can be downloaded as CSV files from the Data page.
 
-Users will be able to filter events by date, camera, event type, and vehicle classification.
 
 Where recording is enabled, supported events may include snapshots or short video clips for manual review. For stop signs, a vehicle that rolled through or did not stop gets a picture and a clip of about nine seconds around the moment it crossed the stop line, which you can watch and then confirm or call a false alarm; a vehicle that stopped gets none. The pictures are kept for 30 days or 2 GB unless you choose otherwise, but the clips of a rolled-through stop only for 3 hours and those of a vehicle that did not stop for 2 days (the counts stay). All of it can be switched off, and it is only as sharp as the detector's own picture (640 by 360 pixels), which is usually too small to read a number plate or a face (one very close to the camera can still be readable, so look at a few before you rely on that).
 
 ### Trails
 
-TrafficPi will save the path every moving vehicle takes through the picture: a few hundred bytes of points, with no video, no face and no number plate. The Data page's Trails card will show a day, or any hours of it, as paths or as a heat map drawn over the camera picture, filtered by kind of vehicle, with the counting lines and zones on top. It will play a day hour by hour and save the picture. It shows how the road is really used, and whether the lines and zones fit it. Trails are kept for a year unless you choose otherwise.
+TrafficPi saves the path every moving vehicle takes through the picture: a few hundred bytes of points, with no video, no face and no number plate. The Data page's Trails card shows a day, or any hours of it, as paths or as a heat map drawn over the camera picture, filtered by kind of vehicle, with the counting lines and zones on top. It plays a day hour by hour and saves the picture. It shows how the road is really used, and whether the lines and zones fit it. Trails are kept for a year unless you choose otherwise.
 
 ### Camera Management
 
-A dedicated settings interface will allow users to configure each camera, including detection modes, monitoring zones, recording preferences, and calibration settings.
+The Setup page configures the camera: the monitoring zones, the stop-sign hours, the speed calibration, how long pictures, clips and trails are kept, and the daily e-mail.
 
-Each camera has its own profile. The first releases target a single active camera; running several camera streams at once is a long-term goal, where hardware capacity permits.
+The profile belongs to the camera. One active camera is supported; running several camera streams at once is a long-term goal, where hardware capacity permits.
 
 ---
 
@@ -255,19 +276,19 @@ TrafficPi uses Python for computer vision and traffic processing, with a TypeScr
 | Hardware | Raspberry Pi 5 |
 | Operating System | Raspberry Pi OS Lite 64-bit (Debian 13, Trixie) |
 | Camera | Raspberry Pi Camera Module 3 |
-| AI Accelerator | Raspberry Pi AI HAT+ (Hailo-8L, 13 TOPS, or Hailo-8, 26 TOPS) |
+| AI Accelerator | Raspberry Pi AI HAT+ (Hailo-8L, 13 TOPS; the 26 TOPS Hailo-8 is expected to work and has not been tried) |
 | Camera Capture | Picamera2 / libcamera |
 | AI Inference | HailoRT and compatible pre-compiled object-detection models |
-| Vehicle Tracking | ByteTrack or Hailo-compatible tracking |
+| Vehicle Tracking | A ByteTrack-style tracker of its own, on NumPy and SciPy |
 | Image Processing | OpenCV and NumPy |
 | Backend | Python and FastAPI |
 | Real-Time Updates | WebSockets |
 | Database | SQLite, with PostgreSQL as a possible future option |
 | Frontend | Next.js and TypeScript |
-| UI Components | Tailwind CSS and shadcn/ui |
+| UI Components | Tailwind CSS, with components of its own and Lucide icons |
 | Data Visualization | Recharts |
 | Frontend Packages | pnpm |
-| Remote Access | Cloudflare Tunnel and Cloudflare Access |
+| Remote Access | A VPN such as Tailscale, or Cloudflare Tunnel with Cloudflare Access (both optional) |
 
 Pre-compiled models are specific to the accelerator variant, so the inference implementation depends on the installed Hailo accelerator and supported software versions. The Raspberry Pi AI HAT+ 2 (Hailo-10H) uses a different runtime and is not targeted initially.
 
@@ -309,7 +330,7 @@ Nothing is public by default, and Cloudflare is an option, not a requirement. Wh
 
 TrafficPi is intended for traffic research, educational use, and general traffic monitoring.
 
-The project will prioritize local processing and configurable data retention. Aggregate statistics can be retained separately from identifiable footage, and video recording can be disabled.
+The project prioritizes local processing and configurable data retention. Aggregate statistics can be retained separately from identifiable footage, and video recording can be disabled.
 
 TrafficPi does not read license plates and does not recognize faces or identify individual people or vehicles. It classifies road users by kind (car, truck, bus, motorcycle, bicycle, person) so that it can count them. Looking for people at all can be switched off in the dashboard's Settings, and then they get no box, no path and no count.
 
@@ -340,9 +361,9 @@ The main goals are to:
 
 ## Contributing
 
-TrafficPi is intended to become an open-source project welcoming contributions, bug reports, feature ideas, and improvements.
+Bug reports, feature ideas and pull requests are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) says what the project will and will not take, how to run the tests (most work needs no hardware) and how to report a security problem.
 
-Installing is in [docs/install.md](docs/install.md) and running it in [docs/operations.md](docs/operations.md). Development machine setup is documented in [docs/dev-setup.md](docs/dev-setup.md). Contributor guidelines will be added as the project progresses.
+Installing is in [docs/install.md](docs/install.md), running it in [docs/operations.md](docs/operations.md), and the development machine in [docs/dev-setup.md](docs/dev-setup.md).
 
 ---
 

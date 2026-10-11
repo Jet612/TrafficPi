@@ -1,6 +1,6 @@
 # Accuracy: what has been measured
 
-Results are published with each feature (plan.md §7), with what they rest on and what they do not show. Nothing here is a promise: it is what one check on one street found, on the date given.
+Results are published with each feature, with what they rest on and what they do not show. Nothing here is a promise: it is what one check on one street found, on the date given.
 
 ## Counting and stop-sign passes, on one daylight clip (2026-10-10)
 
@@ -24,7 +24,7 @@ Results are published with each feature (plan.md §7), with what they rest on an
 
 The vehicle that was not counted turned out of the side street and drove off to the left along the far lane, so its path crossed neither line: a matter of where the lines are, not of detection. Each direction of the road is counted at its own line (the Left Counter covers the near lane, the Right Counter the far lane; near-lane vehicles pass below the Right Counter's end, by the way it was drawn). One leftward vehicle was counted at the Left Counter (in the reverse direction) and not at the Right Counter, as the others of its direction were; why was not looked into. At the right edge of the picture, where vehicles enter and leave, the tracker made 16 tracks that lasted a tenth of a second or two, one after another with the real one; none was counted, and none shows anywhere but in the list of tracks.
 
-The target of M2 was a count within ±5% of a hand count. Here it is 22 against 23, which is 4.3% short; with 23 vehicles one vehicle is 4.3%, so this is *consistent with* the target and **does not show** it.
+The target was a count within ±5% of a hand count. Here it is 22 against 23, which is 4.3% short; with 23 vehicles one vehicle is 4.3%, so this is *consistent with* the target and **does not show** it.
 
 ### Passes at the stop sign
 
@@ -47,14 +47,14 @@ By eye, 9 of the 10 are what the rule said. The tenth, at 606.5 s, is a case on 
 
 Of the 8 passes flagged as needing a look, 7 are plainly vehicles that did not stop and one is a near stop; the 2 passes called stopped are stops. No vehicle that did not stop was passed as stopped (**recall 7 of 7**; precision 7 of 8, or 8 of 8 if the near stop is counted as the rolling stop the rule called it). On this street, in these twelve minutes, 2 of 10 vehicles stopped.
 
-What this does **not** test: the line between "rolled through" and "did not stop", which is a speed set for each sign on the Setup page (the eye cannot tell 1.7 from 1.95 sizes a second); what the rule does at night (stop signs are only judged in daylight, D42); a vehicle hidden by another (there was almost never one in the picture at a time).
+What this does **not** test: the line between "rolled through" and "did not stop", which is a speed set for each sign on the Setup page (the eye cannot tell 1.7 from 1.95 sizes a second); what the rule does at night (stop signs are only judged in daylight here, a setting on the Setup page); a vehicle hidden by another (there was almost never one in the picture at a time).
 
 ## How fast it runs, in daylight
 
-The same recording, which also writes a clip and a log (the live service writes neither): 21,531 frames in 720 s, **29.9 frames a second** (77 skipped, 0.4%); inference 17.0 ms on average (95th percentile 17.6 ms); the whole loop 33.3 ms a frame (the frame period); 42.3 ms from the sensor's timestamp to the detections (95th percentile 44.6 ms); the process used 0.54 cores (the machine 19% on average), 528 MB at most, and the board went from 72.2 to 74.3 °C, at most 77.1 °C, under the 80 °C where it slows itself down. The night figures of M1 (plan.md §7: 29.9 fps, 17.2 ms) are the same to within the noise: daylight, with its many more detections, costs the loop nothing that can be seen.
+The same recording, which also writes a clip and a log (the live service writes neither): 21,531 frames in 720 s, **29.9 frames a second** (77 skipped, 0.4%); inference 17.0 ms on average (95th percentile 17.6 ms); the whole loop 33.3 ms a frame (the frame period); 42.3 ms from the sensor's timestamp to the detections (95th percentile 44.6 ms); the process used 0.54 cores (the machine 19% on average), 528 MB at most, and the board went from 72.2 to 74.3 °C, at most 77.1 °C, under the 80 °C where it slows itself down. The night figures measured earlier (29.9 fps, 17.2 ms) are the same to within the noise: daylight, with its many more detections, costs the loop nothing that can be seen.
 
 ## Not measured yet
 
-* **Speeds against a vehicle of known speed.** Not possible on this road (plan.md D61). What is known is in [speed-calibration.md](speed-calibration.md).
+* **Speeds against a vehicle of known speed.** Not possible on this road. What is known is in [speed-calibration.md](speed-calibration.md).
 * **Other models** on this clip (yolov6n, yolox) and **other conditions** (rain, low sun, glare through the window, night).
 * **Busy traffic**, with vehicles overlapping: this street has a vehicle every half a minute.

@@ -1,6 +1,6 @@
 # Security: what is protected, from whom
 
-TrafficPi is meant to run on a home or workplace network. This page says what it does to keep the dashboard, the pictures and the data from people who should not have them, what it does not do, and what to do about the rest. The design decisions are plan.md D10, D11, D28 and D31; the risks are R6, R11 and R12.
+TrafficPi is meant to run on a home or workplace network. This page says what it does to keep the dashboard, the pictures and the data from people who should not have them, what it does not do, and what to do about the rest.
 
 ## The short version
 
@@ -41,4 +41,4 @@ Passwords are never written to the log: a failed login is logged with the user n
 
 ## If you find a weakness
 
-Please tell the maintainer privately before making it public. (A proper address and policy come with the release, plan.md M9.)
+Please report it privately, not as a public issue: use GitHub's private vulnerability reporting (the repository's **Security** tab, then **Report a vulnerability**). [SECURITY.md](../SECURITY.md) says what to include and what to expect.
