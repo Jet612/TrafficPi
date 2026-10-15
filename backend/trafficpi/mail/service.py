@@ -15,9 +15,9 @@ Each look does the same few things, in this order:
 5. notes the mails that are finished, and forgets very old ones.
 
 A copy that cannot be sent *for now* (the network, a rate limit, the provider's trouble) is tried
-again after 1, 5 and 15 minutes and then given up on; one that is refused is not tried again, and
-what the provider said is kept next to the recipient. Nothing in a look can raise: a failure is
-logged and the next look goes on.
+again after 1, 5 and 15 minutes and then every 15 minutes, until its mail is 6 hours past its time
+and is given up on; one that is refused is not tried again, and what the provider said is kept next
+to the recipient. Nothing in a look can raise: a failure is logged and the next look goes on.
 """
 
 from __future__ import annotations
@@ -53,7 +53,7 @@ from trafficpi.mail.settings import MailSchedule
 
 log = logging.getLogger("trafficpi.mail")
 
-RETRY_DELAYS_S = (60.0, 300.0, 900.0)  # after the first try, and then after each retry
+RETRY_DELAYS_S = (60.0, 300.0, 900.0)  # after the first try, then each retry; the last repeats
 PACE_S = 0.25  # between two sends: well under the provider's 10 requests a second
 STUCK_AFTER_MS = 2 * 60_000  # a claim that has not been finished after this is given back
 KEEP_MAILS_MS = 90 * DAY_MS  # how long a scheduled mail and its copies are remembered
@@ -320,24 +320,25 @@ class MailService:
             self._mail.note_result(due.recipient_id, "daily", "sent", None, now)
             result.sent += 1
             return
-        if outcome.kind == "retry" and tries <= len(self._retry_delays_s):
-            delay_s = self._retry_delays_s[tries - 1]
+        if outcome.kind == "retry" and self._retry_delays_s:
+            delay_s = self._retry_delays_s[min(tries, len(self._retry_delays_s)) - 1]
             if outcome.retry_after_s:
                 delay_s = max(delay_s, outcome.retry_after_s)
             retry_at = now + int(delay_s * 1000)
-            self._mail.finish(due.id, "retry", now, detail=outcome.detail, retry_at=retry_at)
-            self._mail.note_result(due.recipient_id, "daily", "retrying", outcome.detail, now)
-            result.retried += 1
-            log.warning(
-                "daily email copy %d will be tried again in %.0f s: %s",
-                due.id,
-                delay_s,
-                outcome.detail,
-            )
-            return
+            if retry_at <= due.scheduled_at + MAX_LATE_MS:  # later than that is not sent anyway
+                self._mail.finish(due.id, "retry", now, detail=outcome.detail, retry_at=retry_at)
+                self._mail.note_result(due.recipient_id, "daily", "retrying", outcome.detail, now)
+                result.retried += 1
+                log.warning(
+                    "daily email copy %d will be tried again in %.0f s: %s",
+                    due.id,
+                    delay_s,
+                    outcome.detail,
+                )
+                return
         detail = outcome.detail
         if outcome.kind == "retry":
-            detail = f"Gave up after {tries} tries: {detail}"
+            detail = f"Gave up after {tries} {'try' if tries == 1 else 'tries'}: {detail}"
         self._mail.finish(due.id, "failed", now, detail=detail)
         self._mail.note_result(due.recipient_id, "daily", "failed", detail, now)
         result.failed += 1

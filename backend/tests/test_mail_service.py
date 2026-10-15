@@ -433,7 +433,7 @@ def test_one_that_is_refused_fails_alone_with_the_reason_and_is_not_tried_again(
     assert (send.sent, send.failed, send.status) == (1, 1, "done")
 
 
-def test_a_network_failure_is_tried_again_after_one_five_and_fifteen_minutes_and_then_given_up(
+def test_a_network_failure_is_tried_again_after_one_five_and_fifteen_minutes_and_then_every_fifteen(
     service: MailService, mail: MailStore, mailer: FakeMailer, clock: Clock
 ) -> None:
     (recipient,) = ready_to_send(mail, clock)
@@ -459,16 +459,74 @@ def test_a_network_failure_is_tried_again_after_one_five_and_fifteen_minutes_and
     assert len(mailer.attempts) == 3
     at_offset(61_000 + 301_000 + 899_000)
     assert len(mailer.attempts) == 3
-    at_offset(61_000 + 301_000 + 901_000)
+    fourth = 61_000 + 301_000 + 901_000
+    at_offset(fourth)
     assert len(mailer.attempts) == 4  # the first and three more
     row = mail.recipient(recipient)
+    assert row is not None and row.last_status == "retrying"  # and it is not given up on
+    at_offset(fourth + 899_000)
+    assert len(mailer.attempts) == 4
+    at_offset(fourth + 901_000)
+    assert len(mailer.attempts) == 5  # the last delay repeats
+    at_offset(fourth + 901_000 + 901_000)
+    assert len(mailer.attempts) == 6
+
+
+def test_a_network_failure_is_tried_until_the_mail_is_six_hours_late_and_then_given_up(
+    service: MailService, mail: MailStore, mailer: FakeMailer, clock: Clock
+) -> None:
+    (recipient,) = ready_to_send(mail, clock)
+    mailer.script["owner@example.com"] = [SendOutcome("retry", "Could not reach Resend")]
+    clock.to("2026-10-09 20:00:10")
+    for _ in range(7 * 60):  # a look every minute until 3:00 am, an hour past the limit
+        service.tick()
+        clock.after(MIN)
+    # tries at 20:00:10, 20:01:10, 20:06:10 and 20:21:10, then every 15 minutes: the last one,
+    # at 01:51:10, is the first whose next try (02:06:10) would be later than 02:00
+    assert len(mailer.attempts) == 26
+    row = mail.recipient(recipient)
     assert row is not None and row.last_status == "failed"
-    assert "4 tries" in (row.last_detail or "") and "Could not reach Resend" in (
+    assert "26 tries" in (row.last_detail or "") and "Could not reach Resend" in (
         row.last_detail or ""
-    )
-    at_offset(3 * HOUR)
-    assert len(mailer.attempts) == 4  # and no more
+    )  # the reason is kept, not replaced by "too late"
     assert mail.sends()[0].status == "done"
+
+
+def test_a_mail_that_could_not_be_sent_for_hours_goes_out_once_the_network_is_back(
+    service: MailService, mail: MailStore, mailer: FakeMailer, clock: Clock
+) -> None:
+    (recipient,) = ready_to_send(mail, clock)
+    mailer.script["owner@example.com"] = [SendOutcome("retry", "Could not reach Resend")]
+    clock.to("2026-10-09 20:00:10")
+    for _ in range(3 * 60):  # three hours without a network
+        service.tick()
+        clock.after(MIN)
+    assert mailer.sent == []
+    mailer.script.clear()  # the network is back
+    for _ in range(16):
+        service.tick()
+        clock.after(MIN)
+    assert len(mailer.sent) == 1 and mailer.sent[0].to == "owner@example.com"
+    row = mail.recipient(recipient)
+    assert row is not None and row.last_status == "sent" and row.last_detail is None
+    assert len({m.idempotency_key for m in mailer.attempts}) == 1  # one key for every try
+    assert mail.sends()[0].status == "done"
+
+
+def test_with_no_retry_delays_a_network_failure_is_given_up_on_at_once(
+    store: Store, mail: MailStore, mailer: FakeMailer, clock: Clock
+) -> None:
+    service = MailService(
+        store, mail, mailer, now_ms=clock, sleep=lambda _seconds: None, retry_delays_s=()
+    )
+    (recipient,) = ready_to_send(mail, clock)
+    mailer.script["owner@example.com"] = [SendOutcome("retry", "Could not reach Resend")]
+    clock.to("2026-10-09 20:00:10")
+    result = service.tick()
+    assert result.failed == 1 and result.retried == 0
+    row = mail.recipient(recipient)
+    assert row is not None and row.last_status == "failed"
+    assert (row.last_detail or "").startswith("Gave up after 1 try: Could not reach Resend")
 
 
 def test_a_try_again_that_works_ends_as_sent_and_says_so(
