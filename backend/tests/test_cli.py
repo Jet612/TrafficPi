@@ -12,7 +12,7 @@ import httpx
 import numpy as np
 import pytest
 
-from tests.fakes import STOP_SIGN
+from tests.fakes import STOP_SIGN, FakeSource
 from trafficpi.db.store import open_store
 from trafficpi.vision import cli
 from trafficpi.vision.shutdown import StopRequest
@@ -182,6 +182,36 @@ def test_run_replays_a_clip_and_serves_the_live_view(
     # Replayed traffic goes to its own database, never into the real counts.
     assert (tmp_path / "data" / "replay" / "trafficpi.db").exists()
     assert not (tmp_path / "data" / "trafficpi.db").exists()
+
+
+@pytest.mark.parametrize("camera", [False, True], ids=["a clip", "the camera"])
+def test_the_service_tracks_with_the_settings_of_its_model(
+    tmp_path: Path, clip: Path, monkeypatch: pytest.MonkeyPatch, camera: bool
+) -> None:
+    monkeypatch.setattr(
+        cli, "_make_detector", lambda args: (QuietDetector(), Path("yolov6n_h8l.hef"))
+    )
+    given: list[float] = []
+
+    class Spy(cli.VisionService):
+        def __init__(self, *args, tracker_config, **kw) -> None:  # type: ignore[no-untyped-def]
+            given.append(tracker_config.high_score)
+            super().__init__(*args, tracker_config=tracker_config, **kw)
+
+    class Camera(FakeSource):
+        capture_still = staticmethod(lambda: np.zeros((4, 4, 3), np.uint8))
+
+    monkeypatch.setattr(cli, "VisionService", Spy)
+    monkeypatch.setattr(cli, "PiCameraSource", lambda settings: Camera())
+    port = free_port()
+    argv = ["run", "--port", str(port), "--data-dir", str(tmp_path / "here")]
+    thread, stop, result = run_in_thread(argv if camera else [*argv, "--replay", str(clip)])
+    try:
+        wait_for(f"http://127.0.0.1:{port}/health", lambda h: h["frames"] > 3)
+    finally:
+        stop.request()
+        thread.join(timeout=20)
+    assert result == [0] and given == [0.4]
 
 
 def test_run_with_an_explicit_data_dir_uses_exactly_that(

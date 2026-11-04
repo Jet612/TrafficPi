@@ -12,6 +12,7 @@ from trafficpi.vision.tracker import (
     suppress_duplicates,
     to_box,
     to_xyah,
+    tracker_config_for,
 )
 
 FRAME_NS = 33_333_333  # 30 fps
@@ -192,3 +193,21 @@ def test_kalman_predicts_motion_and_update_reduces_uncertainty() -> None:
     assert np.trace(cov[np.ix_(position, position)]) < np.trace(
         initial_cov[np.ix_(position, position)]
     )
+
+
+@pytest.mark.parametrize(
+    ("model", "start"),
+    [
+        ("yolov6n", 0.4),
+        ("yolov6n_h8l", 0.4),
+        ("yolov6n_h8", 0.4),
+        ("yolov8s_h8l", 0.5),
+        ("yolox_s_leaky_h8l_rpi", 0.5),
+        ("synthetic", 0.5),
+        (None, 0.5),
+    ],
+)
+def test_a_model_that_scores_low_starts_tracks_at_a_lower_score(
+    model: str | None, start: float
+) -> None:
+    assert tracker_config_for(model).high_score == start

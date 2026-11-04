@@ -55,6 +55,7 @@ from trafficpi.vision.sources import (
     RealtimeLoopSource,
     VideoFileSource,
 )
+from trafficpi.vision.tracker import tracker_config_for
 
 # Recordings feed the tracker, which makes use of weak detections, so keep them.
 RECORD_THRESHOLD = 0.1
@@ -519,6 +520,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 detector,
                 store,
                 data_dir=data_dir,
+                tracker_config=tracker_config_for(model),
                 timestamp_ms=lambda _frame: time.time_ns() // 1_000_000,  # the clip has no clock
             )
             log.warning(
@@ -528,7 +530,13 @@ def cmd_run(args: argparse.Namespace) -> int:
             )
         else:
             camera = PiCameraSource(settings)
-            service = VisionService(camera, detector, store, data_dir=data_dir)
+            service = VisionService(
+                camera,
+                detector,
+                store,
+                data_dir=data_dir,
+                tracker_config=tracker_config_for(model),
+            )
             snapshot = camera.capture_still
     service.live.set_detector(model)
     # What the status page says about the chip: its own identity when there is one.

@@ -20,7 +20,7 @@ from trafficpi.vision.rules import (
     StopSignRule,
 )
 from trafficpi.vision.speedmeter import SpeedMeter
-from trafficpi.vision.tracker import ByteTracker, TrackerConfig
+from trafficpi.vision.tracker import ByteTracker, TrackerConfig, tracker_config_for
 from trafficpi.vision.zones import DetectionFilter
 
 
@@ -62,7 +62,8 @@ def replay_log(
         aspect = width / height if width > 0 and height > 0 else None
         rules.append(StopSignRule([replace(s, aspect=aspect) if aspect else s for s in stop_signs]))
     meter = SpeedMeter(calibration) if calibration is not None else None
-    engine = TrafficEngine(ByteTracker(tracker_config), rules, detection_filter, meter)
+    config = tracker_config or tracker_config_for(header.get("model"))
+    engine = TrafficEngine(ByteTracker(config), rules, detection_filter, meter)
     out = ReplayResult(header, [], [])
     for frame in frames:
         result = engine.update(frame.timestamp_ns, frame.detections)
