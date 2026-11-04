@@ -95,14 +95,20 @@ class ChipModel(FinishOnRead):
 
     order = FormatOrder.NHCW
     told: list[str]
+    floors: list[float]
 
     def __init__(self, hef_path: str, batch_size: int | None = None) -> None:
         super().__init__(hef_path, batch_size)
         self.told = []
+        self.floors: list[float] = []
         stream = SimpleNamespace(format=SimpleNamespace(order=self.order))
         self.hef = SimpleNamespace(get_input_stream_infos=lambda: [stream])
         self.infer_model = SimpleNamespace(
-            input=lambda: SimpleNamespace(set_format_order=self.told.append)
+            input=lambda: SimpleNamespace(set_format_order=self.told.append),
+            outputs=[
+                SimpleNamespace(is_nms=True, set_nms_score_threshold=self.floors.append),
+                SimpleNamespace(is_nms=False, set_nms_score_threshold=self.floors.append),
+            ],
         )
         self._set_input_output("FLOAT32")
 
@@ -123,6 +129,14 @@ def test_a_model_is_given_its_frames_in_the_order_the_chip_reads_them(
     (car,) = detector.detect(np.full((360, 640, 3), 51, np.uint8))
     assert car.score == pytest.approx(51 / 255)
     assert detector._canvas.shape == (640, 3, 640)
+
+
+def test_the_detectors_own_threshold_replaces_the_floor_in_the_model_file(
+    make_detector: Any, chip_model: type[ChipModel]
+) -> None:
+    assert make_detector(None)._hailo.floors == [
+        0.0
+    ]  # the one output that has non-maximum suppression
 
 
 def test_a_stream_is_given_the_same_order(make_detector: Any, chip_model: type[ChipModel]) -> None:

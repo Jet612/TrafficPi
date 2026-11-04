@@ -224,6 +224,11 @@ class HailoDetector:
                 if self.hef.get_input_stream_infos()[0].format.order == FormatOrder.NHCW:
                     self.infer_model.input().set_format_order(FormatOrder.NHCW)
                     self.row_planar = True
+                # A model file has its own floor (0.2 in these), which would hide the weak
+                # detections the tracker's second pass is there for.
+                for output in self.infer_model.outputs:
+                    if output.is_nms:
+                        output.set_nms_score_threshold(score_threshold)
 
         self.hef_path = Path(hef_path)
         self.score_threshold = score_threshold
