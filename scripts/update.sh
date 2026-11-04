@@ -11,8 +11,8 @@
 #
 # Restarting the vision service stops the counting for about ten seconds. Database changes are made
 # by the services when they start. The extras that scripts/install_services.sh installed (the daily
-# reboot, the nightly backup, the persistent journal, the proxy setting) are read back from the
-# installed units and put in again, so that an update does not lose them.
+# reboot, the nightly backup, the link watch, the persistent journal, the proxy setting) are read
+# back from the installed units and put in again, so that an update does not lose them.
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -86,6 +86,7 @@ installed_options() {
     [[ "$command" =~ --keep[[:space:]]+([0-9]+) ]] && options+=(--backup-keep "${BASH_REMATCH[1]}")
     [[ "$command" =~ --to[[:space:]]+([^[:space:]]+) ]] && options+=(--backup-to "${BASH_REMATCH[1]}")
   fi
+  [[ ! -f "$units/trafficpi-link-watch.timer" ]] || options+=(--link-watch)
   [[ ! -f /etc/systemd/journald.conf.d/50-trafficpi.conf ]] || options+=(--persistent-journal)
   [[ ! -f "$units/trafficpi-api.service.d/10-remote.conf" ]] || options+=(--trust-proxy)
 }

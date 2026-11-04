@@ -12,6 +12,8 @@
 #   --dry-run             check the machine and print what would be done; change nothing
 #   --reboot-at HH:MM     also reboot the Pi every day at that time (off by default)
 #   --backup-at HH:MM     back up the database every day at that time (default 03:30; "none" skips)
+#   --link-watch          also bring back a Wi-Fi link that stays lost, up to a reboot (off by default;
+#                         see scripts/link_watch.sh)
 #   --no-persistent-journal  leave the log in RAM, as Raspberry Pi OS has it (it is kept on the disk
 #                         by default, so that a reboot's log can be read afterwards)
 #   --memtest MB          test that much RAM once at the end (default 512; 0 skips). It can miss one
@@ -42,6 +44,7 @@ data_dir="$root/backend/data"
 dry=0
 reboot_at=""
 backup_at="03:30"
+link_watch=0
 persistent_journal=1
 memtest_mb=512
 password_file=""
@@ -53,6 +56,7 @@ while [[ $# -gt 0 ]]; do
     --dry-run) dry=1 ;;
     --reboot-at) reboot_at="${2:?--reboot-at wants a time}"; shift ;;
     --backup-at) backup_at="${2:?--backup-at wants a time or none}"; shift ;;
+    --link-watch) link_watch=1 ;;
     --no-persistent-journal) persistent_journal=0 ;;
     --memtest) memtest_mb="${2:?--memtest wants a number of megabytes}"; shift ;;
     --password-file) password_file="${2:?--password-file wants a file}"; shift ;;
@@ -262,6 +266,7 @@ install_services() {
   local options=(--enable --data-dir "$data_dir")
   [[ -z "$reboot_at" ]] || options+=(--reboot-at "$reboot_at")
   [[ "$backup_at" == none ]] || options+=(--backup-at "$backup_at")
+  (( ! link_watch )) || options+=(--link-watch)
   (( ! persistent_journal )) || options+=(--persistent-journal)
   (( ! dry )) || options+=(--dry-run)
   "$root/scripts/install_services.sh" "${options[@]}"

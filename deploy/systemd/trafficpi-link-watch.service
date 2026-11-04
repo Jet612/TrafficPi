@@ -1,0 +1,18 @@
+# TrafficPi link watch: started only by trafficpi-link-watch.timer, and only if you asked for it
+# (scripts/install_services.sh --link-watch). scripts/link_watch.sh says what it does.
+[Unit]
+Description=Bring back the TrafficPi's Wi-Fi link if it stays lost
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/bash /usr/local/sbin/trafficpi-link-watch
+# A driver that hangs while it is unloaded must not keep the next look, and the reboot, from coming.
+TimeoutStartSec=2min
+# How long the link has been gone, which starts again at each boot...
+RuntimeDirectory=trafficpi-link-watch
+RuntimeDirectoryPreserve=yes
+# ...and when it last rebooted the Pi, which must survive that.
+StateDirectory=trafficpi-link-watch
+# It runs every minute: the journal gets what it says, and not that it ran.
+SyslogLevel=notice
+LogLevelMax=notice

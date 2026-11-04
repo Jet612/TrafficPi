@@ -46,10 +46,10 @@ scripts/install.sh
 5. **Builds the dashboard** into `dashboard/out` (unless that was built from the very same version).
 6. **Tests 512 MB of memory** once and writes the result to `backend/data/memtest.json`. (A defective page on the development board showed up only as random failures. One pass over a few hundred MB can miss a single bad page in 8 GB; `scripts/find_bad_memory.py` scans all the free memory.)
 7. **Asks for the dashboard's password** (at least 10 characters, for the user `admin`), or reads it from the first line of the file given with `--password-file`. If a user exists, the password is left alone.
-8. **Installs and starts the two services** (`trafficpi-vision` and `trafficpi-api`, enabled at boot), the persistent journal and a nightly backup at 03:30. `--reboot-at 03:00` adds a daily reboot.
+8. **Installs and starts the two services** (`trafficpi-vision` and `trafficpi-api`, enabled at boot), the persistent journal and a nightly backup at 03:30. `--reboot-at 03:00` adds a daily reboot, and `--link-watch` a timer that brings back a Wi-Fi link that stays lost ([operations.md](operations.md)).
 9. **Checks that it works** (`scripts/check_boot.sh`) and prints the address.
 
-Options (`scripts/install.sh --help` has them all): `--reboot-at HH:MM`, `--backup-at HH:MM` or `none`, `--no-persistent-journal`, `--memtest MB` (0 skips it), `--password-file FILE`, `--data-dir DIR`, `--skip-dashboard-build`, `--ignore-os` (unsupported).
+Options (`scripts/install.sh --help` has them all): `--reboot-at HH:MM`, `--backup-at HH:MM` or `none`, `--link-watch`, `--no-persistent-journal`, `--memtest MB` (0 skips it), `--password-file FILE`, `--data-dir DIR`, `--skip-dashboard-build`, `--ignore-os` (unsupported).
 
 ## 5. After it
 

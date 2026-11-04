@@ -12,6 +12,7 @@ What to look at, what to do when it needs attention, and how the pieces look aft
 | The log | the journal: `journalctl -u trafficpi-vision -u trafficpi-api` (kept across reboots, 256 MB or a month) |
 | The nightly backup, if you chose one | `trafficpi-backup.timer`, archives in `backend/data/backups` |
 | The daily reboot, if you chose one | `trafficpi-reboot.timer` |
+| The link watch, if you chose it | `trafficpi-link-watch.timer` |
 
 ## Looking at it
 
@@ -42,6 +43,18 @@ A camera that stops delivering frames is dealt with inside the service, which re
 ## The nightly reboot and the journal
 
 If you installed with `--reboot-at 03:00` the Pi reboots at that local time every day (unless it came up less than ten minutes before). Nothing is counted for about a minute. Because the journal is kept on the disk, `journalctl -b -1` shows how the last boot ended. Turn it off with `scripts/install_services.sh --reboot-off`.
+
+## When the Wi-Fi stays lost
+
+The Pi's Wi-Fi driver can wedge after a roam and refuse every connection until it is restarted; the Pi then reaches nothing, and nothing reaches it. With `scripts/install_services.sh --enable --link-watch`, `trafficpi-link-watch.timer` looks at the link once a minute and acts while it stays lost:
+
+| Without a link for | It |
+|---|---|
+| 10 minutes | switches the radio off and on |
+| 15 minutes | reloads the driver |
+| 25 minutes | reboots the Pi, at most once in 6 hours |
+
+A link is a connection to an access point, or a default route over something else, such as a cable. The internet going down sets nothing off; a router that stays off for 25 minutes costs one reboot. The minutes start again at each boot. `journalctl -u trafficpi-link-watch` shows each step and which one worked. Turn it off with `scripts/install_services.sh --link-watch-off`.
 
 ## Stop-sign hours: when stop signs are judged
 
@@ -127,7 +140,7 @@ Install on the new one with [install.md](install.md), stop the services, `traffi
 scripts/update.sh --pull
 ```
 
-fetches the newest version (it refuses if you have changed files in the checkout), installs the locked Python packages, builds the dashboard if it changed, puts the systemd units in again (with the daily reboot, the nightly backup, the journal and the proxy setting if you had them), restarts the services, waits for them and runs `scripts/check_boot.sh`. The database is brought up to date by the services as they start. `--dry-run` says what it would do; `--no-restart` leaves the old services running.
+fetches the newest version (it refuses if you have changed files in the checkout), installs the locked Python packages, builds the dashboard if it changed, puts the systemd units in again (with the daily reboot, the nightly backup, the link watch, the journal and the proxy setting if you had them), restarts the services, waits for them and runs `scripts/check_boot.sh`. The database is brought up to date by the services as they start. `--dry-run` says what it would do; `--no-restart` leaves the old services running.
 
 After an `apt full-upgrade` that installs a **new kernel**, the Hailo driver is rebuilt for it (DKMS) the next time the Pi boots, which is a reboot (or the 03:00 one). The morning after, `scripts/check_boot.sh` tells you whether the driver is loaded. The four Hailo packages are held so that an upgrade cannot change them one by one; to upgrade them together: `sudo apt-mark unhold hailort hailort-pcie-driver python3-hailort hailo-models`, upgrade, test, hold again.
 

@@ -22,6 +22,11 @@
 #   --backup-keep N     how many daily backups stay (default 7)
 #   --backup-to DIR     put them in DIR (an existing folder of yours: a USB disk, a mounted share)
 #   --backup-off        take the daily backup out again and do nothing else
+#   --link-watch        also install a timer that looks at the Wi-Fi link every minute and, while it
+#                       stays lost, switches the radio off and on (10 minutes), reloads the driver
+#                       (15) and reboots the Pi (25, at most once in 6 hours). With --enable it is
+#                       switched on too. See scripts/link_watch.sh
+#   --link-watch-off    take that timer out again and do nothing else
 #   --trust-proxy       also tell the API to believe the client address that a proxy on this machine
 #                       (cloudflared) passes on, instead of 127.0.0.1 for everyone: it writes the
 #                       drop-in /etc/systemd/system/trafficpi-api.service.d/10-remote.conf. Needed
@@ -49,6 +54,9 @@ backup_units=(trafficpi-backup.service trafficpi-backup.timer)
 backup_at=""
 backup_keep=7
 backup_to=""
+link_units=(trafficpi-link-watch.service trafficpi-link-watch.timer)
+link_script=/usr/local/sbin/trafficpi-link-watch
+link_watch=0
 journal=0
 journal_conf=/etc/systemd/journald.conf.d/50-trafficpi.conf
 trust_proxy=0
@@ -66,6 +74,8 @@ while [[ $# -gt 0 ]]; do
     --backup-keep) backup_keep="${2:?--backup-keep wants a number}"; shift ;;
     --backup-to) backup_to="${2:?--backup-to wants a folder}"; shift ;;
     --backup-off) action="backup-off" ;;
+    --link-watch) link_watch=1 ;;
+    --link-watch-off) action="link-watch-off" ;;
     --trust-proxy) trust_proxy=1 ;;
     --trust-proxy-off) action="trust-proxy-off" ;;
     --persistent-journal) journal=1 ;;
@@ -115,6 +125,12 @@ remove_units() { # remove_units TIMER UNIT...: stop and delete a timer and what 
   done
 }
 
+remove_link_watch() {
+  remove_units trafficpi-link-watch.timer "${link_units[@]}"
+  run sudo rm -f "$link_script"
+  run sudo rm -rf /run/trafficpi-link-watch /var/lib/trafficpi-link-watch
+}
+
 remove_journal_conf() { # what was written to the journal stays on disk until it ages out
   if [[ -e "$journal_conf" ]]; then
     run sudo rm -f "$journal_conf"
@@ -135,6 +151,13 @@ if [[ "$action" == backup-off ]]; then
   remove_units trafficpi-backup.timer "${backup_units[@]}"
   run sudo systemctl daemon-reload
   echo "$removed ${backup_units[*]}: no more daily backups (the ones already made stay where they are)"
+  exit 0
+fi
+
+if [[ "$action" == link-watch-off ]]; then
+  remove_link_watch
+  run sudo systemctl daemon-reload
+  echo "$removed ${link_units[*]}: nothing looks after the Wi-Fi link any more"
   exit 0
 fi
 
@@ -164,10 +187,11 @@ if [[ "$action" == remove ]]; then
   done
   remove_units trafficpi-reboot.timer "${reboot_units[@]}"
   remove_units trafficpi-backup.timer "${backup_units[@]}"
+  remove_link_watch
   remove_remote_conf
   run sudo systemctl daemon-reload
   remove_journal_conf
-  echo "$removed ${units[*]} ${reboot_units[*]} ${backup_units[*]}"
+  echo "$removed ${units[*]} ${reboot_units[*]} ${backup_units[*]} ${link_units[*]}"
   exit 0
 fi
 
@@ -222,6 +246,10 @@ fi
 if [[ -n "$backup_at" ]]; then
   for unit in "${backup_units[@]}"; do install_unit "$unit"; done
 fi
+if (( link_watch )); then
+  run sudo install -m 755 "$root/scripts/link_watch.sh" "$link_script"
+  for unit in "${link_units[@]}"; do install_unit "$unit"; done
+fi
 if (( trust_proxy )); then
   printf '%s\n' '# Written by scripts/install_services.sh --trust-proxy (docs/remote-access.md).' \
     '[Service]' 'Environment=TRAFFICPI_TRUST_PROXY_HEADERS=1' > "$tmp/10-remote.conf"
@@ -232,6 +260,7 @@ echo "$did ${units[*]} (user $user, data in $data_dir)"
 (( ! trust_proxy )) || echo "$did $remote_conf: the API believes the client address that cloudflared passes on"
 [[ -z "$reboot_at" ]] || echo "$did ${reboot_units[*]} (every day at $reboot_at, local time)"
 [[ -z "$backup_at" ]] || echo "$did ${backup_units[*]} (every day at $backup_at, the newest $backup_keep kept in ${backup_to:-$data_dir/backups})"
+(( ! link_watch )) || echo "$did ${link_units[*]} and $link_script (a look at the Wi-Fi link every minute)"
 
 if (( journal )); then
   if cmp -s "$root/deploy/journald/50-trafficpi.conf" "$journal_conf" 2>/dev/null; then
@@ -258,7 +287,11 @@ if [[ "$action" == enable ]]; then
     run sudo systemctl enable trafficpi-backup.timer
     run sudo systemctl restart trafficpi-backup.timer
   fi
-  if (( ! dry )) && [[ -n "$reboot_at$backup_at" ]]; then
+  if (( link_watch )); then
+    run sudo systemctl enable trafficpi-link-watch.timer
+    run sudo systemctl restart trafficpi-link-watch.timer
+  fi
+  if (( ! dry )) && { [[ -n "$reboot_at$backup_at" ]] || (( link_watch )); }; then
     systemctl list-timers 'trafficpi-*' --no-pager
   fi
 fi

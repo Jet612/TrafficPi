@@ -101,7 +101,7 @@ def test_what_it_is_given_is_checked_before_anything_happens(
 
 def test_removing_is_also_only_said_in_a_dry_run() -> None:
     said = run("--dry-run", "--remove")
-    assert "would remove" in said
+    assert "would remove" in said and "trafficpi-link-watch.timer" in said
     commands = [line for line in said.splitlines() if "sudo " in line]
     assert all(line.startswith("+ sudo ") for line in commands), commands
 
@@ -109,6 +109,20 @@ def test_removing_is_also_only_said_in_a_dry_run() -> None:
 def test_the_extras_can_be_taken_out_one_by_one_in_a_dry_run() -> None:
     assert "would remove trafficpi-backup.service" in run("--dry-run", "--backup-off")
     assert "would remove trafficpi-reboot.service" in run("--dry-run", "--reboot-off")
+    said = run("--dry-run", "--link-watch-off")
+    assert "would remove trafficpi-link-watch.service" in said
+    assert "+ sudo rm -f /usr/local/sbin/trafficpi-link-watch" in said
+
+
+def test_the_link_watch_runs_from_a_copy_the_services_user_cannot_change() -> None:
+    said = run("--dry-run", "--enable", "--link-watch")
+    assert "would install trafficpi-link-watch.service trafficpi-link-watch.timer" in said
+    assert "scripts/link_watch.sh /usr/local/sbin/trafficpi-link-watch" in said
+    assert "+ sudo systemctl enable trafficpi-link-watch.timer" in said
+    unit = (
+        SCRIPT.parent.parent / "deploy" / "systemd" / "trafficpi-link-watch.service"
+    ).read_text()
+    assert "ExecStart=/usr/bin/bash /usr/local/sbin/trafficpi-link-watch" in unit
 
 
 def test_a_journal_setting_that_is_in_place_is_not_installed_again() -> None:

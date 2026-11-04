@@ -1,0 +1,11 @@
+# Starts trafficpi-link-watch.service once a minute, from the first minute after a boot.
+[Unit]
+Description=Look at the TrafficPi's Wi-Fi link every minute
+
+[Timer]
+OnBootSec=1min
+OnUnitInactiveSec=1min
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target
