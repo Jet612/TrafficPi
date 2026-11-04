@@ -34,7 +34,7 @@ def test_defaults_describe_a_fixed_roadside_view() -> None:
     assert settings.lens_position == 0.0  # focus fixed at infinity
     assert settings.exposure_mode == "short"
     assert settings.channel_order == "rgb"
-    assert (args.seconds, args.threshold, args.model) == (30, 0.25, "yolov8s")
+    assert (args.seconds, args.threshold, args.model) == (30, 0.25, "yolov11s")
 
 
 def test_camera_options_are_passed_through() -> None:

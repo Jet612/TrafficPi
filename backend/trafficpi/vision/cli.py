@@ -110,7 +110,11 @@ def _add_detector_args(
     parser: argparse.ArgumentParser, threshold: float = DEFAULT_SCORE_THRESHOLD
 ) -> None:
     group = parser.add_argument_group("detector")
-    group.add_argument("--model", default=DEFAULT_MODEL, help="model in /usr/share/hailo-models")
+    group.add_argument(
+        "--model",
+        default=DEFAULT_MODEL,
+        help="model in /usr/share/hailo-models, or fetched by scripts/fetch_model.sh",
+    )
     group.add_argument("--hef", type=Path, help="explicit HEF path (overrides --model)")
     group.add_argument("--threshold", type=float, default=threshold, help="minimum detection score")
     group.add_argument(

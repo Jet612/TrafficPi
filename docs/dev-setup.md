@@ -72,6 +72,8 @@ Reference results with `yolov8s_h8l.hef` (640×640 input), measured in the eveni
 
 No throttling occurred (`vcgencmd get_throttled` was `0x0`).
 
+The default model is yolov11s, from Hailo's Model Zoo (`scripts/fetch_model.sh` puts it in `<data dir>/models`). Without it the service logs a warning and uses yolov8s from `hailo-models`; the System page says which it is running. The build is the one for HailoRT 4.23 (Model Zoo v2.17.0): after upgrading HailoRT, look at whether a newer one suits it, and change the URL and the checksums in that script. Why this model: [accuracy.md](accuracy.md).
+
 The same chip alone, from `hailortcli benchmark` with the vision service stopped:
 
 | Frames at a time | yolov8s_h8l | Its latency | yolov6n_h8l | Its latency |
@@ -127,6 +129,8 @@ uv run pyright
 uv run pytest                      # hardware-free tests
 uv run pytest --hardware           # also the camera and accelerator tests (nothing else may be using them)
 
+../scripts/fetch_model.sh           # yolov11s, the default model: not in hailo-models, 25 MB, checksummed
+
 uv run trafficpi-vision dry-run --seconds 30        # speed, latency, CPU, memory, temperature
 uv run trafficpi-vision snapshot --out /tmp/x.jpg   # one frame with the detections drawn on it
 uv run trafficpi-vision record --seconds 60         # a clip and its detections under data/clips/<time>/
@@ -156,10 +160,11 @@ uv run trafficpi-vision annotate data/clips/corner-am --lines data/clips/corner-
 # frame by frame. Boxes are matched by overlap; the output shows counts, mean scores and how the
 # scores of the shared objects differ.
 D=data/clips/corner-am
+uv run trafficpi-vision redetect $D/clip.mp4 --model yolov11s --out $D/det-yolov11s.jsonl
 uv run trafficpi-vision redetect $D/clip.mp4 --model yolov8s --out $D/det-yolov8s.jsonl
 uv run trafficpi-vision redetect $D/clip.mp4 --model yolov6n --out $D/det-yolov6n.jsonl
 uv run trafficpi-vision redetect $D/clip.mp4 --hef /usr/share/hailo-models/yolox_s_leaky_h8l_rpi.hef --out $D/det-yolox.jsonl
-uv run trafficpi-vision compare $D/det-yolov8s.jsonl $D/det-yolov6n.jsonl --min-score 0.25
+uv run trafficpi-vision compare $D/det-yolov11s.jsonl $D/det-yolov8s.jsonl --min-score 0.25
 ```
 
 The colour order matters: the detectors expect RGB, and `--channel-order bgr` on the same clip found a third as many detections with 0.10 lower scores. Raspberry Pi's own Hailo example feeds Picamera2's `RGB888` stream, which is BGR in memory. TrafficPi asks for Picamera2's `BGR888` format, which is RGB in memory (`CameraSettings.channel_order`).

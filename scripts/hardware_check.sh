@@ -10,7 +10,7 @@
 #                         cost (default 600; 0 skips): the figures in docs/accuracy.md to compare with
 #   --hardware-tests      run the tests that need the hardware (pytest --hardware)
 #   --clip FOLDER         a folder made by `trafficpi-vision record` (clip.mp4 and profile.json in
-#                         it): run the clip through each of the three models, compare them, and
+#                         it): run the clip through each of the four models, compare them, and
 #                         replay each detection log through the profile's lines and stop sign
 #   --seconds N           use only the first N seconds of the clip (default: all of it)
 #   --log FILE            keep everything printed in FILE as well (default /tmp/trafficpi-hardware-check.log)
@@ -97,25 +97,26 @@ if [[ -n "$clip" ]]; then
   if (( seconds > 0 )); then limit=(--seconds "$seconds"); fi
   # at the live service's score threshold, so that a replay is what the live pipeline would have done
   common=(--threshold 0.25 "${limit[@]}")
-  echo "== the clip through three models: $clip"
+  echo "== the clip through four models: $clip"
   declare -A models=(
+    [yolov11s]="--model yolov11s"
     [yolov8s]="--model yolov8s"
     [yolov6n]="--model yolov6n"
     [yolox]="--hef /usr/share/hailo-models/yolox_s_leaky_h8l_rpi.hef"
   )
-  for name in yolov8s yolov6n yolox; do
+  for name in yolov11s yolov8s yolov6n yolox; do
     cool_down
     echo "-- redetect with $name: $(date +%T)"
     # shellcheck disable=SC2086  # the options are written out above, one word each
     uv run trafficpi-vision redetect "$clip/clip.mp4" ${models[$name]} "${common[@]}" --out "$clip/det-$name.jsonl" 2>&1 | grep -v "WARN V4L2" | tail -14
   done
   echo "== comparing the logs, frame by frame (scores of 0.25 and over)"
-  for other in yolov6n yolox; do
-    echo "-- yolov8s against $other"
-    uv run trafficpi-vision compare "$clip/det-yolov8s.jsonl" "$clip/det-$other.jsonl" --min-score 0.25 2>&1 | tail -25
+  for other in yolov8s yolov6n yolox; do
+    echo "-- yolov11s against $other"
+    uv run trafficpi-vision compare "$clip/det-yolov11s.jsonl" "$clip/det-$other.jsonl" --min-score 0.25 2>&1 | tail -25
   done
   if [[ -f "$clip/profile.json" ]]; then
-    for name in yolov8s yolov6n yolox; do
+    for name in yolov11s yolov8s yolov6n yolox; do
       echo "== replay of $name through the profile (counts and passes)"
       uv run trafficpi-vision replay "$clip/det-$name.jsonl" --profile "$clip/profile.json" 2>&1 | head -24
     done

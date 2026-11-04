@@ -49,12 +49,77 @@ Of the 8 passes flagged as needing a look, 7 are plainly vehicles that did not s
 
 What this does **not** test: the line between "rolled through" and "did not stop", which is a speed set for each sign on the Setup page (the eye cannot tell 1.7 from 1.95 sizes a second); what the rule does at night (stop signs are only judged in daylight here, a setting on the Setup page); a vehicle hidden by another (there was almost never one in the picture at a time).
 
+## Which model sees best (2026-11-03)
+
+The service runs yolov11s since this date, and ran yolov8s before it. What was wanted is the model that sees and tracks best, of those that take every frame the camera gives without overheating the board.
+
+**What keeps up.** A model that does not fit on the chip at once sends its parts over the Pi's one PCIe lane for every frame, so these run far below Hailo's published figures (from a PC with four lanes). A frame comes every 33.3 ms.
+
+| Model (Hailo-8L) | Published mAP | Published fps | Here, fps | Here, a frame takes | Every frame? |
+|---|---|---|---|---|---|
+| yolov6n | 32.4 | 356 | 354 | 8.7 ms | yes |
+| yolov8s | 43.9 | 110 | 57 | 16.4 ms | yes |
+| **yolov11s** | 45.1 | 92 | 37 | **26 ms** | **yes** |
+| yolov8m | 49.2 | 51 | 30.5 | 33.7 ms | only in pairs (45 fps) |
+| yolov11m | 49.9 | 35 | 22 | 45.7 ms | barely, in pairs (30.5 fps) |
+| yolov7, yolov10b, yolov9c, yolov8l, yolov11l | 49 to 52 | 22 to 37 | 14 to 20 | 50 to 71 ms | no |
+
+**In daylight**, the clip above through each, on the same frames, against what was checked by eye. Every model counted the 22 and followed all 23 moving vehicles, with no false count, so this clip does not separate them much. Parked cars show how steady each one is: "shake" is how far a parked car's ground point wanders, as a share of its height, and each of those cars ought to be one track.
+
+| | Passes as in the table above | Tracks | Tracks on parked cars | Shake |
+|---|---|---|---|---|
+| **yolov11s** | **10 of 10** | 25 | 7 | 1.5% |
+| yolov8s | 9 of 10 | 39 | **4** | **1.2%** |
+| yolov8m | 10 of 10 | 27 | 7 | 1.8% |
+| yolov11m | 9 of 10 | **23** | 5 | 1.9% |
+| yolox_s_leaky | 10 of 10 | 25 | 10 | 3.1% |
+| yolov6n, tracks starting at 0.4 | 10 of 10 | 26 | 18 | 6.2% |
+
+The one pass that yolov8s and yolov11m got wrong was a stop of 1.0 s on the clip's compressed frames, right on the rule's limit, and the live run had it at 1.1 s. That is one pass, and no sign of better judgement.
+
+**At night**, 35 minutes (22:19 to 22:54) of the live view, 10 frames a second and compressed, through each. A motion detector that knows nothing of any model listed what moved over the lines, and everything anything disagreed on was looked at in the frames: 15 vehicles passed, and each of the 12 stretches of movement nothing counted was one of those 15, so no vehicle got past them all.
+
+| | Counted, of 15 | Counted twice |
+|---|---|---|
+| **yolov11s** | **12** | 0 |
+| yolox_s_leaky | 11 | 1 |
+| yolov8s, live at 30 frames a second | 10 | 0 |
+| yolov8s | 9 | 0 |
+| yolov8m | 9 (11 with tracks starting at 0.45) | 0 |
+| yolov6n, tracks starting at 0.4 | 9 | 1 |
+| yolov11m | 8 | 0 |
+
+yolov11s counted every car yolov8s did and three more. Published accuracy does not say this: the larger models did no better on dark cars, and yolov11m came last. A car counted twice here went over both lines, once at each.
+
+So yolov11s. It is level or better by day, it counted the most at night, and it fits the camera without any change to how frames are handled. yolov8s holds a parked car a little steadier.
+
+**The service, on it.** 15 minutes with the rules, the database and the recorder, on the camera at night: 27,041 frames, 30.01 a second; inference 25.9 ms (95th percentile 26.5 ms); 0.23 cores and 258 MB, against 0.32 cores and about 465 MB for yolov8s that evening; the board from 72 down to 67 °C, where yolov8s had stood at 71.6 °C. The temperature is the Pi's, not the accelerator's, the board was still cooling from other work, and that was a cold night: a hot afternoon has not been tried.
+
+**Weak detections.** The tracker can use detections down to 0.1 to hold a vehicle, and the service gives it those of 0.25 and over. With yolov11s, the lower floor counted one more car at night and two cars twice, so it stays at 0.25.
+
+**What this does not show.** 15 cars at night is a small number, and 3 of them are the whole difference; it was one evening, in replay at a third of the frame rate. Three real stops is few. Rain, low sun and glare were not tried. The 148 evidence clips were tried and given up: they run at 15 frames a second with boxes drawn on them, and yolov8s, which made them, reproduced its own outcome on only 12.
+
+To go back: `trafficpi-vision run --model yolov8s`.
+
 ## How fast it runs, in daylight
 
 The same recording, which also writes a clip and a log (the live service writes neither): 21,531 frames in 720 s, **29.9 frames a second** (77 skipped, 0.4%); inference 17.0 ms on average (95th percentile 17.6 ms); the whole loop 33.3 ms a frame (the frame period); 42.3 ms from the sensor's timestamp to the detections (95th percentile 44.6 ms); the process used 0.54 cores (the machine 19% on average), 528 MB at most, and the board went from 72.2 to 74.3 °C, at most 77.1 °C, under the 80 °C where it slows itself down. The night figures measured earlier (29.9 fps, 17.2 ms) are the same to within the noise: daylight, with its many more detections, costs the loop nothing that can be seen.
 
+The same camera at night on 2026-11-03, one after the other (`trafficpi-vision dry-run`):
+
+| | yolov8s, before | yolov8s, now | yolov11s, now |
+|---|---|---|---|
+| Inference | 17.8 ms | 16.4 ms | 26.4 ms |
+| Sensor to detections | 41.7 ms | 40.3 ms | 50.9 ms |
+| Processor | 0.26 cores | 0.22 cores | 0.22 cores |
+| Memory at most | 436 MB | 427 MB | 250 MB |
+| Frames a second | 29.8 | 29.8 | 29.9 |
+| Frames skipped, all as it starts | 4 in 60 s | 4 in 60 s | 4 in 120 s |
+
+The frame rate is the camera's. yolov11s takes longer over a frame and still has 7 ms in hand.
+
 ## Not measured yet
 
 * **Speeds against a vehicle of known speed.** Not possible on this road. What is known is in [speed-calibration.md](speed-calibration.md).
-* **Other models** on this clip (yolov6n, yolox) and **other conditions** (rain, low sun, glare through the window, night).
+* **Other conditions** (rain, low sun, glare through the window), a hot afternoon on yolov11s, and a night recording at the full frame rate.
 * **Busy traffic**, with vehicles overlapping: this street has a vehicle every half a minute.

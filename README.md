@@ -369,4 +369,4 @@ Installing is in [docs/install.md](docs/install.md), running it in [docs/operati
 
 ## License
 
-TrafficPi is released under the [MIT License](LICENSE).
+TrafficPi is released under the [MIT License](LICENSE). The detection models are not part of this repository and have licenses of their own.

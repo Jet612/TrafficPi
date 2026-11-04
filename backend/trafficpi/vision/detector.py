@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import subprocess
 import time
 from collections import deque
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Sequence
 from concurrent.futures import Future
 from dataclasses import dataclass
 from functools import lru_cache
@@ -17,8 +18,11 @@ import numpy as np
 
 from trafficpi.core.coco import TRAFFIC_CLASS_IDS, class_name
 from trafficpi.core.letterbox import Letterbox
+from trafficpi.core.paths import default_data_dir
 from trafficpi.core.types import Detection
 from trafficpi.vision.sources import Frame
+
+log = logging.getLogger("trafficpi.vision")
 
 MODEL_DIR = Path("/usr/share/hailo-models")
 
@@ -26,7 +30,11 @@ MODEL_DIR = Path("/usr/share/hailo-models")
 # specific to it. Both the 13 TOPS Hailo-8L and the 26 TOPS Hailo-8 are called "Hailo-8" elsewhere.
 ARCH_SUFFIX = {"HAILO8": "h8", "HAILO8L": "h8l"}
 
-DEFAULT_MODEL = "yolov8s"
+# Of the models that keep up with the camera on the Hailo-8L, the one that saw the most on the
+# street (docs/accuracy.md). It is not in hailo-models: scripts/fetch_model.sh puts it under the
+# data directory, and until it is there the service runs the fallback, which is.
+DEFAULT_MODEL = "yolov11s"
+FALLBACK_MODEL = "yolov8s"
 DEFAULT_SCORE_THRESHOLD = 0.25
 
 # How many frames of a recording go to the accelerator together, and how many such groups are on
@@ -112,10 +120,13 @@ def hailo_architecture() -> str | None:
     return hailo_identity().get("architecture")
 
 
-def find_hef(model: str = DEFAULT_MODEL, *, model_dir: Path = MODEL_DIR) -> Path:
-    """Path of the ``model`` HEF built for the installed accelerator.
+def find_hef(model: str = DEFAULT_MODEL, *, model_dirs: Sequence[Path] | None = None) -> Path:
+    """Path of the ``model`` HEF built for the installed accelerator: from hailo-models, or what
+    ``scripts/fetch_model.sh`` put under the data directory.
 
-    Raises ``RuntimeError`` with a helpful message if the accelerator or the file is missing.
+    The default model falls back to ``FALLBACK_MODEL``, so that a download that failed does not stop
+    the counting. Raises ``RuntimeError`` with a helpful message if the accelerator or any other
+    file is missing.
     """
     arch = hailo_architecture()
     if arch not in ARCH_SUFFIX:
@@ -123,13 +134,20 @@ def find_hef(model: str = DEFAULT_MODEL, *, model_dir: Path = MODEL_DIR) -> Path
             f"Could not determine the Hailo architecture (got {arch!r}). Is the driver loaded? "
             "Try `hailortcli fw-control identify`, or give an explicit HEF path."
         )
-    path = model_dir / f"{model}_{ARCH_SUFFIX[arch]}.hef"
-    if not path.exists():
-        available = sorted(p.name for p in model_dir.glob(f"*_{ARCH_SUFFIX[arch]}*.hef"))
-        raise RuntimeError(
-            f"{path} not found for {arch}. Available: {', '.join(available) or 'none'}"
+    folders = model_dirs if model_dirs is not None else (MODEL_DIR, default_data_dir() / "models")
+    name = f"{model}_{ARCH_SUFFIX[arch]}.hef"
+    for folder in folders:
+        if (folder / name).exists():
+            return folder / name
+    if model == DEFAULT_MODEL:
+        log.warning(
+            "%s is not here, so %s is used instead: scripts/fetch_model.sh downloads it",
+            name,
+            FALLBACK_MODEL,
         )
-    return path
+        return find_hef(FALLBACK_MODEL, model_dirs=folders)
+    available = sorted(p.name for f in folders for p in f.glob(f"*_{ARCH_SUFFIX[arch]}*.hef"))
+    raise RuntimeError(f"{name} not found for {arch}. Available: {', '.join(available) or 'none'}")
 
 
 def _per_class(raw: Any) -> list[Any]:
