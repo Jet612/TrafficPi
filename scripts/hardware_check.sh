@@ -73,6 +73,15 @@ if (( memtest_mb > 0 )); then
   sudo memtester "${memtest_mb}M" 1 2>&1 | tail -30
 fi
 
+# A clip runs through as fast as it can be decoded, on most of the cores: 84 degrees within minutes,
+# where the board slows itself down. So each model starts on a cool board.
+temperature() { vcgencmd measure_temp 2>/dev/null | sed -E 's/temp=([0-9]+)\..*/\1/' | grep -E '^[0-9]+$' || echo 0; }
+cool_down() {
+  local waited=0
+  while [ "$(temperature)" -ge 72 ] && [ "$waited" -lt 300 ]; do sleep 10; waited=$((waited + 10)); done
+  if (( waited > 0 )); then echo "(waited $waited s for the board to cool: $(temperature) C)"; fi
+}
+
 if (( hardware_tests )); then
   echo "== the tests that need the hardware"
   uv run pytest --hardware -q -p no:cacheprovider 2>&1 | tail -15
@@ -95,6 +104,7 @@ if [[ -n "$clip" ]]; then
     [yolox]="--hef /usr/share/hailo-models/yolox_s_leaky_h8l_rpi.hef"
   )
   for name in yolov8s yolov6n yolox; do
+    cool_down
     echo "-- redetect with $name: $(date +%T)"
     # shellcheck disable=SC2086  # the options are written out above, one word each
     uv run trafficpi-vision redetect "$clip/clip.mp4" ${models[$name]} "${common[@]}" --out "$clip/det-$name.jsonl" 2>&1 | grep -v "WARN V4L2" | tail -14
