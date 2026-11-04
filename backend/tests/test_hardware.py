@@ -19,6 +19,16 @@ def test_detector_runs_on_a_blank_frame() -> None:
         assert detector.timings.infer_ms > 0
 
 
+def test_groups_and_the_chips_order_change_how_frames_travel_and_not_what_is_found() -> None:
+    with PiCameraSource() as camera:
+        frames = [camera.read() for _ in range(11)]  # the last group is a short one
+    with HailoDetector(find_hef()) as single, HailoDetector(find_hef(), batch_size=4) as grouped:
+        assert single._row_planar
+        expected = [single.detect(frame.image) for frame in frames]
+        found = [detections for _, detections in grouped.detect_stream(frames)]
+    assert found == expected
+
+
 def test_camera_frames_and_clock() -> None:
     with PiCameraSource() as camera:
         frames = [camera.read() for _ in range(10)]

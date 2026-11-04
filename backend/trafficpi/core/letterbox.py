@@ -39,9 +39,13 @@ class Letterbox:
             src_w, src_h, dst_w, dst_h, new_w, new_h, (dst_w - new_w) // 2, (dst_h - new_h) // 2
         )
 
-    def new_canvas(self) -> np.ndarray:
-        """A canvas filled with the padding colour. Reuse it across frames with ``out=``."""
-        return np.full((self.dst_h, self.dst_w, 3), PAD_VALUE, dtype=np.uint8)
+    def new_canvas(self, *, row_planar: bool = False) -> np.ndarray:
+        """A canvas filled with the padding colour. Reuse it across frames with ``out=``.
+
+        ``row_planar`` is for :meth:`apply_row_planar`: (height, channel, width).
+        """
+        shape = (self.dst_h, 3, self.dst_w) if row_planar else (self.dst_h, self.dst_w, 3)
+        return np.full(shape, PAD_VALUE, dtype=np.uint8)
 
     def apply(self, image: np.ndarray, out: np.ndarray | None = None) -> np.ndarray:
         """Scale ``image`` into the canvas.
@@ -49,17 +53,30 @@ class Letterbox:
         With ``out`` (from :meth:`new_canvas`) only the image region is written, so the padding
         stays intact and no per-frame allocation or fill is needed.
         """
+        canvas = self.new_canvas() if out is None else out
+        scaled = self._scaled(image)
+        canvas[self.pad_y : self.pad_y + self.new_h, self.pad_x : self.pad_x + self.new_w] = scaled
+        return canvas
+
+    def apply_row_planar(self, image: np.ndarray, out: np.ndarray) -> np.ndarray:
+        """:meth:`apply` for a canvas that holds each row as its reds, its greens, then its blues.
+
+        Hailo's chips read their input in that order (NHCW). Given anything else, HailoRT
+        rearranges all of the canvas on the CPU for every frame; here only the picture is written,
+        as quickly as a plain copy.
+        """
+        rows = out[self.pad_y : self.pad_y + self.new_h, :, self.pad_x : self.pad_x + self.new_w]
+        cv2.split(self._scaled(image), [rows[:, channel, :] for channel in range(3)])
+        return out
+
+    def _scaled(self, image: np.ndarray) -> np.ndarray:
         if image.shape[:2] != (self.src_h, self.src_w):
             raise ValueError(
                 f"expected a {self.src_w}x{self.src_h} image, got {image.shape[1]}x{image.shape[0]}"
             )
-        canvas = self.new_canvas() if out is None else out
         if (self.new_w, self.new_h) == (self.src_w, self.src_h):
-            scaled = image
-        else:
-            scaled = cv2.resize(image, (self.new_w, self.new_h), interpolation=cv2.INTER_AREA)
-        canvas[self.pad_y : self.pad_y + self.new_h, self.pad_x : self.pad_x + self.new_w] = scaled
-        return canvas
+            return image
+        return cv2.resize(image, (self.new_w, self.new_h), interpolation=cv2.INTER_AREA)
 
     def box_to_source(
         self, x0: float, y0: float, x1: float, y1: float

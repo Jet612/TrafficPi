@@ -96,3 +96,32 @@ def test_round_trip_through_the_canvas(src: tuple[int, int]) -> None:
         cx0, cx1 = (lb.pad_x + x0 * lb.new_w) / 640, (lb.pad_x + x1 * lb.new_w) / 640
         cy0, cy1 = (lb.pad_y + y0 * lb.new_h) / 640, (lb.pad_y + y1 * lb.new_h) / 640
         assert lb.box_to_source(cx0, cy0, cx1, cy1) == pytest.approx((x0, y0, x1, y1), abs=1e-9)
+
+
+@pytest.mark.parametrize(
+    "src", [(640, 360), (1280, 720), (360, 640), (500, 300)], ids=lambda s: f"{s[0]}x{s[1]}"
+)
+def test_a_row_planar_canvas_holds_what_the_ordinary_one_holds_in_the_chips_order(
+    src: tuple[int, int],
+) -> None:
+    lb = Letterbox.fit(*src, 640, 640)
+    image = np.random.default_rng(2).integers(0, 255, (src[1], src[0], 3), dtype=np.uint8)
+    canvas = lb.new_canvas(row_planar=True)
+    assert canvas.shape == (640, 3, 640)
+    assert lb.apply_row_planar(image, canvas) is canvas
+    assert np.array_equal(canvas, lb.apply(image).transpose(0, 2, 1))
+
+
+def test_a_row_planar_canvas_keeps_its_padding_from_frame_to_frame() -> None:
+    lb = Letterbox.fit(640, 360, 640, 640)
+    canvas = lb.new_canvas(row_planar=True)
+    for value in (10, 200):
+        lb.apply_row_planar(np.full((360, 640, 3), value, np.uint8), canvas)
+        assert (canvas[:140] == PAD_VALUE).all() and (canvas[500:] == PAD_VALUE).all()
+        assert (canvas[140:500] == value).all()
+
+
+def test_a_row_planar_canvas_turns_away_an_image_of_another_size() -> None:
+    lb = Letterbox.fit(640, 360, 640, 640)
+    with pytest.raises(ValueError, match="640x360"):
+        lb.apply_row_planar(np.zeros((10, 10, 3), np.uint8), lb.new_canvas(row_planar=True))

@@ -207,14 +207,31 @@ class HailoDetector:
         batch_size: int | None = None,
     ) -> None:
         os.environ.setdefault("HAILORT_LOGGER_PATH", "NONE")  # before HailoRT initialises
-        from picamera2.devices import Hailo  # imported late so the package works without hardware
+        from hailo_platform import FormatOrder  # imported late: the package works without hardware
+        from picamera2.devices import Hailo
+
+        class ChipOrderHailo(Hailo):
+            """Takes its input in the order the chip reads, so that HailoRT need not rearrange it.
+
+            The hook is private to the helper. If it is ever renamed this is simply not called:
+            frames stay in the ordinary order, a millisecond slower and otherwise the same.
+            """
+
+            row_planar = False
+
+            def _set_input_output(self, output_type: str) -> None:
+                super()._set_input_output(output_type)
+                if self.hef.get_input_stream_infos()[0].format.order == FormatOrder.NHCW:
+                    self.infer_model.input().set_format_order(FormatOrder.NHCW)
+                    self.row_planar = True
 
         self.hef_path = Path(hef_path)
         self.score_threshold = score_threshold
         self.class_ids = class_ids
         self.batch_size = batch_size
         self.timings = DetectTimings()
-        self._hailo: Any = Hailo(str(self.hef_path), batch_size=batch_size)
+        self._hailo: Any = ChipOrderHailo(str(self.hef_path), batch_size=batch_size)
+        self._row_planar: bool = self._hailo.row_planar
         height, width, _ = self._hailo.get_input_shape()
         self.input_size: tuple[int, int] = (int(width), int(height))
         self._letterbox: Letterbox | None = None
@@ -232,16 +249,22 @@ class HailoDetector:
         lb = self._letterbox
         if lb is None or (lb.src_w, lb.src_h) != (width, height) or self._canvas is None:
             lb = Letterbox.fit(width, height, *self.input_size)
-            self._letterbox, self._canvas = lb, lb.new_canvas()
+            self._letterbox, self._canvas = lb, lb.new_canvas(row_planar=self._row_planar)
             self._group_canvases.clear()
         return lb, self._canvas
+
+    def _fill(self, lb: Letterbox, image: np.ndarray, canvas: np.ndarray) -> None:
+        if self._row_planar:
+            lb.apply_row_planar(image, canvas)
+        else:
+            lb.apply(image, out=canvas)
 
     def detect(self, image: np.ndarray) -> list[Detection]:
         if self._hailo is None:
             raise RuntimeError("detector is closed")
         t0 = time.perf_counter()
         lb, canvas = self._prepare(image)
-        lb.apply(image, out=canvas)
+        self._fill(lb, image, canvas)
         t1 = time.perf_counter()
         raw = self._hailo.run(canvas if self.batch_size is None else [canvas])
         t2 = time.perf_counter()
@@ -282,14 +305,15 @@ class HailoDetector:
         lb, _ = self._prepare(frames[0].image)
         canvases = self._next_canvases(lb)[: len(frames)]
         for frame, canvas in zip(frames, canvases, strict=True):
-            lb.apply(frame.image, out=canvas)
+            self._fill(lb, frame.image, canvas)
         result = self._hailo.run_async(canvases)
         return _Group(frames, lb, result, (time.perf_counter() - t0) * 1000 / len(frames))
 
     def _next_canvases(self, lb: Letterbox) -> list[np.ndarray]:
         """The canvases of the oldest group, whose frames have left the accelerator by now."""
         if len(self._group_canvases) < GROUPS_IN_FLIGHT:
-            canvases = [lb.new_canvas() for _ in range(self.batch_size or 1)]
+            size = self.batch_size or 1
+            canvases = [lb.new_canvas(row_planar=self._row_planar) for _ in range(size)]
         else:
             canvases = self._group_canvases.popleft()
         self._group_canvases.append(canvases)

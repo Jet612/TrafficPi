@@ -61,7 +61,7 @@ python3 -I scripts/smoke_hailo.py --source blank --seconds 10   # accelerator on
 python3 -I scripts/smoke_hailo.py --seconds 60                  # camera + accelerator
 ```
 
-The script saves nothing to disk. `Hailo.run(frame)` returns a list of 80 arrays (one per COCO class), each of shape `(N, 5)` with rows `[y_min, x_min, y_max, x_max, score]` normalized to 0–1. The detector runs non-maximum suppression on the chip.
+The script saves nothing to disk. `Hailo.run(frame)` returns a list of 80 arrays (one per COCO class), each of shape `(N, 5)` with rows `[y_min, x_min, y_max, x_max, score]` normalized to 0–1. Non-maximum suppression does not run on the chip: the chip sends back raw tensors (`hailortcli parse-hef --parse-streams` lists them) and HailoRT turns them into boxes on the CPU, which is most of the 3 to 4 ms of processor time a frame costs it.
 
 Reference results with `yolov8s_h8l.hef` (640×640 input), measured in the evening on a static scene:
 

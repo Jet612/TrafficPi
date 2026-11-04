@@ -18,6 +18,11 @@ from trafficpi.vision.sources import Frame
 CAR = 2
 
 
+class FormatOrder:
+    NHCW = "NHCW"
+    NHWC = "NHWC"
+
+
 class SlowHailo:
     """Reads a frame only when its group finishes, as the chip's DMA does, so a canvas that is
     written again while its group is on its way shows up as the wrong frame."""
@@ -33,7 +38,7 @@ class SlowHailo:
     def _output(self, canvas: np.ndarray) -> list[np.ndarray]:
         """A car whose score tells which frame was on the canvas (see ``frames``)."""
         per_class = [np.zeros((0, 5)) for _ in COCO_NAMES]
-        score = canvas[320, 320, 0] / 255
+        score = (canvas[320, 0, 320] if canvas.shape[1] == 3 else canvas[320, 320, 0]) / 255
         per_class[CAR] = np.array([[0.4, 0.4, 0.6, 0.6, score]])
         return per_class
 
@@ -77,11 +82,72 @@ def make_detector(monkeypatch: pytest.MonkeyPatch) -> Any:
     devices = SimpleNamespace(Hailo=FinishOnRead)
     monkeypatch.setitem(sys.modules, "picamera2", SimpleNamespace(devices=devices))
     monkeypatch.setitem(sys.modules, "picamera2.devices", devices)
+    monkeypatch.setitem(sys.modules, "hailo_platform", SimpleNamespace(FormatOrder=FormatOrder))
 
     def make(batch_size: int | None) -> HailoDetector:
         return HailoDetector("model.hef", batch_size=batch_size, score_threshold=0.0)  # type: ignore[arg-type]
 
     return make
+
+
+class ChipModel(FinishOnRead):
+    """The helper's start-up, for a model whose input stream is in ``order``."""
+
+    order = FormatOrder.NHCW
+    told: list[str]
+
+    def __init__(self, hef_path: str, batch_size: int | None = None) -> None:
+        super().__init__(hef_path, batch_size)
+        self.told = []
+        stream = SimpleNamespace(format=SimpleNamespace(order=self.order))
+        self.hef = SimpleNamespace(get_input_stream_infos=lambda: [stream])
+        self.infer_model = SimpleNamespace(
+            input=lambda: SimpleNamespace(set_format_order=self.told.append)
+        )
+        self._set_input_output("FLOAT32")
+
+    def _set_input_output(self, output_type: str) -> None: ...
+
+
+@pytest.fixture
+def chip_model(monkeypatch: pytest.MonkeyPatch, make_detector: Any) -> type[ChipModel]:
+    monkeypatch.setattr(sys.modules["picamera2.devices"], "Hailo", ChipModel)
+    return ChipModel
+
+
+def test_a_model_is_given_its_frames_in_the_order_the_chip_reads_them(
+    make_detector: Any, chip_model: type[ChipModel]
+) -> None:
+    detector = make_detector(None)
+    assert detector._hailo.told == [FormatOrder.NHCW]
+    (car,) = detector.detect(np.full((360, 640, 3), 51, np.uint8))
+    assert car.score == pytest.approx(51 / 255)
+    assert detector._canvas.shape == (640, 3, 640)
+
+
+def test_a_stream_is_given_the_same_order(make_detector: Any, chip_model: type[ChipModel]) -> None:
+    found = list(make_detector(4).detect_stream(frames(9)))
+    expected = [round(((i * 7 + 10) % 256) / 255, 4) for i in range(9)]
+    assert scores(found) == expected
+
+
+def test_a_model_that_reads_another_order_gets_the_ordinary_one(
+    make_detector: Any, chip_model: type[ChipModel], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(chip_model, "order", FormatOrder.NHWC)
+    detector = make_detector(None)
+    assert detector._hailo.told == []
+    detector.detect(np.zeros((360, 640, 3), np.uint8))
+    assert detector._canvas.shape == (640, 640, 3)
+
+
+def test_a_helper_that_never_calls_the_hook_still_works_in_the_ordinary_order(
+    make_detector: Any,
+) -> None:
+    detector = make_detector(None)  # FinishOnRead has no such start-up
+    (car,) = detector.detect(np.full((360, 640, 3), 51, np.uint8))
+    assert car.score == pytest.approx(51 / 255)
+    assert detector._canvas.shape == (640, 640, 3)
 
 
 def frames(count: int) -> list[Frame]:
