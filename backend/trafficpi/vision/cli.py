@@ -35,6 +35,7 @@ from trafficpi.vision.demo import DemoStreet, demo_health, demo_history
 from trafficpi.vision.detector import (
     DEFAULT_MODEL,
     DEFAULT_SCORE_THRESHOLD,
+    OFFLINE_BATCH,
     Detector,
     HailoDetector,
     find_hef,
@@ -131,13 +132,16 @@ def _camera_settings(args: argparse.Namespace) -> CameraSettings:
     )
 
 
-def _make_detector(args: argparse.Namespace) -> tuple[HailoDetector, Path]:
+def _make_detector(
+    args: argparse.Namespace, batch_size: int | None = None
+) -> tuple[HailoDetector, Path]:
     hef = args.hef or find_hef(args.model)
     try:
         detector = HailoDetector(
             hef,
             score_threshold=args.threshold,
             class_ids=None if args.all_classes else TRAFFIC_CLASS_IDS,
+            batch_size=batch_size,
         )
     except Exception as exc:
         # Only one process can use the accelerator at a time.
@@ -301,7 +305,7 @@ def cmd_record(args: argparse.Namespace) -> int:
 
 def cmd_redetect(args: argparse.Namespace) -> int:
     """Run an accelerator over a recorded clip and write a detection log (to compare models)."""
-    detector, hef = _make_detector(args)
+    detector, hef = _make_detector(args, batch_size=OFFLINE_BATCH)
     source = VideoFileSource(args.clip, size=args.lores_size, channel_order=args.channel_order)
     out = args.out or args.clip.parent / f"detections-{hef.stem}.jsonl"
     header = {
@@ -315,16 +319,14 @@ def cmd_redetect(args: argparse.Namespace) -> int:
         "source_clip": str(args.clip),
     }
     with detector, source, DetectionLogWriter(out, header) as log:
-        report = pipeline.run(
+        report = pipeline.run_ahead(
             source,
             detector,
             seconds=args.seconds,
-            frame_rate=source.fps,
             on_frame=log.write_frame,
             on_report=_print_window,
             report_every=5.0,
             stop=args.stop,
-            live=False,
         )
     _print_summary(report)
     print(f"wrote {out}")

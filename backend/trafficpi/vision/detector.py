@@ -5,6 +5,9 @@ from __future__ import annotations
 import os
 import subprocess
 import time
+from collections import deque
+from collections.abc import Iterable, Iterator
+from concurrent.futures import Future
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -15,6 +18,7 @@ import numpy as np
 from trafficpi.core.coco import TRAFFIC_CLASS_IDS, class_name
 from trafficpi.core.letterbox import Letterbox
 from trafficpi.core.types import Detection
+from trafficpi.vision.sources import Frame
 
 MODEL_DIR = Path("/usr/share/hailo-models")
 
@@ -24,6 +28,14 @@ ARCH_SUFFIX = {"HAILO8": "h8", "HAILO8L": "h8l"}
 
 DEFAULT_MODEL = "yolov8s"
 DEFAULT_SCORE_THRESHOLD = 0.25
+
+# How many frames of a recording go to the accelerator together, and how many such groups are on
+# their way at once. A model too big for the chip runs in several contexts, and changing context
+# costs the same for one frame as for a group: yolov8s on the Hailo-8L does 59 frames a second one
+# at a time and 136 in groups of 8. The second group keeps the chip busy while the first comes back.
+# The boxes are the same bit for bit; each frame only waits longer, so this is not for live frames.
+OFFLINE_BATCH = 8
+GROUPS_IN_FLIGHT = 2
 
 
 @dataclass(slots=True)
@@ -47,6 +59,12 @@ class Detector(Protocol):
     def detect(self, image: np.ndarray) -> list[Detection]: ...
 
     def close(self) -> None: ...
+
+
+class StreamDetector(Detector, Protocol):
+    """A detector that can work ahead of its results, for frames that are all there already."""
+
+    def detect_stream(self, frames: Iterable[Frame]) -> Iterator[tuple[Frame, list[Detection]]]: ...
 
 
 def _hailort_env() -> dict[str, str]:
@@ -117,8 +135,9 @@ def find_hef(model: str = DEFAULT_MODEL, *, model_dir: Path = MODEL_DIR) -> Path
 def _per_class(raw: Any) -> list[Any]:
     """Normalise the output of ``Hailo.run`` to one array per class.
 
-    For these models the chip runs non-maximum suppression and returns, per class, an array of
-    rows ``[y_min, x_min, y_max, x_max, score]`` with coordinates as fractions of the input.
+    For these models HailoRT runs non-maximum suppression on the CPU, on what the chip sends back,
+    and returns, per class, an array of rows ``[y_min, x_min, y_max, x_max, score]`` with
+    coordinates as fractions of the input.
     Depending on version and batch settings the list may be wrapped in a dict or a batch list.
     """
     if isinstance(raw, dict):
@@ -135,7 +154,7 @@ def parse_nms_output(
     threshold: float = DEFAULT_SCORE_THRESHOLD,
     class_ids: frozenset[int] | None = TRAFFIC_CLASS_IDS,
 ) -> list[Detection]:
-    """Turn the chip's per-class output into detections in source-image coordinates.
+    """Turn HailoRT's per-class output into detections in source-image coordinates.
 
     ``class_ids=None`` keeps every class. The result is sorted by score, best first.
     """
@@ -162,8 +181,22 @@ def parse_nms_output(
 _RETAINED: list[Any] = []
 
 
+@dataclass(slots=True)
+class _Group:
+    """Frames on their way through the accelerator together."""
+
+    frames: list[Frame]
+    letterbox: Letterbox
+    result: Future[list[Any]]
+    preprocess_ms: float
+
+
 class HailoDetector:
-    """A YOLO-family detector running on the Hailo accelerator via Picamera2's helper."""
+    """A YOLO-family detector running on the Hailo accelerator via Picamera2's helper.
+
+    ``batch_size`` makes :meth:`detect_stream` send that many frames at a time. It is fixed when
+    the model is loaded, and the model cannot be loaded twice in a process (see :meth:`close`).
+    """
 
     def __init__(
         self,
@@ -171,6 +204,7 @@ class HailoDetector:
         *,
         score_threshold: float = DEFAULT_SCORE_THRESHOLD,
         class_ids: frozenset[int] | None = TRAFFIC_CLASS_IDS,
+        batch_size: int | None = None,
     ) -> None:
         os.environ.setdefault("HAILORT_LOGGER_PATH", "NONE")  # before HailoRT initialises
         from picamera2.devices import Hailo  # imported late so the package works without hardware
@@ -178,12 +212,14 @@ class HailoDetector:
         self.hef_path = Path(hef_path)
         self.score_threshold = score_threshold
         self.class_ids = class_ids
+        self.batch_size = batch_size
         self.timings = DetectTimings()
-        self._hailo: Any = Hailo(str(self.hef_path))
+        self._hailo: Any = Hailo(str(self.hef_path), batch_size=batch_size)
         height, width, _ = self._hailo.get_input_shape()
         self.input_size: tuple[int, int] = (int(width), int(height))
         self._letterbox: Letterbox | None = None
         self._canvas: np.ndarray | None = None
+        self._group_canvases: deque[list[np.ndarray]] = deque()
 
     def __enter__(self) -> Self:
         return self
@@ -197,6 +233,7 @@ class HailoDetector:
         if lb is None or (lb.src_w, lb.src_h) != (width, height) or self._canvas is None:
             lb = Letterbox.fit(width, height, *self.input_size)
             self._letterbox, self._canvas = lb, lb.new_canvas()
+            self._group_canvases.clear()
         return lb, self._canvas
 
     def detect(self, image: np.ndarray) -> list[Detection]:
@@ -206,7 +243,7 @@ class HailoDetector:
         lb, canvas = self._prepare(image)
         lb.apply(image, out=canvas)
         t1 = time.perf_counter()
-        raw = self._hailo.run(canvas)
+        raw = self._hailo.run(canvas if self.batch_size is None else [canvas])
         t2 = time.perf_counter()
         detections = parse_nms_output(
             raw, lb, threshold=self.score_threshold, class_ids=self.class_ids
@@ -214,6 +251,62 @@ class HailoDetector:
         t3 = time.perf_counter()
         self.timings = DetectTimings((t1 - t0) * 1000, (t2 - t1) * 1000, (t3 - t2) * 1000)
         return detections
+
+    def detect_stream(self, frames: Iterable[Frame]) -> Iterator[tuple[Frame, list[Detection]]]:
+        """Each frame with what ``detect`` would have found in it, in order, sent ``batch_size`` at
+        a time so that the accelerator never waits for the caller. ``timings`` describes the frame
+        just returned: the time a group took is shared out over its frames.
+        """
+        if self.batch_size is None:
+            for frame in frames:
+                yield frame, self.detect(frame.image)
+            return
+        in_flight: deque[_Group] = deque()
+        waiting: list[Frame] = []
+        for frame in frames:
+            waiting.append(frame)
+            if len(waiting) == self.batch_size:
+                in_flight.append(self._send(waiting))
+                waiting = []
+                if len(in_flight) == GROUPS_IN_FLIGHT:
+                    yield from self._collect(in_flight.popleft())
+        if waiting:
+            in_flight.append(self._send(waiting))
+        while in_flight:
+            yield from self._collect(in_flight.popleft())
+
+    def _send(self, frames: list[Frame]) -> _Group:
+        if self._hailo is None:
+            raise RuntimeError("detector is closed")
+        t0 = time.perf_counter()
+        lb, _ = self._prepare(frames[0].image)
+        canvases = self._next_canvases(lb)[: len(frames)]
+        for frame, canvas in zip(frames, canvases, strict=True):
+            lb.apply(frame.image, out=canvas)
+        result = self._hailo.run_async(canvases)
+        return _Group(frames, lb, result, (time.perf_counter() - t0) * 1000 / len(frames))
+
+    def _next_canvases(self, lb: Letterbox) -> list[np.ndarray]:
+        """The canvases of the oldest group, whose frames have left the accelerator by now."""
+        if len(self._group_canvases) < GROUPS_IN_FLIGHT:
+            canvases = [lb.new_canvas() for _ in range(self.batch_size or 1)]
+        else:
+            canvases = self._group_canvases.popleft()
+        self._group_canvases.append(canvases)
+        return canvases
+
+    def _collect(self, group: _Group) -> Iterator[tuple[Frame, list[Detection]]]:
+        t0 = time.perf_counter()
+        raw = group.result.result()
+        infer_ms = (time.perf_counter() - t0) * 1000 / len(group.frames)
+        for frame, output in zip(group.frames, raw, strict=True):
+            t1 = time.perf_counter()
+            detections = parse_nms_output(
+                output, group.letterbox, threshold=self.score_threshold, class_ids=self.class_ids
+            )
+            postprocess_ms = (time.perf_counter() - t1) * 1000
+            self.timings = DetectTimings(group.preprocess_ms, infer_ms, postprocess_ms)
+            yield frame, detections
 
     def close(self) -> None:
         """Stop using the detector. The accelerator is deliberately not released.
