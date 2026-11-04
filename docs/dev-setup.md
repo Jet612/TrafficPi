@@ -72,6 +72,17 @@ Reference results with `yolov8s_h8l.hef` (640×640 input), measured in the eveni
 
 No throttling occurred (`vcgencmd get_throttled` was `0x0`).
 
+The same chip alone, from `hailortcli benchmark` with the vision service stopped:
+
+| Frames at a time | yolov8s_h8l | Its latency | yolov6n_h8l | Its latency |
+|---|---|---|---|---|
+| 1 | 58 fps | 13.1 ms | 354 fps | 7.0 ms |
+| 2 | 86 fps | 18.0 ms | 347 fps | 7.1 ms |
+| 4 | 113 fps | 27.2 ms | 354 fps | 7.2 ms |
+| 8 | 135 fps | 45.0 ms | 354 fps | 7.3 ms |
+
+yolov8s is too big for the Hailo-8L in one go (`hailortcli parse-hef` says `Multi Context`, three of them) and changing context costs the same for one frame as for eight, so a group of frames goes faster and each frame in it takes longer. yolov6n fits (`Single Context`): the chip works on several frames at once with no group needed. `ultra_performance` makes no difference to either, and neither does turning HailoRT's scheduler off, raising its score threshold or leaving Picamera2's helper out: at one frame at a time the chip is what takes the time. A live camera has only one frame to give, so it gets the latency of the first line; `redetect` has them all, and sends groups of 8.
+
 ## 5. User-space toolchain
 
 Installed under `~/.local` with checksums verified. Make sure `~/.local/bin` is on `PATH`.
@@ -153,7 +164,9 @@ uv run trafficpi-vision compare $D/det-yolov8s.jsonl $D/det-yolov6n.jsonl --min-
 
 The colour order matters: the detectors expect RGB, and `--channel-order bgr` on the same clip found a third as many detections with 0.10 lower scores. Raspberry Pi's own Hailo example feeds Picamera2's `RGB888` stream, which is BGR in memory. TrafficPi asks for Picamera2's `BGR888` format, which is RGB in memory (`CameraSettings.channel_order`).
 
-`replay` needs no camera or accelerator and gives the same answer every time, so it is also how tracker and counting changes are tested against real recordings.
+`redetect` sends the frames to the accelerator in groups and reads the next ones meanwhile: a twelve-minute clip takes 2 minutes 40 with yolov8s (136 fps) and under 2 with yolov6n (206 fps), and the log is the same byte for byte as one frame at a time. It is also the hottest thing this Pi does, at 2 to 3 cores for the decoding: 84 °C within minutes. `scripts/hardware_check.sh` waits for the board to cool between models; by hand, look at `vcgencmd measure_temp` first.
+
+`replay` needs no camera or accelerator and gives the same answer every time, so it is also how tracker and counting changes are tested against real recordings. It uses the tracker settings of the model named in the log's header.
 
 ### Running the services by hand
 
