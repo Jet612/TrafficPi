@@ -67,10 +67,15 @@ class Asked(EvidenceRecorder):
     def __init__(self, *args, **kw) -> None:  # type: ignore[no-untyped-def]
         super().__init__(*args, **kw)
         self.jobs: list[EvidenceJob] = []
+        self.fed = 0
 
     def request(self, job: EvidenceJob) -> None:
         self.jobs.append(job)
         super().request(job)
+
+    def feed(self, *args, **kw) -> None:  # type: ignore[no-untyped-def]
+        self.fed += 1
+        super().feed(*args, **kw)
 
 
 @pytest.fixture
@@ -301,6 +306,55 @@ def test_with_no_limit_the_journal_is_silent_about_it(
     with caplog.at_level(logging.INFO, logger="trafficpi.vision"):
         drive_at(store, NOON, script=[[] for _ in range(5)])
     assert "judged only" not in caplog.text and "paused" not in caplog.text
+
+
+def test_no_frame_is_compressed_for_evidence_while_stop_signs_are_not_judged(
+    store: Store, tmp_path: Path, recorder: Asked
+) -> None:
+    store.set_stop_hours(StopHours(daylight=True, **NYC))
+    drive_at(store, NIGHT, data_dir=tmp_path, evidence=recorder, clock=StubClock(ms(NIGHT)))
+    assert recorder.fed == 0
+
+
+def test_frames_go_to_the_recorder_while_stop_signs_are_judged(
+    store: Store, tmp_path: Path, recorder: Asked
+) -> None:
+    store.set_stop_hours(StopHours(daylight=True, **NYC))
+    drive_at(store, NOON, data_dir=tmp_path, evidence=recorder, clock=StubClock(ms(NOON)))
+    assert recorder.fed > 0
+
+
+def test_a_clip_being_made_when_the_hours_close_still_gets_its_last_seconds(
+    store: Store, tmp_path: Path, recorder: Asked
+) -> None:
+    """The pass is judged, then it gets dark before the seconds after it have been seen."""
+    store.set_stop_hours(StopHours(daylight=True, **NYC))
+    clock = StubClock(ms(NOON))
+    rolling = [(1.5, 0.15, 0.15), (1.0, 0.15, 0.04), (1.0, 0.04, 0.04), (1.0, 0.04, 0.15)]
+    drive = car_driving(rolling)
+    script = drive + [[] for _ in range(400)]
+    passed = len(drive)
+    fed_when_dark: list[int] = []
+
+    def it_gets_dark(index: int) -> None:
+        if index == passed:
+            clock.now = ms(NIGHT)
+        if index == passed + 1:
+            fed_when_dark.append(recorder.fed)
+
+    drive_at(
+        store,
+        NOON,
+        script=script,
+        on_read=it_gets_dark,
+        data_dir=tmp_path,
+        evidence=recorder,
+        clock=clock,
+        config=ServiceConfig(metrics_every_s=0),
+    )
+    assert len(recorder.jobs) == 1
+    assert recorder.fed > fed_when_dark[0]  # it went on being fed for the clip
+    assert recorder.fed < fed_when_dark[0] + 400  # and stopped when the clip was finished
 
 
 def test_the_journal_says_when_judging_pauses_for_the_night_and_when_it_resumes(

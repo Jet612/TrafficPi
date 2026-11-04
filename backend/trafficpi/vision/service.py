@@ -590,7 +590,13 @@ class VisionService:
                 if isinstance(event, CountEvent | StopEvent):
                     self._record(event, now_ms)
             self._follow_trails(result, now_ms)
-            if self._evidence is not None and self._stop_signs:  # nothing to show without a sign
+            # Each frame the recorder takes is compressed, so while stop signs are not judged it
+            # gets none, except to finish a clip it is already making.
+            if (
+                self._evidence is not None
+                and self._stop_signs  # nothing to show without a sign
+                and (not self._stops_paused or self._evidence.waiting)
+            ):
                 self._evidence.feed(frame.timestamp_ns, frame.image, result.tracks)
             if self._evidence is not None or self._evidence_waiting:
                 self._note_evidence()
