@@ -55,6 +55,14 @@ fi
 say "The locked Python packages"
 if (( dry )); then printf '   + (cd backend && uv sync --locked)\n'; else (cd "$root/backend" && uv sync --locked); fi
 
+say "The detection model"
+model_options=()
+data_dir="$(sed -n 's/^Environment=TRAFFICPI_DATA_DIR=//p' "$units/trafficpi-vision.service" 2>/dev/null | head -1)"
+[[ -z "$data_dir" ]] || model_options+=(--data-dir "$data_dir")
+(( ! dry )) || model_options+=(--dry-run)
+"$root/scripts/fetch_model.sh" "${model_options[@]}" \
+  || echo "   could not download it; the vision service will use yolov8s until scripts/fetch_model.sh has run"
+
 say "The dashboard"
 tree=""
 stamp="$root/dashboard/out/.built-from"

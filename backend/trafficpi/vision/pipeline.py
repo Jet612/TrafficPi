@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import time
-from collections import Counter
-from collections.abc import Callable
+from collections import Counter, deque
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 
 from trafficpi.core.types import Detection
-from trafficpi.vision.detector import Detector
+from trafficpi.vision.detector import Detector, StreamDetector
 from trafficpi.vision.metrics import StageStats, SystemSample, SystemSampler
 from trafficpi.vision.shutdown import StopRequest
 from trafficpi.vision.sources import EndOfStream, Frame, FrameSource
@@ -24,6 +24,8 @@ INTERVAL = "frame interval"  # time between consecutive frames, from sensor time
 
 OnFrame = Callable[[Frame, list[Detection]], None]
 OnReport = Callable[["WindowReport"], None]
+# A frame, what was found in it, the time spent waiting for it and the whole time it took, in ms.
+Produced = Iterator[tuple[Frame, list[Detection], float, float]]
 
 
 @dataclass(slots=True)
@@ -59,6 +61,39 @@ class RunReport:
         return self.frames / self.elapsed_s if self.elapsed_s > 0 else 0.0
 
 
+def _one_at_a_time(source: FrameSource, detector: Detector) -> Produced:
+    while True:
+        t0 = time.perf_counter()
+        try:
+            frame = source.read()
+        except EndOfStream:
+            return
+        t1 = time.perf_counter()
+        detections = detector.detect(frame.image)
+        t2 = time.perf_counter()
+        yield frame, detections, (t1 - t0) * 1000, (t2 - t0) * 1000
+
+
+def _working_ahead(source: FrameSource, detector: StreamDetector) -> Produced:
+    waits: deque[float] = deque()
+
+    def frames() -> Iterator[Frame]:
+        while True:
+            t0 = time.perf_counter()
+            try:
+                frame = source.read()
+            except EndOfStream:
+                return
+            waits.append((time.perf_counter() - t0) * 1000)
+            yield frame
+
+    last = time.perf_counter()
+    for frame, detections in detector.detect_stream(frames()):
+        now = time.perf_counter()
+        yield frame, detections, waits.popleft(), (now - last) * 1000
+        last = time.perf_counter()
+
+
 def run(
     source: FrameSource,
     detector: Detector,
@@ -69,42 +104,87 @@ def run(
     on_report: OnReport | None = None,
     report_every: float = 5.0,
     stop: StopRequest | None = None,
-    live: bool = True,
 ) -> RunReport:
     """Read frames and detect objects for ``seconds``, or until ``stop`` is requested.
 
     ``frame_rate`` is only used to estimate how many frames the camera produced that this loop
     never saw (``skipped``): the camera hands out the freshest frame, so a slow loop skips some.
-    For a recording pass ``live=False``: latency, frame intervals and skips are then not measured.
     """
+    return _measure(
+        _one_at_a_time(source, detector),
+        detector,
+        seconds=seconds,
+        frame_rate=frame_rate,
+        on_frame=on_frame,
+        on_report=on_report,
+        report_every=report_every,
+        stop=stop,
+    )
+
+
+def run_ahead(
+    source: FrameSource,
+    detector: StreamDetector,
+    *,
+    seconds: float,
+    on_frame: OnFrame | None = None,
+    on_report: OnReport | None = None,
+    report_every: float = 5.0,
+    stop: StopRequest | None = None,
+) -> RunReport:
+    """The same over a recording: the next frames are read and sent while the last are worked on.
+
+    There is no camera to keep up with, so latency, frame intervals and skips are not measured,
+    and the times of the stages overlap: they no longer add up to the frame's share of the run.
+    """
+    return _measure(
+        _working_ahead(source, detector),
+        detector,
+        seconds=seconds,
+        frame_rate=None,
+        on_frame=on_frame,
+        on_report=on_report,
+        report_every=report_every,
+        stop=stop,
+    )
+
+
+def _measure(
+    produced: Produced,
+    detector: Detector,
+    *,
+    seconds: float,
+    frame_rate: float | None,  # of the camera; None for a recording, which has no live figures
+    on_frame: OnFrame | None,
+    on_report: OnReport | None,
+    report_every: float,
+    stop: StopRequest | None,
+) -> RunReport:
     report = RunReport()
     window = StageStats()
     window_frames = window_skipped = 0
     window_detections: Counter[str] = Counter()
     sampler = SystemSampler()
-    period_ms = 1000 / frame_rate
+    live = frame_rate is not None
+    period_ms = 1000 / frame_rate if frame_rate else 0.0
     last_timestamp_ns: int | None = None
 
     start = window_start = time.perf_counter()
     try:
         while time.perf_counter() - start < seconds and not (stop and stop.requested):
-            t0 = time.perf_counter()
             try:
-                frame = source.read()
-            except EndOfStream:
+                frame, detections, capture_ms, loop_ms = next(produced)
+            except StopIteration:
                 break
-            t1 = time.perf_counter()
-            detections = detector.detect(frame.image)
-            t2 = time.perf_counter()
             latency_ms = (time.monotonic_ns() - frame.timestamp_ns) / 1e6
 
             timings = detector.timings
             measured = {
-                CAPTURE: (t1 - t0) * 1000,
+                CAPTURE: capture_ms,
                 PREPROCESS: timings.preprocess_ms,
                 INFER: timings.infer_ms,
                 POSTPROCESS: timings.postprocess_ms,
-                LOOP: (t2 - t0) * 1000,
+                LOOP: loop_ms,
             }
             if live:
                 measured[LATENCY] = latency_ms

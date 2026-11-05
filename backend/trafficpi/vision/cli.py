@@ -35,6 +35,7 @@ from trafficpi.vision.demo import DemoStreet, demo_health, demo_history
 from trafficpi.vision.detector import (
     DEFAULT_MODEL,
     DEFAULT_SCORE_THRESHOLD,
+    OFFLINE_BATCH,
     Detector,
     HailoDetector,
     find_hef,
@@ -54,6 +55,7 @@ from trafficpi.vision.sources import (
     RealtimeLoopSource,
     VideoFileSource,
 )
+from trafficpi.vision.tracker import tracker_config_for
 
 # Recordings feed the tracker, which makes use of weak detections, so keep them.
 RECORD_THRESHOLD = 0.1
@@ -108,7 +110,11 @@ def _add_detector_args(
     parser: argparse.ArgumentParser, threshold: float = DEFAULT_SCORE_THRESHOLD
 ) -> None:
     group = parser.add_argument_group("detector")
-    group.add_argument("--model", default=DEFAULT_MODEL, help="model in /usr/share/hailo-models")
+    group.add_argument(
+        "--model",
+        default=DEFAULT_MODEL,
+        help="model in /usr/share/hailo-models, or fetched by scripts/fetch_model.sh",
+    )
     group.add_argument("--hef", type=Path, help="explicit HEF path (overrides --model)")
     group.add_argument("--threshold", type=float, default=threshold, help="minimum detection score")
     group.add_argument(
@@ -131,13 +137,16 @@ def _camera_settings(args: argparse.Namespace) -> CameraSettings:
     )
 
 
-def _make_detector(args: argparse.Namespace) -> tuple[HailoDetector, Path]:
+def _make_detector(
+    args: argparse.Namespace, batch_size: int | None = None
+) -> tuple[HailoDetector, Path]:
     hef = args.hef or find_hef(args.model)
     try:
         detector = HailoDetector(
             hef,
             score_threshold=args.threshold,
             class_ids=None if args.all_classes else TRAFFIC_CLASS_IDS,
+            batch_size=batch_size,
         )
     except Exception as exc:
         # Only one process can use the accelerator at a time.
@@ -301,7 +310,7 @@ def cmd_record(args: argparse.Namespace) -> int:
 
 def cmd_redetect(args: argparse.Namespace) -> int:
     """Run an accelerator over a recorded clip and write a detection log (to compare models)."""
-    detector, hef = _make_detector(args)
+    detector, hef = _make_detector(args, batch_size=OFFLINE_BATCH)
     source = VideoFileSource(args.clip, size=args.lores_size, channel_order=args.channel_order)
     out = args.out or args.clip.parent / f"detections-{hef.stem}.jsonl"
     header = {
@@ -315,16 +324,14 @@ def cmd_redetect(args: argparse.Namespace) -> int:
         "source_clip": str(args.clip),
     }
     with detector, source, DetectionLogWriter(out, header) as log:
-        report = pipeline.run(
+        report = pipeline.run_ahead(
             source,
             detector,
             seconds=args.seconds,
-            frame_rate=source.fps,
             on_frame=log.write_frame,
             on_report=_print_window,
             report_every=5.0,
             stop=args.stop,
-            live=False,
         )
     _print_summary(report)
     print(f"wrote {out}")
@@ -517,6 +524,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 detector,
                 store,
                 data_dir=data_dir,
+                tracker_config=tracker_config_for(model),
                 timestamp_ms=lambda _frame: time.time_ns() // 1_000_000,  # the clip has no clock
             )
             log.warning(
@@ -526,7 +534,13 @@ def cmd_run(args: argparse.Namespace) -> int:
             )
         else:
             camera = PiCameraSource(settings)
-            service = VisionService(camera, detector, store, data_dir=data_dir)
+            service = VisionService(
+                camera,
+                detector,
+                store,
+                data_dir=data_dir,
+                tracker_config=tracker_config_for(model),
+            )
             snapshot = camera.capture_still
     service.live.set_detector(model)
     # What the status page says about the chip: its own identity when there is one.

@@ -43,11 +43,12 @@ scripts/install.sh
 2. **Installs from apt** the accelerator's driver and runtime (the four HailoRT packages, not the `hailo-all` bundle, which brings 650 packages TrafficPi does not use), Picamera2, ffmpeg and `memtester`; stages a bootloader update if there is one (it applies at the next reboot); and **holds** the four Hailo packages so that an upgrade cannot change them one by one.
 3. **Installs uv and Node** in `~/.local`, at the versions in the script, each checked against the checksum written in the script (a download that differs is refused), and pnpm through Corepack.
 4. **Installs the locked Python packages** into `backend/.venv`, a virtualenv that can see the apt packages (Picamera2 and the HailoRT bindings).
-5. **Builds the dashboard** into `dashboard/out` (unless that was built from the very same version).
-6. **Tests 512 MB of memory** once and writes the result to `backend/data/memtest.json`. (A defective page on the development board showed up only as random failures. One pass over a few hundred MB can miss a single bad page in 8 GB; `scripts/find_bad_memory.py` scans all the free memory.)
-7. **Asks for the dashboard's password** (at least 10 characters, for the user `admin`), or reads it from the first line of the file given with `--password-file`. If a user exists, the password is left alone.
-8. **Installs and starts the two services** (`trafficpi-vision` and `trafficpi-api`, enabled at boot), the persistent journal and a nightly backup at 03:30. `--reboot-at 03:00` adds a daily reboot, and `--link-watch` a timer that brings back a Wi-Fi link that stays lost ([operations.md](operations.md)).
-9. **Checks that it works** (`scripts/check_boot.sh`) and prints the address.
+5. **Downloads the detection model**, yolov11s (25 MB), from Hailo's Model Zoo into the data directory, checked against the checksum in `scripts/fetch_model.sh`. If that fails it goes on: the vision service then uses yolov8s from `hailo-models` and says so in its log, and running `scripts/fetch_model.sh` later fixes it.
+6. **Builds the dashboard** into `dashboard/out` (unless that was built from the very same version).
+7. **Tests 512 MB of memory** once and writes the result to `backend/data/memtest.json`. (A defective page on the development board showed up only as random failures. One pass over a few hundred MB can miss a single bad page in 8 GB; `scripts/find_bad_memory.py` scans all the free memory.)
+8. **Asks for the dashboard's password** (at least 10 characters, for the user `admin`), or reads it from the first line of the file given with `--password-file`. If a user exists, the password is left alone.
+9. **Installs and starts the two services** (`trafficpi-vision` and `trafficpi-api`, enabled at boot), the persistent journal and a nightly backup at 03:30. `--reboot-at 03:00` adds a daily reboot, and `--link-watch` a timer that brings back a Wi-Fi link that stays lost ([operations.md](operations.md)).
+10. **Checks that it works** (`scripts/check_boot.sh`) and prints the address.
 
 Options (`scripts/install.sh --help` has them all): `--reboot-at HH:MM`, `--backup-at HH:MM` or `none`, `--link-watch`, `--no-persistent-journal`, `--memtest MB` (0 skips it), `--password-file FILE`, `--data-dir DIR`, `--skip-dashboard-build`, `--ignore-os` (unsupported).
 

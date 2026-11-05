@@ -6,10 +6,13 @@ import numpy as np
 import pytest
 
 from tests.fakes import FULL_STOP, ROLLING_STOP, STOP_SIGN, car_driving, write_crossing_log
+from trafficpi.core.types import Detection
 from trafficpi.vision import cli
 from trafficpi.vision.annotate import annotate_clip
 from trafficpi.vision.profile import parse_compiled_profile
+from trafficpi.vision.recorder import DetectionLogWriter
 from trafficpi.vision.replay import replay_log
+from trafficpi.vision.sources import Frame
 
 LINES = parse_compiled_profile(
     {"lines": [{"id": "main", "name": "Main", "a": [0.2, 0.5], "b": [0.8, 0.5]}]}
@@ -165,3 +168,16 @@ def test_annotating_a_clip_draws_the_stop_sign_and_stills_its_events(tmp_path: P
     assert image is not None and image.any()
     # the stop line is drawn in red (BGR 0, 0, 255) at x = 0.5 of 320 px, over the black frame
     assert image[90, 160].tolist()[2] > 200
+
+
+@pytest.mark.parametrize(("model", "tracks"), [("yolov6n_h8l", 1), ("yolov8s_h8l", 0)])
+def test_a_log_is_replayed_with_the_settings_of_the_model_that_made_it(
+    tmp_path: Path, model: str, tracks: int
+) -> None:
+    """A car scored 0.45 throughout: enough for a track with one model and not with the other."""
+    path = tmp_path / "log.jsonl"
+    with DetectionLogWriter(path, {"model": model, "frame_size": [640, 360]}) as log:
+        for i in range(10):
+            car = Detection(2, "car", 0.45, 0.4, 0.4, 0.5, 0.5)
+            log.write_frame(Frame(i, i * 33_000_000, np.zeros((2, 2, 3), np.uint8)), [car])
+    assert len(replay_log(path).confirmed_tracks) == tracks

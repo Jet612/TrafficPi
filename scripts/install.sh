@@ -84,7 +84,7 @@ if [[ -n "$password_file" && ! -r "$password_file" ]]; then
 fi
 
 step=0
-steps=9
+steps=10
 say() { printf '\n== %d/%d  %s\n' "$((++step))" "$steps" "$1"; }
 note() { printf '   %s\n' "$*"; }
 warn() { printf '   WARNING: %s\n' "$*"; }
@@ -201,6 +201,13 @@ install_backend() {
   uv sync --locked
 }
 
+fetch_the_model() {
+  say "Downloading the detection model (25 MB, checked against its checksum)"
+  # Not worth stopping for: without it the vision service uses yolov8s from hailo-models.
+  run "$root/scripts/fetch_model.sh" --data-dir "$data_dir" \
+    || warn "could not download it; the vision service will use yolov8s until scripts/fetch_model.sh has run"
+}
+
 # --- 5. the dashboard ----------------------------------------------------------------------------
 
 build_the_dashboard() {
@@ -305,6 +312,7 @@ preflight
 install_packages
 install_toolchain
 install_backend
+fetch_the_model
 build_the_dashboard
 run_memtest
 set_password

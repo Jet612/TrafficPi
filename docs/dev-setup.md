@@ -61,7 +61,7 @@ python3 -I scripts/smoke_hailo.py --source blank --seconds 10   # accelerator on
 python3 -I scripts/smoke_hailo.py --seconds 60                  # camera + accelerator
 ```
 
-The script saves nothing to disk. `Hailo.run(frame)` returns a list of 80 arrays (one per COCO class), each of shape `(N, 5)` with rows `[y_min, x_min, y_max, x_max, score]` normalized to 0–1. The detector runs non-maximum suppression on the chip.
+The script saves nothing to disk. `Hailo.run(frame)` returns a list of 80 arrays (one per COCO class), each of shape `(N, 5)` with rows `[y_min, x_min, y_max, x_max, score]` normalized to 0–1. Non-maximum suppression does not run on the chip: the chip sends back raw tensors (`hailortcli parse-hef --parse-streams` lists them) and HailoRT turns them into boxes on the CPU, which is most of the 3 to 4 ms of processor time a frame costs it.
 
 Reference results with `yolov8s_h8l.hef` (640×640 input), measured in the evening on a static scene:
 
@@ -71,6 +71,19 @@ Reference results with `yolov8s_h8l.hef` (640×640 input), measured in the eveni
 | Camera, 60 s | 30.0 fps (sensor-limited) | 15.8 ms | 17.4 ms / 17.7 ms | 61 → 60 °C |
 
 No throttling occurred (`vcgencmd get_throttled` was `0x0`).
+
+The default model is yolov11s, from Hailo's Model Zoo (`scripts/fetch_model.sh` puts it in `<data dir>/models`). Without it the service logs a warning and uses yolov8s from `hailo-models`; the System page says which it is running. The build is the one for HailoRT 4.23 (Model Zoo v2.17.0): after upgrading HailoRT, look at whether a newer one suits it, and change the URL and the checksums in that script. Why this model: [accuracy.md](accuracy.md).
+
+The same chip alone, from `hailortcli benchmark` with the vision service stopped:
+
+| Frames at a time | yolov8s_h8l | Its latency | yolov6n_h8l | Its latency |
+|---|---|---|---|---|
+| 1 | 58 fps | 13.1 ms | 354 fps | 7.0 ms |
+| 2 | 86 fps | 18.0 ms | 347 fps | 7.1 ms |
+| 4 | 113 fps | 27.2 ms | 354 fps | 7.2 ms |
+| 8 | 135 fps | 45.0 ms | 354 fps | 7.3 ms |
+
+yolov8s is too big for the Hailo-8L in one go (`hailortcli parse-hef` says `Multi Context`, three of them) and changing context costs the same for one frame as for eight, so a group of frames goes faster and each frame in it takes longer. yolov6n fits (`Single Context`): the chip works on several frames at once with no group needed. `ultra_performance` makes no difference to either, and neither does turning HailoRT's scheduler off, raising its score threshold or leaving Picamera2's helper out: at one frame at a time the chip is what takes the time. A live camera has only one frame to give, so it gets the latency of the first line; `redetect` has them all, and sends groups of 8.
 
 ## 5. User-space toolchain
 
@@ -116,6 +129,8 @@ uv run pyright
 uv run pytest                      # hardware-free tests
 uv run pytest --hardware           # also the camera and accelerator tests (nothing else may be using them)
 
+../scripts/fetch_model.sh           # yolov11s, the default model: not in hailo-models, 25 MB, checksummed
+
 uv run trafficpi-vision dry-run --seconds 30        # speed, latency, CPU, memory, temperature
 uv run trafficpi-vision snapshot --out /tmp/x.jpg   # one frame with the detections drawn on it
 uv run trafficpi-vision record --seconds 60         # a clip and its detections under data/clips/<time>/
@@ -145,15 +160,18 @@ uv run trafficpi-vision annotate data/clips/corner-am --lines data/clips/corner-
 # frame by frame. Boxes are matched by overlap; the output shows counts, mean scores and how the
 # scores of the shared objects differ.
 D=data/clips/corner-am
+uv run trafficpi-vision redetect $D/clip.mp4 --model yolov11s --out $D/det-yolov11s.jsonl
 uv run trafficpi-vision redetect $D/clip.mp4 --model yolov8s --out $D/det-yolov8s.jsonl
 uv run trafficpi-vision redetect $D/clip.mp4 --model yolov6n --out $D/det-yolov6n.jsonl
 uv run trafficpi-vision redetect $D/clip.mp4 --hef /usr/share/hailo-models/yolox_s_leaky_h8l_rpi.hef --out $D/det-yolox.jsonl
-uv run trafficpi-vision compare $D/det-yolov8s.jsonl $D/det-yolov6n.jsonl --min-score 0.25
+uv run trafficpi-vision compare $D/det-yolov11s.jsonl $D/det-yolov8s.jsonl --min-score 0.25
 ```
 
 The colour order matters: the detectors expect RGB, and `--channel-order bgr` on the same clip found a third as many detections with 0.10 lower scores. Raspberry Pi's own Hailo example feeds Picamera2's `RGB888` stream, which is BGR in memory. TrafficPi asks for Picamera2's `BGR888` format, which is RGB in memory (`CameraSettings.channel_order`).
 
-`replay` needs no camera or accelerator and gives the same answer every time, so it is also how tracker and counting changes are tested against real recordings.
+`redetect` sends the frames to the accelerator in groups and reads the next ones meanwhile: a twelve-minute clip takes 2 minutes 40 with yolov8s (136 fps) and under 2 with yolov6n (206 fps), and the log is the same byte for byte as one frame at a time. It is also the hottest thing this Pi does, at 2 to 3 cores for the decoding: 84 °C within minutes. `scripts/hardware_check.sh` waits for the board to cool between models; by hand, look at `vcgencmd measure_temp` first.
+
+`replay` needs no camera or accelerator and gives the same answer every time, so it is also how tracker and counting changes are tested against real recordings. It uses the tracker settings of the model named in the log's header.
 
 ### Running the services by hand
 
