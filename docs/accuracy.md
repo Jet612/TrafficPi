@@ -122,22 +122,22 @@ The frame rate is the camera's. yolov11s takes longer over a frame and still has
 
 Three clips were recorded on 2026-11-04 at the camera's full 30 frames a second: 30 minutes from an hour before sunrise (dark), 30 minutes from half an hour before it (dawn), and 6 minutes 44 seconds at noon. The owner counted the cars in each by hand. yolov11s went over each clip, and yolov8s's log from the recording covers the same minutes; both were replayed with the service's tracker, lines and zones, on detections of 0.25 and over. No car crossed both lines. The hand count is a total for each clip, so every car was then looked at in the frames.
 
-| Clip | Hand count | yolov11s | yolov8s |
-|---|---|---|---|
-| Dark | 11 | 9 | 9 |
-| Dawn | 12 | 12 | 12 |
-| Noon | 5 | 5 | 5 |
-| **All** | **28** | **26** | **26** |
+| Clip | Hand count | yolov11s, tracks starting at 0.5 | yolov11s, at 0.45 | yolov8s |
+|---|---|---|---|---|
+| Dark | 11 | 9 | 10 | 9 |
+| Dawn | 12 | 12 | 12 | 12 |
+| Noon | 5 | 5 | 5 | 5 |
+| **All** | **28** | **26** | **27** | **26** |
 
-Neither model counted anything that was not a car, or any car twice, and each of them tracked all 28. The dark clip's four missed counts are three cars:
+Neither model counted anything that was not a car, or any car twice, and each of them tracked all 28. At 0.5, the dark clip's four missed counts are three cars:
 
 * **Neither counted one.** It was picked up past the right line, and passed about 6 pixels (of 720) beyond the top end of the left line, so no model could count it. A left line 15% longer counts it, and counts 7 other cars a second time on the other two clips.
 * **yolov11s missed one that yolov8s counted.** A fast car, blurred in the dark: yolov11s saw it from the edge of the picture, but scored it under the 0.5 that starts a track until it was past the line. yolov8s counts it on the same compressed frames, so compression is not the reason.
 * **yolov8s missed one that yolov11s counted.** As it left the stop sign its box swelled to nearly twice the car's width, and the track broke at the line.
 
-With tracks starting at 0.45, yolov11s counts the car it missed and nothing else changes on these clips: 27 of 28. That is one car, found after the fact, and it has not been tried on the daylight clip above.
+So yolov11s's tracks start at 0.45. It counts the car it missed, and nothing else changes on these clips: 27 of 28. Starts from 0.45 down to 0.3 all gave 27, and 0.45 changed the fewest tracks. On the 12-minute daylight clip it changes nothing that was checked: the same 22 of 22 counts and the same verdict on all 10 passes, with one more track.
 
-**What this does not show.** It is 28 cars on one morning, and the difference between the models is one car each way. yolov8s's own pass over the compressed frames stopped for heat after 13 minutes of the dark clip and 19 of the dawn one; it counted what the recording's log counted as far as it went, and all 5 at noon, so the table uses the log. The noon clip is short because the recording failed.
+**What this does not show.** It is 28 cars on one morning, the lead over yolov8s is one car, and 0.45 was chosen on that same car. The frames of the night test above are gone, so it could not be tried there. yolov8s's own pass over the compressed frames stopped for heat after 13 minutes of the dark clip and 19 of the dawn one; it counted what the recording's log counted as far as it went, and all 5 at noon, so the table uses the log. The noon clip is short because the recording failed.
 
 ## Not measured yet
 

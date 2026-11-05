@@ -42,7 +42,9 @@ class TrackerConfig:
 # The score that starts a track, for the models that score lower than ``TrackerConfig`` expects.
 # yolov6n rates a car about 0.1 below yolov8s. At 0.5 it counted 23 of 35 cars at night; at 0.4 it
 # counted 28, as many as yolov8s, and below that it began to count one car twice (docs/accuracy.md).
-START_SCORES = {"yolov6n": 0.4}
+# yolov11s scores a fast car blurred in the dark under 0.5: at 0.45 it counted 27 of the owner's 28
+# cars and not 26, and by day the same counts and stop-sign passes as at 0.5.
+START_SCORES = {"yolov6n": 0.4, "yolov11s": 0.45}
 
 
 def tracker_config_for(model: str | None) -> TrackerConfig:
