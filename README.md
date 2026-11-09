@@ -379,6 +379,6 @@ The detection models are not part of this repository, and the MIT License does n
 | `yolov8s`, used when `yolov11s` is missing | Raspberry Pi's `hailo-models` package | Ultralytics YOLOv8 | [AGPL-3.0](https://www.ultralytics.com/license), or an Enterprise License from Ultralytics |
 | `yolox_s_leaky` | Raspberry Pi's `hailo-models` package | Megvii's YOLOX | Apache-2.0 |
 
-Whether the license of the original reaches a model compiled for the Hailo chip is not settled; read the terms if they matter to how you use TrafficPi. Another model runs with `trafficpi-vision run --hef PATH` (for example `/usr/share/hailo-models/yolox_s_leaky_h8l_rpi.hef` on a Hailo-8L); [docs/accuracy.md](docs/accuracy.md) compares them on a real street.
+Whether the license of the original reaches a model compiled for the Hailo chip is not settled; read the terms if they matter to how you use TrafficPi. Another model runs with `trafficpi-vision run --hef PATH` (for example `/usr/share/hailo-models/yolox_s_leaky_h8l_rpi.hef` on a Hailo-8L); [docs/operations.md](docs/operations.md#the-detection-model) says how to make the service run it, and [docs/accuracy.md](docs/accuracy.md) compares the models on a real street.
 
 HailoRT, its driver, Picamera2 and libcamera are Raspberry Pi OS packages that the installer installs with `apt`. They are not part of this repository either, and come under their own licenses.
