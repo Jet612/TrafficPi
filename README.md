@@ -61,7 +61,7 @@ then open `http://<the Pi>.local:8000`. [docs/install.md](docs/install.md) lists
 
 **Without the hardware**, the same tracker, rules, database, API and dashboard run on a made-up street of drawn vehicles, on a laptop: [CONTRIBUTING.md](CONTRIBUTING.md) has the commands and [docs/dev-setup.md](docs/dev-setup.md) the details.
 
-More: [docs/operations.md](docs/operations.md) (running it), [docs/security.md](docs/security.md), [docs/accuracy.md](docs/accuracy.md) (what has been measured) and [docs/showcase.md](docs/showcase.md) (how to present the project).
+More: [docs/operations.md](docs/operations.md) (running it), [docs/security.md](docs/security.md) and [docs/accuracy.md](docs/accuracy.md) (what has been measured).
 
 **Project status:** In development, and running on one Raspberry Pi 5 with a Hailo-8L and a Camera Module 3. It counts vehicles at counting lines, watches stop signs (a picture and a short clip of every pass that needs review), keeps the paths vehicles took, and shows all of it in a password-protected dashboard that also reports on the machine's health. It can e-mail a daily report of how the stop signs did. There is no tagged release yet, and some of what is built has not been proven:
 

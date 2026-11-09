@@ -41,8 +41,11 @@ mail.key
 *.sqlite
 *.sqlite3
 
-# The maintainer's working notes (plan, task list, what is waiting on the owner): kept in the
-# checkout, not in the repository. CLAUDE.md says how they are used.
+# The maintainer's own files, kept in the checkout and not in the repository: the working notes
+# (plan, task list, what is waiting on the owner), the instructions for AI assistants, and notes on
+# presenting the project.
 /plan.md
 /todo.md
 /owner.md
+/CLAUDE.md
+/docs/showcase.md

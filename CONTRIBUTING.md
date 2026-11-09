@@ -45,7 +45,7 @@ E2E_PASSWORD=... E2E_DEMO=1 node dashboard/e2e/smoke.mjs
 - **The API's types are generated.** After changing a route or a response model run `scripts/gen_api_types.sh` and commit `dashboard/src/lib/openapi.json` and `api-types.ts`; CI fails when they are out of date.
 - **Style.** Ruff (line length 100) and Pyright for Python; ESLint and TypeScript for the dashboard. Write comments the way the code around yours does: say why, not what.
 - **Words on screen.** One name for each idea (`dashboard/src/lib/stops.ts` has the outcomes, `lib/format.ts` the dates and times). A hint beside an option says what the option does and never why anyone would use it; docs/dev-setup.md ("Explaining an option") has the rule.
-- **Keep the docs true.** A change to what a page says, a command, a setting or a limit updates the README or the page in `docs/` that describes it, in the same pull request. [CLAUDE.md](CLAUDE.md) has the rules for an AI assistant working in the checkout, and the traps of the development Pi.
+- **Keep the docs true.** A change to what a page says, a command, a setting or a limit updates the README or the page in `docs/` that describes it, in the same pull request.
 - **Commit messages** name the area and say what changed: `dashboard: the Review page keeps a pass you have just reviewed`.
 - **Do not run heavy jobs beside a live camera.** If you develop on the Pi that is also counting traffic, queue them as docs/dev-setup.md says ("Heavy jobs share the Pi with the camera").
 
