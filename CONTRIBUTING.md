@@ -61,4 +61,4 @@ A bug report is most useful with the version (`git log -1 --oneline`), what the 
 
 ## Licence
 
-By contributing you agree that your work is released under the [MIT License](LICENSE). Dependencies must be permissively licensed (MIT, BSD, Apache-2.0, ISC and the like); `scripts/audit_deps.sh` checks that.
+By contributing you agree that your work is released under the [MIT License](LICENSE). Dependencies must be permissively licensed (MIT, BSD, Apache-2.0, ISC and the like); `scripts/audit_deps.sh` checks that. Do not commit a model file: the models have licenses of their own ([README, License](README.md#license)), and they are downloaded or installed, never kept in the repository.

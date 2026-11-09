@@ -31,6 +31,24 @@ What to look at, what to do when it needs attention, and how the pieces look aft
 
 Only one program can open the camera and the accelerator. Before you run `trafficpi-vision snapshot`, `record` or `dry-run` by hand: `sudo systemctl stop trafficpi-vision`, and start it again afterwards.
 
+## The detection model
+
+The vision service runs `yolov11s` from the data directory's `models` folder (the installer downloads it with `scripts/fetch_model.sh`). If that file is missing it runs `yolov8s` from `/usr/share/hailo-models` and says so in its log. The System page shows the model in use. The models have licenses of their own, listed in the [README](../README.md#license); [accuracy.md](accuracy.md) compares them.
+
+To run another model, give the service its own command line in a drop-in. `scripts/update.sh` and `scripts/install_services.sh` leave drop-ins alone.
+
+```
+sudo systemctl edit trafficpi-vision
+```
+
+```ini
+[Service]
+ExecStart=
+ExecStart=/home/pi/TrafficPi/backend/.venv/bin/trafficpi-vision run --hef /usr/share/hailo-models/yolox_s_leaky_h8l_rpi.hef
+```
+
+The empty `ExecStart=` clears the unit's own line, and the path to `trafficpi-vision` is the one `systemctl cat trafficpi-vision` shows. `--model NAME` picks a model by name, from `/usr/share/hailo-models` or the data directory, instead of by path. Then `sudo systemctl restart trafficpi-vision`. `sudo systemctl revert trafficpi-vision` and a restart go back to the default.
+
 ## When something hangs
 
 Two things bring a hung service back by themselves:
