@@ -8,7 +8,17 @@ const development = process.env.NODE_ENV === "development";
 // repository does not keep, so the generator is off.
 // `trailingSlash` makes the export write each page as a folder with an index.html (history/index.html),
 // which the API's static files serve at /history/ without any rewrite rule.
-const shared = { agentRules: false, trailingSlash: true } as const;
+// The static demo (src/demo, scripts/build_static_demo.sh) is switched on by NEXT_PUBLIC_TRAFFICPI_DEMO=1.
+// Both values are always defined, so that the build writes them into the code as plain strings and
+// an ordinary build can leave the demo's branches, and the code they load, out.
+const shared = {
+  agentRules: false,
+  trailingSlash: true,
+  env: {
+    NEXT_PUBLIC_TRAFFICPI_DEMO: process.env.NEXT_PUBLIC_TRAFFICPI_DEMO ?? "",
+    NEXT_PUBLIC_TRAFFICPI_DEMO_AT: process.env.NEXT_PUBLIC_TRAFFICPI_DEMO_AT ?? "",
+  },
+} as const;
 
 const config: NextConfig = development
   ? {

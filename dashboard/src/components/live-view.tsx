@@ -15,6 +15,7 @@ import { useFullscreen } from "@/lib/use-fullscreen";
 import type { SpeedUnits } from "@/lib/speed";
 import { useSpeedUnits } from "@/lib/use-speed-units";
 import { useStopsPaused } from "@/lib/use-stops-paused";
+import { DemoVideo } from "@/demo/demo-video";
 import {
   DEFAULT_OVERLAY,
   drawOverlay,
@@ -232,7 +233,8 @@ export function LiveView() {
             {showStream && still && (
               <StillPicture attempt={attempt} onAspect={setAspect} onFailed={() => setStreamFailed(true)} />
             )}
-            {showStream && !still && (
+            {showStream && !still && process.env.NEXT_PUBLIC_TRAFFICPI_DEMO === "1" && <DemoVideo onAspect={setAspect} onFailed={() => setStreamFailed(true)} />}
+            {showStream && !still && process.env.NEXT_PUBLIC_TRAFFICPI_DEMO !== "1" && (
               // An <img> is how a browser plays an MJPEG stream, and Next's image component cannot.
               // eslint-disable-next-line @next/next/no-img-element
               <img

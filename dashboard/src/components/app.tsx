@@ -10,6 +10,7 @@ import { SessionProvider, useSession } from "@/components/session";
 import { StatsProvider } from "@/components/stats-provider";
 import { Button } from "@/components/ui/button";
 import { UnsavedProvider } from "@/components/unsaved";
+import { DemoBanner } from "@/demo/demo-banner";
 import { cn } from "@/lib/cn";
 import { isCurrentPage } from "@/lib/pages";
 
@@ -75,6 +76,7 @@ function Shell({ children }: { children: React.ReactNode }) {
       >
         Skip to the dashboard
       </a>
+      {process.env.NEXT_PUBLIC_TRAFFICPI_DEMO === "1" && <DemoBanner />}
       <Header />
       <DriftBanner />
       {/* On a phone the bottom padding keeps the last card clear of the bar of pages fixed under it. */}
