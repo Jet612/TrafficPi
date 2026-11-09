@@ -52,7 +52,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-heavy=(taskset -c 2,3 nice -n 15)
+heavy=(taskset -c "2,3" nice -n 15)
 
 if [[ -z "$recording" ]]; then
   recording="$work/recording"
